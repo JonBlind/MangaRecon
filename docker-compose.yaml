@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+
+  recommender:
+    build: ./recommender
+    ports:
+      - "5000:5000"
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  db_scripts:
+    build: ./db_operations
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

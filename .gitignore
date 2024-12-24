@@ -173,3 +173,8 @@ cython_debug/
 
 # Database File
 manga_db.sql
+
+# Node.JS modules and Python env
+node_modules/
+__pycache__/
+*.pyc
