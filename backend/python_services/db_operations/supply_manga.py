@@ -4,7 +4,7 @@ class api_harvest_info():
     def __init__(self, base_url="https://api.mangadex.org"):
         self.base_url = "https://api.mangadex.org"
         self.headers = {
-                'User-Agent': 'MangaRecon/0.1 (Contact: tearedvpn@gmail.com : This is a student project, if I inconvenience you, it is not out of ill-will. Please let me know and Ill stop immediately. )'
+                'User-Agent': 'MangaRecon/0.1 (Contact: tearedvpn@gmail.com : This is a student project, if I inconvenience you, it is not out of ill-will. Please let me know and Ill stop immediately.)'
             }
         
     def get_list_of_most_popular(self):
