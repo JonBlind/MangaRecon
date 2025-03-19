@@ -2,11 +2,13 @@ SET timezone TO 'UTC';
 
 DROP TABLE IF EXISTS profile CASCADE;
 DROP TABLE IF EXISTS manga CASCADE;
+DROP TABLE IF EXISTS author CASCADE;
 DROP TABLE IF EXISTS genre CASCADE;
 DROP TABLE IF EXISTS tag CASCADE;
 DROP TABLE IF EXISTS demographic CASCADE;
 DROP TABLE IF EXISTS rating CASCADE;
 DROP TABLE IF EXISTS collection CASCADE;
+DROP TABLE IF EXISTS manga_author CASCADE;
 DROP TABLE IF EXISTS manga_collection CASCADE;
 DROP TABLE IF EXISTS manga_genre CASCADE;
 DROP TABLE IF EXISTS manga_tag CASCADE;
@@ -26,12 +28,17 @@ CREATE TABLE profile(
 CREATE TABLE manga(
   manga_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
   title VARCHAR(255) NOT NULL UNIQUE,
-  author VARCHAR(255),
+  author_id INT NOT NULL,
   description TEXT,
   published_date DATE,
   external_average_rating NUMERIC(2,1) CHECK (external_average_rating >= 0 AND external_average_rating <= 5 AND (external_average_rating * 10) % 1 = 0),
   average_rating NUMERIC(2,1) CHECK (average_rating >= 0 AND average_rating <= 5 AND (average_rating * 10) % 1 = 0)
 );
+
+CREATE TABLE author(
+  author_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
+  author_name VARCHAR(255)
+)
 
 CREATE TABLE genre(
   genre_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
@@ -67,6 +74,14 @@ CREATE TABLE collection(
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES profile (user_id) ON DELETE CASCADE,
   CONSTRAINT unique_user_collection UNIQUE (user_id, collection_name)
+);
+
+CREATE TABLE manga_author(
+  author_id INT NOT NULL,
+  manga_id INT NOT NULL,
+  FOREIGN KEY (manga_id) REFERENCES manga (manga_id) ON DELETE CASCADE,
+  FOREIGN KEY (author_id) REFERENCES author (author_id) ON DELETE CASCADE,
+  PRIMARY KEY (author_id, manga_id)
 );
 
 CREATE TABLE manga_collection(
