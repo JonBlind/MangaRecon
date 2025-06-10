@@ -3,9 +3,9 @@ import os
 import asyncio
 
 # Success
-def test_connection():
+async def test_connection():
     db = DatabaseManager(os.getenv('DATABASE_URL_TEST'))
-    asyncio.run(db.connect())
+    await db.connect()
 
 # Success
 async def test_disconnect():
@@ -37,7 +37,7 @@ async def test_remove_data():
     await db.connect()
     await db.remove_data(table="profile", condition="username = $1", params=["updated_bigguy"])
 
-#asyncio.run(test_connection())
+asyncio.run(test_connection())
 #asyncio.run(test_disconnect())
 #asyncio.run(test_input_data())
 #asyncio.run(test_modify_data())
