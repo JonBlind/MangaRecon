@@ -27,6 +27,9 @@ class ClientDatabase:
     # ==============
     
     async def create_profile(self, data:dict):
+        '''
+        Create a profile with the provided data.
+        '''
         logger.info(f"Attempting to create profile for corresponding email: {data.get('email')}")
         try:
             profile = Profile(**data) # In python, doing ** lets you unpack an arbitrary number of keys in a key_value structure. So we do this to easily unpack data into profile.
@@ -51,6 +54,10 @@ class ClientDatabase:
             )
 
     async def get_profile_by_email(self, email:str) -> Optional[Profile]:
+        '''
+        Fetches a user with either their EMAIL or USERNAME
+        '''
+
         logger.info(f"Attempting to obtain simple profile summary for corresponding email: {email}")
         try:
             statement = select(Profile).where(Profile.email == email)
@@ -59,6 +66,23 @@ class ClientDatabase:
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.error(f"Failed to fetch profile information via email for {email}: {str(e)}", exc_info=True)
+            return None
+        
+    async def get_profile_by_identifier(self, identifier:str) -> Optional[Profile]:
+        '''
+        Fetches a user with either their EMAIL or USERNAME
+        '''
+
+        logger.info(f"Attempting to obtain simple profile summary for corresponding identifier: {identifier}")
+        try:
+            statement = select(Profile).where(
+                (Profile.username == identifier) | (Profile.email == identifier)
+                )
+
+            result = await self.session.execute(statement)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to fetch profile information via identifier for {identifier}: {str(e)}", exc_info=True)
             return None
 
 

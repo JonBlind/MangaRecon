@@ -4,4 +4,9 @@ class CreateProfileRequest(BaseModel):
     username: str
     displayname: str
     email: EmailStr
-    password_hash: str
+    password: str # not hashed yet
+
+class LoginRequest(BaseModel):
+    # identifier is either Email or Username
+    identifier: str
+    password: str
