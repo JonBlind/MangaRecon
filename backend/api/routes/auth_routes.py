@@ -15,6 +15,12 @@ async def login(
     request: schemas.LoginRequest,
     db: ClientDatabase = Depends(lambda: get_db("user_read"))
 ):
+    '''
+    Attempts to login a user based on the inputted fields.
+
+    Returns:
+        dict: Standardized success or error response.
+    '''
     try:
         profile = await db.get_profile_by_identifier(request.identifier)
 

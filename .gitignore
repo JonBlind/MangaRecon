@@ -171,8 +171,8 @@ cython_debug/
 .pypirc
 
 
-# Database File
 manga_db.sql
+.imgs
 
 # Node.JS modules and Python env
 node_modules/

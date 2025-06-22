@@ -30,7 +30,7 @@ class Rating(Base):
 
     user_id = Column(Integer, ForeignKey("profile.user_id", ondelete="CASCADE"), primary_key=True)
     manga_id = Column(Integer, primary_key=True)
-    personal_rating = Column(Numeric(2, 1), nullable=False)
+    personal_rating = Column(Numeric(3, 1), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("Profile", back_populates="ratings")

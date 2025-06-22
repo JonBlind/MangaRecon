@@ -85,5 +85,30 @@ class ClientDatabase:
             logger.error(f"Failed to fetch profile information via identifier for {identifier}: {str(e)}", exc_info=True)
             return None
 
+    # ==============
+    # Ratings
+    # ==============
 
+    async def rate_manga(self, user_id: int, manga_id: int, score: float) -> dict:
+        '''
+        Create or update a rating for a given manga by the provided user
+        '''
 
+        try:
+            existing = await self.session.get(Rating, (user_id, manga_id))
+
+            if existing:
+                existing.personal_rating = score
+                logger.info(f"Updated Rating: user_id={user_id}, manga_id={manga_id}, new_score={score}")
+            else:
+                rating = Rating(user_id=user_id, manga_id=manga_id, personal_rating=score)
+                self.session.add(rating)
+                logger.info(f"Created new rating: user_id={user_id}, manga_id={manga_id}, new_score={score}")
+            
+            await self.session.commit()
+            return success(message="Rating Saved", data={"user_id": user_id, "manga_id": manga_id, "rating": score})
+        
+        except SQLAlchemyError as e:
+            await self.session.rollback()
+            logger.error("Error saving manga rating", exc_info=True)
+            return error(message="Failed to save rating.", detail=str(e))

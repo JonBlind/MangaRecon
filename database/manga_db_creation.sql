@@ -58,7 +58,7 @@ CREATE TABLE demographic(
 CREATE TABLE rating(
   user_id INT NOT NULL,
   manga_id INT NOT NULL,
-  personal_rating NUMERIC(2,1) CHECK (personal_rating >= 0 AND personal_rating <= 5 AND (personal_rating * 10) % 1 = 0),
+  personal_rating NUMERIC(3,1) CHECK (personal_rating >= 0 AND personal_rating <= 10 AND (personal_rating) % 0.5 = 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, manga_id),
   FOREIGN KEY (user_id) REFERENCES profile (user_id) ON DELETE CASCADE,
