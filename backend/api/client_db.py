@@ -112,3 +112,27 @@ class ClientDatabase:
             await self.session.rollback()
             logger.error("Error saving manga rating", exc_info=True)
             return error(message="Failed to save rating.", detail=str(e))
+        
+    async def get_user_rating_for_manga(self, user_id: int, manga_id: int) -> Optional[Rating]:
+        '''
+        Grab the rating for a specified manga of the given user. Returns None if nothing is found.
+        '''
+        try:
+            statement = select(Rating).where(Rating.user_id == user_id, Rating.manga_id == manga_id)
+            result = await self.session.execute(statement)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"Error grabbing manga rating for user: {user_id}, manga: {manga_id}", exc_info=True)
+            return None
+    
+    async def get_all_user_ratings(self, user_id: int) -> List[Rating]:
+        '''
+        Grab ALL manga ratings that the specified user has. 
+        '''
+        try:
+            statement = select(Rating).where(Rating.user_id == user_id)
+            result = await self.session.execute(statement)
+            return result.scalars().all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error grabbing all manga ratings for user: {user_id}", exc_info=True)
+            return None

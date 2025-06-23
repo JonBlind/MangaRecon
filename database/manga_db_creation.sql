@@ -1,6 +1,6 @@
 SET timezone TO 'UTC';
 
-DROP TABLE IF EXISTS profile CASCADE;
+DROP TABLE IF EXISTS "user" CASCADE;
 DROP TABLE IF EXISTS manga CASCADE;
 DROP TABLE IF EXISTS author CASCADE;
 DROP TABLE IF EXISTS genre CASCADE;
@@ -13,14 +13,16 @@ DROP TABLE IF EXISTS manga_collection CASCADE;
 DROP TABLE IF EXISTS manga_genre CASCADE;
 DROP TABLE IF EXISTS manga_tag CASCADE;
 DROP TABLE IF EXISTS manga_demographic CASCADE;
-DROP TABLE IF EXISTS follower CASCADE;
 
-CREATE TABLE profile(
-  user_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
-  username TEXT NOT NULL,
-  displayname TEXT NOT NULL UNIQUE CHECK (LENGTH(displayname) <= 64),
-  email TEXT NOT NULL UNIQUE CHECK (email = LOWER(email)),
-  password_hash VARCHAR(255) NOT NULL,
+CREATE TABLE "user" (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT UNIQUE NOT NULL,
+  hashed_password TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
+  is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  username TEXT UNIQUE NOT NULL,
+  displayname TEXT NOT NULL CHECK (LENGTH(displayname) <= 64),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   last_login TIMESTAMP WITH TIME ZONE
 );
@@ -38,7 +40,7 @@ CREATE TABLE manga(
 CREATE TABLE author(
   author_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
   author_name VARCHAR(255)
-)
+);
 
 CREATE TABLE genre(
   genre_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
@@ -56,23 +58,23 @@ CREATE TABLE demographic(
 );
 
 CREATE TABLE rating(
-  user_id INT NOT NULL,
+  user_id UUID NOT NULL,
   manga_id INT NOT NULL,
   personal_rating NUMERIC(3,1) CHECK (personal_rating >= 0 AND personal_rating <= 10 AND (personal_rating) % 0.5 = 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, manga_id),
-  FOREIGN KEY (user_id) REFERENCES profile (user_id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES "user" (id) ON DELETE CASCADE,
   FOREIGN KEY (manga_id) REFERENCES manga (manga_id) ON DELETE CASCADE
 );
 
 CREATE TABLE collection(
   collection_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id UUID NOT NULL,
   collection_name VARCHAR(255) NOT NULL,
   description VARCHAR(255),
   is_public BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES profile (user_id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES "user" (id) ON DELETE CASCADE,
   CONSTRAINT unique_user_collection UNIQUE (user_id, collection_name)
 );
 
@@ -117,13 +119,13 @@ CREATE TABLE manga_demographic(
   PRIMARY KEY (manga_id, demographic_id)
 );
 
--- Indexes for the profile table
-CREATE UNIQUE INDEX idx_profile_username ON profile (LOWER(username));
-CREATE INDEX idx_profile_email ON profile(email);
+-- Indexes for the user table
+CREATE UNIQUE INDEX idx_user_username ON "user" (LOWER(username));
+CREATE UNIQUE INDEX idx_user_email ON "user" (LOWER(email));
 
 -- Indexes for the manga table
 CREATE INDEX idx_manga_title ON manga(title);
-CREATE INDEX idx_manga_author ON manga(author);
+CREATE INDEX idx_manga_author ON manga(author_id);
 
 -- Indexes for the rating table
 CREATE INDEX idx_rating_user_id ON rating(user_id);
@@ -132,37 +134,3 @@ CREATE INDEX idx_rating_manga_id ON rating(manga_id);
 -- Indexes for the collection table
 CREATE INDEX idx_collection_user_id ON collection(user_id);
 CREATE INDEX idx_collection_is_public ON collection(is_public);
-
-/*
-CREATE TABLE user_comment(
-  comment_id INT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
-  user_id INT NOT NULL,
-  manga_id INT NOT NULL,
-  text VARCHAR(500) NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES profile (user_id) ON DELETE CASCADE,
-  FOREIGN KEY (manga_id) REFERENCES manga (manga_id) ON DELETE CASCADE
-);
-*/
-
-
-
-/*
-follower is the person following someone, the one who willingly went to the account to follow.
-The followed is the person who is being followed by another.
-*/
-
-/*
-CREATE TABLE follower(
-  follower_id INT NOT NULL,
-  followed_id INT NOT NULL,
-  confirmed BOOLEAN DEFAULT FALSE,
-  PRIMARY KEY (follower_id, followed_id),
-  FOREIGN KEY (follower_id) REFERENCES profile (user_id) ON DELETE CASCADE,
-  FOREIGN KEY (followed_id) REFERENCES profile (user_id) ON DELETE CASCADE
-);
-
--- Indexes for the follower table
-CREATE INDEX idx_follower_follower_id ON follower(follower_id);
-CREATE INDEX idx_follower_followed_id ON follower(followed_id);
-*/
-
