@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends
 import backend.schemas.rating as schemas
-from backend.api.client_db import ClientDatabase
-from backend.api.dependencies import get_db
+from backend.db.client_db import ClientDatabase
 from utils.response import success, error
 from typing import Optional
 import logging

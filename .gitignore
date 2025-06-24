@@ -173,6 +173,7 @@ cython_debug/
 
 manga_db.sql
 .imgs
+project_notes
 
 # Node.JS modules and Python env
 node_modules/

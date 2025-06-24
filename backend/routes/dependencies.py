@@ -1,6 +1,6 @@
 import collections.abc
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from backend.api.client_db import ClientDatabase
+from backend.db.client_db import ClientDatabase
 import os
 import dotenv
 import collections
