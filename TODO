@@ -13,3 +13,4 @@ ONCE FUNCTIONAL:
 - Able to update email
 - Able to change password
 - Option to delete profile
+- Isolate deletion permissions to a specialized role
