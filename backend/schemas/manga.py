@@ -4,6 +4,7 @@ from datetime import date
 import uuid
 
 # Get the genre
+# Response
 class GenreRead(BaseModel):
     genre_id: int
     genre_name: str
@@ -12,6 +13,7 @@ class GenreRead(BaseModel):
         orm_mode = True
 
 # Get the tag
+# Response
 class TagRead(BaseModel):
     tag_id: int
     tag_name: str
@@ -28,6 +30,7 @@ class DemographicRead(BaseModel):
         orm_mode = True
 
 # Get all the info on a manga
+# Response
 class MangaRead(BaseModel):
     manga_id: int
     title: str
@@ -45,6 +48,7 @@ class MangaRead(BaseModel):
         orm_mode = True
 
 # Get very minimal info for listing manga
+# Response
 class MangaListItem(BaseModel):
     manga_id: int
     title: str

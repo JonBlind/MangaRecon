@@ -3,6 +3,7 @@ from pydantic import BaseModel, EmailStr, constr
 from datetime import datetime
 from typing import Optional, Annotated
 
+# Response
 class UserRead(BaseModel):
     id: uuid.UUID
     email: EmailStr
@@ -16,7 +17,7 @@ class UserRead(BaseModel):
     
     class Config:
         orm_mode = True
-
+# Request
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -25,7 +26,8 @@ class UserCreate(BaseModel):
 
     class Config:
         orm_mode = True
-    
+
+# Request    
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None
