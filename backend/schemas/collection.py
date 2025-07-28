@@ -22,3 +22,7 @@ class CollectionRead(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class MangaInCollectionRequest(BaseModel):
+    manga_id: int

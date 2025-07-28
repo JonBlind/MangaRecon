@@ -9,7 +9,9 @@ from backend.schemas.collection import (
     CollectionCreate,
     CollectionRead,
     CollectionUpdate,
+    MangaInCollectionRequest
 )
+from backend.schemas.manga import MangaListItem
 from utils.response import success, error
 import logging
 
@@ -137,3 +139,66 @@ async def delete_collection(
         await db.session.rollback()
         logger.error(f"Failed to delete collection {collection_id}: {e}")
         return error("Failed to delete collection", str(e))
+    
+@router.get("/{collection_id}/manga", response_model=dict)
+async def get_manga_in_collection(
+    collection_id: int,
+    db: ClientDatabase = Depends(get_user_read_db),
+    user: User = Depends(current_user)
+):
+    '''
+    Retrieve all manga from a collection owned by the current user.
+
+    Args:
+        collection_id (int): ID of the collection
+
+    Returns:
+        dict: Success or error response containing manga list
+    '''
+    try:
+        logger.info(f"User {user.id} fetching manga from collection {collection_id}")
+        manga_list = await db.get_manga_in_collection(user.id, collection_id)
+
+        response = [MangaListItem.model_validate(m) for m in manga_list]
+        return success("Manga retrieved successfully", data=response)
+
+    except ValueError as ve:
+        logger.warning(f"Unauthorized access or missing collection {collection_id} by user {user.id}")
+        return error("Unauthorized or not found", detail=str(ve))
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve manga from collection {collection_id}: {e}", exc_info=True)
+        return error("Internal server error", detail=str(e))
+    
+@router.delete("/{collection_id}/manga", response_model=dict)
+async def remove_manga_from_collection(
+    collection_id: int,
+    data: MangaInCollectionRequest,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user)
+):
+    '''
+    Remove a manga from a collection owned by the user.
+
+    Args:
+        collection_id (int): ID of the collection to remove from
+        manga_id (int): ID of the manga to remove (via request body)
+
+    Returns:
+        dict: Success or error response
+    '''
+    try:
+        logger.info(f"User {user.id} attempting to remove manga {data.manga_id} from collection {collection_id}")
+
+        await db.remove_manga_from_collection(user.id, collection_id, data.manga_id)
+
+        logger.info(f"Successfully removed manga {data.manga_id} from collection {collection_id}")
+        return success("Manga removed from collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
+
+    except ValueError as ve:
+        logger.warning(f"Unauthorized deletion attempt or missing link for collection {collection_id}")
+        return error("Unauthorized or not found", detail=str(ve))
+
+    except Exception as e:
+        logger.error(f"Failed to remove manga {data.manga_id} from collection {collection_id}: {e}", exc_info=True)
+        return error("Failed to remove manga from collection", detail=str(e))

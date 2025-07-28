@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from typing import Optional
 from sqlalchemy.future import select
 from backend.db.client_db import ClientDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ratings", tags=['Rating'])
 
-@router.post("/")
+@router.post("/", response_model=dict)
 async def rate_manga(
         rating_data: RatingCreate,
         db: ClientDatabase = Depends(get_user_write_db),
@@ -36,35 +37,104 @@ async def rate_manga(
         logger.error(f"Unexpected error during manga rating: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))
     
-@router.get("/")
-async def get_user_rating_for_manga(
-        manga_id: int,
+@router.put("/", response_model=dict)
+async def update_rating(
+        rating_data: RatingCreate,
+        db: ClientDatabase = Depends(get_user_write_db),
+        user: User = Depends(current_user)
+):
+    '''
+    Update the current user's existing rating.
+
+    Returns:
+        dict: Standardized success or error response.
+    '''
+    try:
+        logger.info(f"User {user.id} attempting to update rating for manga {rating_data.manga_id} with score {rating_data.personal_rating}")
+        existing = await db.get_user_rating_for_manga(user.id, rating_data.manga_id)
+
+        if not existing:
+            logger.warning(f"User {user.id} tried to updaste rating for manga {rating_data.manga_id} but no rating exists")
+            return error("Rating not found", detail="You must create a rating before updating it")
+        
+        result = await db.rate_manga(
+            user_id=user.id,
+            manga_id=rating_data.manga_id,
+            score=float(rating_data.personal_rating)
+        )
+
+        return result
+    
+    except Exception as e:
+        await db.session.rollback()
+        logger.error(f"Unexpected error during manga rating update: {e}", exc_info=True)
+        return error("Internal server error", detail=str(e))
+    
+@router.delete("/{manga_id}", response_model=dict)
+async def delete_rating(
+    manga_id: int,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user)
+):
+    try:
+        logger.info(f"User {user.id} attempting to delete rating for manga {manga_id}.")
+
+        existing = await db.get_user_rating_for_manga(user.id, manga_id)
+        if not existing:
+            logger.warning(f"User {user.id} attempted to delete rating for manga {manga_id}, but no rating exists.")
+            return error("Rating not found", detail="You have not rated this manga")
+        
+        await db.session.delete(existing)
+        await db.session.commit()
+
+        logger.info(f"Successfully deleted rating for manga {manga_id} by user {user.id}")
+        return success("Rating deleted successfully.", data={"manga_id": manga_id})
+    
+    except Exception as e:
+        await db.session.rollback()
+        logger.error(f"Error deleting rating for manga {manga_id}")
+
+
+    
+@router.get("/", response_model=dict)
+async def get_user_ratings(
+        manga_id: Optional[int] = Query(None),
         db: ClientDatabase = Depends(get_user_read_db),
         user: User = Depends(current_user)
 ):
     '''
-    Get a urser's manga rating(s). If a specific manga_id is provided, then only the rating for that ID returns. Otherwise, all of the user's ratings are returned.
+    Get a user's manga rating(s). If a specific manga_id is provided, then only the rating for that ID returns. Otherwise, all of the user's ratings are returned.
 
     Args:
-        user_id (int): ID of user to fetch ratings for.
         manga_id (int, Optional): ID of manga to fetch a rating for. If left blank or None, will return all ratings. (Defaults to None.)
 
     Returns:
         dict: Standardized success or error response.
     '''
     try:
-        logger.info(f"Fetching rating for manga {manga_id} by user {user.id}")
-        result = await db.session.execute(
-            select(Rating).where(Rating.user_id == user.id, Rating.manga_id == manga_id)
-        )
-        rating = result.scalar_one_or_none()
+        if manga_id:
+            logger.info(f"Fetching rating for manga {manga_id} by user {user.id}")
+            result = await db.session.execute(
+                select(Rating).where(Rating.user_id == user.id, Rating.manga_id == manga_id)
+            )
+            rating = result.scalar_one_or_none()
 
-        if not rating:
-            return error("Rating not found", detail="User has not rated this manga.")
+            if not rating:
+                return error("Rating not found", detail="User has not rated this manga.")
 
-        validated = RatingRead.model_validate(rating)
-        return success("Rating retrieved successfully", data=validated)
-
+            validated = RatingRead.model_validate(rating)
+            return success("Rating retrieved successfully", data=validated)
+        
+        else:
+            logger.info(f"Fetching ALL ratings by user {user.id}")
+            ratings = await db.get_all_user_ratings(user.id)
+    
+            if not ratings:
+                return success("No ratings found", data=[])
+            
+            validated = [RatingRead.model_validate(r) for r in ratings]
+            return success("Ratings retrieved successfully", data=validated)
+        
     except Exception as e:
         logger.error(f"Unexpected error fetching rating for manga {manga_id} by user {user.id}: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))
