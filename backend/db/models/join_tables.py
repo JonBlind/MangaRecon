@@ -24,3 +24,10 @@ manga_demographic = Table(
     Column("manga_id", Integer, ForeignKey("manga.manga_id", ondelete="CASCADE")),
     Column("demographic_id", Integer, ForeignKey("demographic.demographic_id", ondelete="CASCADE")),
 )
+
+manga_author = Table(
+    "manga_author",
+    Base.metadata,
+    Column("manga_id", Integer, ForeignKey("manga.manga_id", ondelete="CASCADE")),
+    Column("author_id", Integer, ForeignKey("author.author_id", ondelete="CASCADE")),
+)

@@ -79,18 +79,18 @@ CREATE TABLE collection(
 );
 
 CREATE TABLE manga_author(
-  author_id INT NOT NULL,
   manga_id INT NOT NULL,
+  author_id INT NOT NULL,
   FOREIGN KEY (manga_id) REFERENCES manga (manga_id) ON DELETE CASCADE,
   FOREIGN KEY (author_id) REFERENCES author (author_id) ON DELETE CASCADE,
-  PRIMARY KEY (author_id, manga_id)
+  PRIMARY KEY (manga_id, author_id)
 );
 
 CREATE TABLE manga_collection(
-  collection_id INT NOT NULL,
   manga_id INT NOT NULL,
+  collection_id INT NOT NULL,
   added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (collection_id, manga_id),
+  PRIMARY KEY (manga_id, collection_id),
   FOREIGN KEY (manga_id) REFERENCES manga (manga_id) ON DELETE CASCADE,
   FOREIGN KEY (collection_id) REFERENCES collection (collection_id) ON DELETE CASCADE
 );

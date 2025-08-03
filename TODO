@@ -14,3 +14,7 @@ ONCE FUNCTIONAL:
 - Able to change password
 - Option to delete profile
 - Isolate deletion permissions to a specialized role
+
+    Add to Rating System:
+    - Give more weight to specific tags or genres that aren't as frequent
+    - Slight boost to newer and recently popular stuff

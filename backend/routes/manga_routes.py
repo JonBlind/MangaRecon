@@ -12,6 +12,7 @@ from backend.db.models.join_tables import (
     manga_demographic
 )
 from backend.dependencies import get_manga_read_db
+from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
 from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
 from utils.response import success, error
 from typing import List, Optional
@@ -76,29 +77,6 @@ async def get_manga_by_id(
     except Exception as e:
         logger.error(f"Error retrieving manga {manga_id}: {e}", exc_info=True)
         return error("Failed to retrieve manga", detail=str(e))
-
-@router.get("/", response_model=dict)
-async def get_all_manga(
-    db: ClientDatabase = Depends(get_manga_read_db)
-):
-    """
-    Retrieve a list of all manga entries (basic info only).
-    
-    Returns:
-        dict: A standardized list of manga items.
-    """
-    try:
-        logger.info("Fetching all manga list entries.")
-
-        result = await db.session.execute(select(Manga))
-        manga_list = result.scalars().all()
-
-        validated = [MangaListItem.model_validate(m) for m in manga_list]
-        return success("Manga list retrieved successfully", data=validated)
-
-    except Exception as e:
-        logger.error(f"Error retrieving manga list: {e}", exc_info=True)
-        return error("Failed to retrieve manga list", detail=str(e))
     
 @router.get("/", response_model=dict)
 async def filter_manga(
@@ -112,60 +90,63 @@ async def filter_manga(
 
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
+
+    order_by: MangaOrderField = Query("title"),
+    order_dir: MangaOrderDirection = Query("asc"),
+
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
     try:
-        logger.info(f"Filtering manga - page = {page}, size = {size}")
-
+        logger.info(f"Filtering manga - page={page}, size={size}, order_by={order_by}, order_dir={order_dir}")
         offset = (page - 1) * size
 
         stmt = select(Manga).distinct()
 
-        # Title
+        # Filters
         if title:
             stmt = stmt.where(Manga.title.ilike(f"%{title}%"))
 
-        # Genre
         if genre_ids:
             stmt = stmt.join(manga_genre).where(manga_genre.c.genre_id.in_(genre_ids))
 
-        # Genre exclusion
         if exclude_genres:
             stmt = stmt.where(~Manga.manga_id.in_(
                 select(manga_genre.c.manga_id).where(manga_genre.c.genre_id.in_(exclude_genres))
             ))
 
-        # Tag
         if tag_ids:
             stmt = stmt.join(manga_tag).where(manga_tag.c.tag_id.in_(tag_ids))
 
-        # Tag exclusion
         if exclude_tags:
             stmt = stmt.where(~Manga.manga_id.in_(
                 select(manga_tag.c.manga_id).where(manga_tag.c.tag_id.in_(exclude_tags))
             ))
 
-        # Demographic
         if demo_ids:
             stmt = stmt.join(manga_demographic).where(manga_demographic.c.demographic_id.in_(demo_ids))
 
-        # Demographic exclusion
         if exclude_demos:
             stmt = stmt.where(~Manga.manga_id.in_(
                 select(manga_demographic.c.manga_id).where(manga_demographic.c.demographic_id.in_(exclude_demos))
             ))
 
-        count = stmt.with_only_columns(func.count(Manga.manga_id)).order_by(None)
-        count_result = await db.session.execute(count)
-        total = count_result.scalar_one()
+        # Count
+        count_stmt = stmt.with_only_columns(func.count(Manga.manga_id)).order_by(None)
+        total = (await db.session.execute(count_stmt)).scalar_one()
 
-        stmt = stmt.limit(size).offset(offset)
+        # Order
+        stmt = stmt.order_by(get_ordering_clause(order_by, order_dir))
+
+        # Paginate
+        stmt = stmt.offset(offset).limit(size)
+
         result = await db.session.execute(stmt)
         manga_list = result.scalars().all()
 
-        validated = [MangaListItem.model_validate(m) for m in manga_list]
+        validated = [MangaListItem.model_validate(manga) for manga in manga_list]
+
         return success("Filtered manga retrieved successfully", data={
-            "total_results" : total,
+            "total_results": total,
             "items": validated
         })
 
