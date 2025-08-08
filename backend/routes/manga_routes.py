@@ -70,7 +70,8 @@ async def get_manga_by_id(
             author_id=manga.author_id,
             genres=genres,
             tags=tags,
-            demographics=demographics
+            demographics=demographics,
+            cover_image_url = manga.cover_image_url
         )
 
         return success("Manga retrieved successfully", data=manga_response)

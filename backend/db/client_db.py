@@ -153,6 +153,40 @@ class ClientDatabase:
             await self.session.rollback()
             logger.error(f"Error adding manga to collection: {e}", exc_info=True)
             raise e
+        
+    async def remove_manga_from_collection(self, user_id: int, collection_id: int, manga_id: int) -> None:
+        """
+        Remove a manga from a user-owned collection.
+        """
+        try:
+
+            # Confirm ownership
+            result = await self.session.execute(
+                select(Collection).where(Collection.collection_id == collection_id, Collection.user_id == user_id)
+            )
+            collection = result.scalar_one_or_none()
+
+            if not collection:
+                raise ValueError("Collection not found or unauthorized access.")
+
+            # Find the manga
+            stmt = select(MangaCollection).where(
+                MangaCollection.collection_id == collection_id,
+                MangaCollection.manga_id == manga_id
+            )
+            link_result = await self.session.execute(stmt)
+            link = link_result.scalar_one_or_none()
+
+            if not link:
+                raise ValueError("Manga not found in this collection.")
+
+            await self.session.delete(link)
+            await self.session.commit()
+
+        except Exception as e:
+            await self.session.rollback()
+            logger.error(f"Error removing manga {manga_id} from collection {collection_id}: {e}", exc_info=True)
+            raise e
 
     async def get_manga_in_collection(self, user_id: int, collection_id: int) -> List[Manga]:
         """

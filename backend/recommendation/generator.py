@@ -15,7 +15,7 @@ async def generate_recommendations(
     # Get all manga in collection
     manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, session)
     if not manga_ids:
-        return []
+        raise ValueError("Need at least 1 manga in the collection to generate recommendations")
 
     # Create metadata profile
     metadata_profile = await core.get_metadata_profile_for_collection(manga_ids, session)

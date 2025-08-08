@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.future import select
+from backend.cache.redis import redis_cache
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
@@ -107,6 +108,9 @@ async def update_collection(
         await db.session.commit()
         await db.session.refresh(collection)
 
+        # Remove cache since old data will interfere with new actions
+        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}") 
+
         validated = CollectionRead.model_validate(collection)
 
         return success("Collection updated successfully", validated)
@@ -132,9 +136,10 @@ async def delete_collection(
             return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
 
         await db.session.delete(collection)
+        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
         await db.session.commit()
 
-        return success("Collection deleted successfully", data={"collection_id": collection_id})
+        return success("Collection deleted successfully", data={"collection_id": collection_id}) # remove cache for collection getting deleted.
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Failed to delete collection {collection_id}: {e}")
@@ -192,6 +197,9 @@ async def remove_manga_from_collection(
 
         await db.remove_manga_from_collection(user.id, collection_id, data.manga_id)
 
+        # Remove cache since state of collection is now diff.
+        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
+
         logger.info(f"Successfully removed manga {data.manga_id} from collection {collection_id}")
         return success("Manga removed from collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
 
@@ -202,3 +210,40 @@ async def remove_manga_from_collection(
     except Exception as e:
         logger.error(f"Failed to remove manga {data.manga_id} from collection {collection_id}: {e}", exc_info=True)
         return error("Failed to remove manga from collection", detail=str(e))
+
+@router.post("/{collection_id}/manga", response_model=dict)
+async def add_manga_to_collection(
+    collection_id: int,
+    data: MangaInCollectionRequest,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user)
+):
+    """
+    Add a manga to a collection owned by the user.
+
+    Args:
+        collection_id (int): ID of the collection to add to
+        manga_id (int): ID of the manga to add (via request body)
+
+    Returns:
+        dict: Success or error response
+    """
+    try:
+        logger.info(f"User {user.id} attempting to add manga {data.manga_id} to collection {collection_id}")
+
+        # Add manga to collection
+        await db.add_manga_to_collection(user.id, collection_id, data.manga_id)
+
+        # Delete any cache_version since collection is now different.
+        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
+
+        logger.info(f"Successfully added manga {data.manga_id} to collection {collection_id}")
+        return success("Manga added to collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
+
+    except ValueError as ve:
+        logger.warning(f"Unauthorized add attempt or missing collection {collection_id}")
+        return error("Unauthorized or not found", detail=str(ve))
+    
+    except Exception as e:
+        logger.error(f"Failed to add manga {data.manga_id} to collection {collection_id}: {e}", exc_info=True)
+        return error("Failed to add manga to collection", detail=str(e))

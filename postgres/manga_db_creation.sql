@@ -34,7 +34,8 @@ CREATE TABLE manga(
   description TEXT,
   published_date DATE,
   external_average_rating NUMERIC(2,1) CHECK (external_average_rating >= 0 AND external_average_rating <= 5 AND (external_average_rating * 10) % 1 = 0),
-  average_rating NUMERIC(2,1) CHECK (average_rating >= 0 AND average_rating <= 5 AND (average_rating * 10) % 1 = 0)
+  average_rating NUMERIC(2,1) CHECK (average_rating >= 0 AND average_rating <= 5 AND (average_rating * 10) % 1 = 0),
+  cover_image_url TEXT;
 );
 
 CREATE TABLE author(

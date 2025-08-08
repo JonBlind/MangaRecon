@@ -4,6 +4,7 @@ from backend.auth.dependencies import current_active_verified_user as current_us
 from backend.db.models.user import User
 from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
 from backend.dependencies import get_user_read_db
+from backend.cache.redis import redis_cache
 from utils.response import success, error
 from recommendation.generator import generate_recommendations
 import logging
@@ -26,7 +27,12 @@ async def get_recommendations_for_collection(
     """
     logger.info(f"Generating recommendations for collection: {collection_id}")
     try:
-        recommendations = await generate_recommendations(user.id, collection_id, session)
+        cache_key = f"recommendations:{user.id}:{collection_id}"
+        recommendations = await redis_cache.get(cache_key)
+        
+        if recommendations is None:
+            recommendations = await generate_recommendations(user.id, collection_id, session)
+            await redis_cache.set(cache_key, recommendations)
 
         reverse = (order_dir == "desc")
 
@@ -48,6 +54,9 @@ async def get_recommendations_for_collection(
             "size": size,
             "items": paginated
         })
+    except ValueError as ve:
+        logger.warning(f"Recommendation Skipped! (Likely due to no supplied manga): {ve}")
+        return error("Recommendation Skipped!",str(ve))
 
     except Exception as e:
         logger.error(f"Failed to generate recommendations for user {user.id} on collection {collection_id}: {e}", exc_info=True)

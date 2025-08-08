@@ -25,3 +25,5 @@ class Manga(Base):
     genres = relationship("Genre", secondary=manga_genre, back_populates="manga")
     tags = relationship("Tag", secondary=manga_tag, back_populates="manga")
     demographics = relationship("Demographic", secondary=manga_demographic, back_populates="manga")
+
+    cover_image_url = Column(String)

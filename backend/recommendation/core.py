@@ -204,6 +204,7 @@ async def get_scored_recommendations(
             "manga_id": manga.manga_id,
             "title": manga.title,
             "external_average_rating": manga.external_average_rating,
+            "cover_image_url": manga.cover_image_url,
             "score": round(score, 2),
             "details": {
                 "genre_score": genre_score,
