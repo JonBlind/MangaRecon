@@ -1,12 +1,6 @@
 BEFORE DEPLOYMENT:
-- Allow Rating
-- Allow Collection Creation
-- Create Backend Manga handling/Logic
 - Supply/feed database with manga data.
-- Create Recommendation Logic
-
-- ADD AUTHENTHICATION TO INTERACTIONS (e.g. force "current_user" field on some routes)
-
+- Rate limiting
 
 ONCE FUNCTIONAL:
 - Able to change username
