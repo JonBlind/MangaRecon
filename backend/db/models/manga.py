@@ -3,8 +3,8 @@ from sqlalchemy import (Column, Integer, String, Text, Boolean, ForeignKey,
     DateTime, Numeric, UniqueConstraint, Date, func)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from base import Base
-from join_tables import manga_genre, manga_demographic, manga_tag
+from backend.db.models.base import Base
+from backend.db.models.join_tables import manga_genre, manga_demographic, manga_tag
 
 class Manga(Base):
     __tablename__ = "manga"

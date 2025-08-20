@@ -13,7 +13,7 @@ from backend.schemas.collection import (
     MangaInCollectionRequest
 )
 from backend.schemas.manga import MangaListItem
-from utils.response import success, error
+from backend.utils.response import success, error
 import logging
 
 logger = logging.getLogger(__name__)

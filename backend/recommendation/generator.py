@@ -1,10 +1,11 @@
+import uuid
 from backend.recommendation import core
 from typing import List, Dict, Any
 from backend.db.models.manga import Manga
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def generate_recommendations(
-    user_id: int,
+    user_id: uuid.UUID,
     collection_id: int,
     session: AsyncSession
 ) -> List[Dict[str, Any]]:

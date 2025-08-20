@@ -1,63 +1,47 @@
-import collections
 from typing import AsyncGenerator
+import os
+from pydantic import BaseSettings
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from backend.db.client_db import ClientDatabase
-import os
-import dotenv
 
-dotenv.load_dotenv()
+class Settings(BaseSettings):
+    user_write: str | None = os.getenv("UserWriterDB")
+    user_read: str | None = os.getenv("UserReaderDB")
+    manga_write: str | None = os.getenv("MangaWriterDB")
+    manga_read: str | None = os.getenv("MangaReaderDB")
 
-DB_URLS = {
-    "user_write": os.getenv("UserWriterDB"),
-    "user_read": os.getenv("UserReaderDB"),
-    "manga_write": os.getenv("MangaWriterDB"),
-    "manga_read": os.getenv("MangaReaderDB")
-}
- 
-def get_sessionmaker(role: str) -> async_sessionmaker[AsyncSession]:
-    '''
-    Returns a session for the database depending on the inputted role.
+settings = Settings()
 
-    Args:
-        role (str): Role to get the URL and sign in for.
-    Returns:
-        str: databse URL for the respective role.
+# Build engines once
+_engine_user_write = create_async_engine(settings.user_write, pool_pre_ping=True) if settings.user_write else None
+_engine_user_read = create_async_engine(settings.user_read, pool_pre_ping=True) if settings.user_read else None
+_engine_manga_write = create_async_engine(settings.manga_write, pool_pre_ping=True) if settings.manga_write else None
+_engine_manga_read = create_async_engine(settings.manga_read, pool_pre_ping=True) if settings.manga_read else None
 
-    '''
-    if role not in DB_URLS or DB_URLS[role] is None:
-        raise ValueError(f"Following Role Does Not Exist in supported Structure {role}")
-    else:
-        engine = create_async_engine(DB_URLS[role], echo=False)
-        return async_sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
-    
+# Sessionmakers once
+_Session_user_write = async_sessionmaker(_engine_user_write, class_=AsyncSession, expire_on_commit=False) if _engine_user_write else None
+_Session_user_read = async_sessionmaker(_engine_user_read, class_=AsyncSession, expire_on_commit=False) if _engine_user_read else None
+_Session_manga_write = async_sessionmaker(_engine_manga_write, class_=AsyncSession, expire_on_commit=False) if _engine_manga_write else None
+_Session_manga_read = async_sessionmaker(_engine_manga_read, class_=AsyncSession, expire_on_commit=False) if _engine_manga_read else None
 
-async def get_client_db_for_role(role:str) -> AsyncGenerator[ClientDatabase, None]:
-    '''
-    FastAPI dependency that provides a ClientDatabase Instance tied to the
-    async session based on the provided role.
-    '''
-    SessionLocal = get_sessionmaker(role)
-    async with SessionLocal() as session:
+# Dependency providers
+async def get_user_read_db() -> AsyncGenerator[ClientDatabase, None]:
+    async with _Session_user_read() as session:
         yield ClientDatabase(session)
 
-
-async def get_user_read_db() -> collections.abc.AsyncGenerator[ClientDatabase, None]:
-    SessionLocal = get_sessionmaker("user_read")
-    async with SessionLocal() as session:
+async def get_user_write_db() -> AsyncGenerator[ClientDatabase, None]:
+    async with _Session_user_write() as session:
         yield ClientDatabase(session)
 
-
-async def get_user_write_db() -> collections.abc.AsyncGenerator[ClientDatabase, None]:
-    SessionLocal = get_sessionmaker("user_write")
-    async with SessionLocal() as session:
+async def get_manga_read_db() -> AsyncGenerator[ClientDatabase, None]:
+    async with _Session_manga_read() as session:
         yield ClientDatabase(session)
 
-async def get_manga_read_db() -> collections.abc.AsyncGenerator[ClientDatabase, None]:
-    SessionLocal = get_sessionmaker("manga_read")
-    async with SessionLocal() as session:
+async def get_manga_write_db() -> AsyncGenerator[ClientDatabase, None]:
+    async with _Session_manga_write() as session:
         yield ClientDatabase(session)
 
-async def get_manga_write_db() -> collections.abc.AsyncGenerator[ClientDatabase, None]:
-    SessionLocal = get_sessionmaker("manga_write")
-    async with SessionLocal() as session:
-        yield ClientDatabase(session)
+# Raw session (for FastAPI Users)
+async def get_async_user_write_session() -> AsyncGenerator[AsyncSession, None]:
+    async with _Session_user_write() as session:
+        yield session

@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,7 +12,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def get_manga_ids_in_user_collection(user_id: int, collection_id: int, session: AsyncSession) -> List[int]:
+async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: int, session: AsyncSession) -> List[int]:
     """
     Get all manga IDs in a specific collection owned by the user.
     """

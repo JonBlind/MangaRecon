@@ -5,7 +5,7 @@ from backend.db.models.user import User
 from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
 from backend.dependencies import get_user_read_db
 from backend.cache.redis import redis_cache
-from utils.response import success, error
+from backend.utils.response import success, error
 from recommendation.generator import generate_recommendations
 import logging
 

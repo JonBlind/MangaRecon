@@ -180,3 +180,7 @@ api_contract.md
 node_modules/
 __pycache__/
 *.pyc
+
+# Alembic / Migrations
+alembic/__pycache__/
+alembic/versions/__pycache__/

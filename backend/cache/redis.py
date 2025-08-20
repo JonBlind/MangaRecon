@@ -1,6 +1,9 @@
 import redis.asyncio as redis
 import json
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class RedisCache:
     def __init__(self, host=None, port=None, db=None, ttl=600):

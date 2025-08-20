@@ -1,7 +1,7 @@
 from sqlalchemy import (Column, Integer, String, Text, Boolean, ForeignKey,
     DateTime, Numeric, UniqueConstraint, func)
 from sqlalchemy.orm import relationship
-from base import Base
+from backend.db.models.base import Base
 from backend.db.models.join_tables import manga_tag
 
 class Tag(Base):

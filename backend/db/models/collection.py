@@ -3,7 +3,7 @@ from sqlalchemy import (Column, Integer, String, Text, Boolean, ForeignKey,
     DateTime, Numeric, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from base import Base
+from backend.db.models.base import Base
 
 class Collection(Base):
     '''
@@ -13,7 +13,7 @@ class Collection(Base):
     __table_args__ = (UniqueConstraint('user_id', 'collection_name', name='unique_user_collection'),)
 
     collection_id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("profile.user_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     collection_name = Column(String(255), nullable=False)
     description = Column(String(255))
     is_public = Column(Boolean, default=False)

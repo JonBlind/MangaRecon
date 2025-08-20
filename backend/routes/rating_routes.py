@@ -7,7 +7,7 @@ from backend.auth.dependencies import current_active_verified_user as current_us
 from backend.schemas.rating import RatingCreate, RatingRead
 from backend.db.models.rating import Rating
 from backend.db.models.user import User
-from utils.response import success, error
+from backend.utils.response import success, error
 import logging
 
 logger = logging.getLogger(__name__)

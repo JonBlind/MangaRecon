@@ -3,7 +3,7 @@ from sqlalchemy import (Column, Integer, String, Text, Boolean, ForeignKey,
     DateTime, Numeric, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
-from base import Base
+from backend.db.models.base import Base
 
 class Author(Base):
     __tablename__ = "author"

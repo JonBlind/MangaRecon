@@ -3,7 +3,7 @@ from sqlalchemy import (Column, Integer, String, Text, Boolean, ForeignKey,
     DateTime, Numeric, UniqueConstraint, Date, TIMESTAMP, func)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from base import Base
+from backend.db.models.base import Base
 
 class MangaCollection(Base):
     __tablename__ = "manga_collection"

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models.user import User
 from backend.schemas.user import UserCreate
-from backend.database import get_async_session
+from backend.dependencies import get_async_user_write_session
 
 import logging
 from dotenv import load_dotenv
@@ -21,7 +21,7 @@ if not SECRET:
     raise RuntimeError("AUTH_SECRET could not be found in environment variable")
 
 
-async def get_user_db(session: AsyncSession = Depends(get_async_session)) -> AsyncGenerator:
+async def get_user_db(session: AsyncSession = Depends(get_async_user_write_session)) -> AsyncGenerator:
     '''
     Generator that provides access to the DB for fastapi-users.
     '''
@@ -69,5 +69,3 @@ async def get_user_manager(user_db=Depends(get_user_db)):
     Generator that providcdes the UserManager to fastapi-users.
     '''
     yield UserManager(user_db)
-    
-

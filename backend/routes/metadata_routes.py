@@ -6,7 +6,7 @@ from backend.db.models.demographics import Demographic
 from backend.db.client_db import ClientDatabase
 from backend.dependencies import get_manga_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
-from utils.response import success, error
+from backend.utils.response import success, error
 import logging
 
 logger = logging.getLogger(__name__)

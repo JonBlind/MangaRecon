@@ -14,7 +14,7 @@ from backend.db.models.join_tables import (
 from backend.dependencies import get_manga_read_db
 from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
 from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
-from utils.response import success, error
+from backend.utils.response import success, error
 from typing import List, Optional
 from sqlalchemy import func
 import logging
