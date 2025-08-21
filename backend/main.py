@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseSettings
+from pydantic import BaseSettings, Field
 
 from backend.routes import (
     collection_routes,
@@ -12,21 +12,29 @@ from backend.routes import (
 
 from backend.auth import router as auth_routes
 
-app = FastAPI()
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
-    frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "*")
-    debug: bool = (os.getenv("DEBUG","false").lower() == "true")
+    frontend_origins: str = Field(..., env="FRONTEND_ORIGINS")
+    debug: bool = Field(False, env="DEBUG")
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
-origins = [settings.frontend_origin] if settings.frontend_origin != "*" else ["*"]
+origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
 
+app = FastAPI()
 
 # Allow frontend dev to interact with backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +48,6 @@ app.include_router(rating_routes.router)
 app.include_router(recommendation_routes.router)
 
 # health check
-@app.get("/")
-def read_root():
+@app.get("/healthz")
+def health():
     return {"message": "MangaRecon API is running."}

@@ -98,7 +98,6 @@ class ClientDatabase:
         """
         try:
             score_norm = self._normalize_score(score)
-            # Rating primary key is (user_id, manga_id); order must match model definition
             existing = await self.session.get(Rating, (user_id, manga_id))
             if existing:
                 existing.personal_rating = score_norm

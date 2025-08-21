@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
 from sqlalchemy.future import select
 from backend.cache.redis import redis_cache
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
+from backend.db.models.manga import Manga
+from backend.db.models.manga_collection import MangaCollection
 from backend.dependencies import get_user_write_db, get_user_read_db
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.schemas.collection import (
@@ -22,26 +25,37 @@ router = APIRouter(prefix="/collections", tags=["Collections"])
 
 @router.get("/", response_model=dict)
 async def get_users_collection(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     try:
-        logger.info(f"Fetching all collections of {user.id}")
-        result = await db.session.execute(
-            select(Collection).where(Collection.user_id == user.id)
-        )
+        logger.info(f"Fetching collections of {user.id} page={page} size={size}")
+        offset = (page - 1) * size
 
+        base = select(Collection).where(Collection.user_id == user.id)
+
+        count_stmt = base.with_only_columns(func.count(Collection.collection_id)).order_by(None)
+        total = (await db.session.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(Collection.collection_id.desc()).offset(offset).limit(size)
+        result = await db.session.execute(stmt)
         collections = result.scalars().all()
-        validated = [CollectionRead.model_validate(c) for c in collections]
 
-        return success("Collections Successfully Retrieved", data=validated)
-    
+        validated = [CollectionRead.model_validate(c) for c in collections]
+        return success("Collections retrieved", data={
+            "total_results": total,
+            "page": page,
+            "size": size,
+            "items": validated
+        })
     except Exception as e:
-        logger.error(f"Failed to Fetch all collections of {user.id}: {e}")
+        logger.error(f"Failed to fetch collections of {user.id}: {e}", exc_info=True)
         return error("Failed to retrieve collections", detail=str(e))
     
 
-@router.get("/{collection_id}", response_class=dict)
+@router.get("/{collection_id}", response_model=dict)
 async def get_collection_by_id(
     collection_id: int,
     db: ClientDatabase = Depends(get_user_read_db),
@@ -53,10 +67,11 @@ async def get_collection_by_id(
             select(Collection).where(Collection.collection_id == collection_id, Collection.user_id == user.id)
         )
         collection = result.scalar_one_or_none()
-        validated = CollectionRead.model_validate(collection)
 
         if not collection:
             return error("Collection Not Found", detail=f"No Collection found with the ID: {collection_id}")
+        
+        validated = CollectionRead.model_validate(collection)
         
         return success("Collection retrieved successfully", data=validated)
     
@@ -113,7 +128,7 @@ async def update_collection(
 
         validated = CollectionRead.model_validate(collection)
 
-        return success("Collection updated successfully", validated)
+        return success("Collection updated successfully", data=validated)
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Failed to update collection {collection_id}: {e}")
@@ -145,37 +160,57 @@ async def delete_collection(
         logger.error(f"Failed to delete collection {collection_id}: {e}")
         return error("Failed to delete collection", str(e))
     
-@router.get("/{collection_id}/manga", response_model=dict)
+@router.get("/{collection_id}/mangas", response_model=dict)
 async def get_manga_in_collection(
     collection_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
-    '''
-    Retrieve all manga from a collection owned by the current user.
-
-    Args:
-        collection_id (int): ID of the collection
-
-    Returns:
-        dict: Success or error response containing manga list
-    '''
+    """
+    Paginated manga from a user-owned collection.
+    """
     try:
-        logger.info(f"User {user.id} fetching manga from collection {collection_id}")
-        manga_list = await db.get_manga_in_collection(user.id, collection_id)
+        logger.info(f"User {user.id} fetching manga from collection {collection_id} page={page} size={size}")
+        offset = (page - 1) * size
 
-        response = [MangaListItem.model_validate(m) for m in manga_list]
-        return success("Manga retrieved successfully", data=response)
+        # ownership check (fast fail)
+        exists_q = await db.session.execute(
+            select(Collection.collection_id).where(
+                Collection.collection_id == collection_id,
+                Collection.user_id == user.id
+            )
+        )
+        if exists_q.scalar_one_or_none() is None:
+            return error("Unauthorized or not found", detail="Cannot locate collection or improper user permissions.")
 
-    except ValueError as ve:
-        logger.warning(f"Unauthorized access or missing collection {collection_id} by user {user.id}")
-        return error("Unauthorized or not found", detail=str(ve))
+        base = (
+            select(Manga)
+            .join(MangaCollection, MangaCollection.manga_id == Manga.manga_id)
+            .where(MangaCollection.collection_id == collection_id)
+        )
+
+        count_stmt = base.with_only_columns(func.count(Manga.manga_id)).order_by(None)
+        total = (await db.session.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(Manga.manga_id.desc()).offset(offset).limit(size)
+        result = await db.session.execute(stmt)
+        manga_list = result.scalars().all()
+
+        items = [MangaListItem.model_validate(m) for m in manga_list]
+        return success("Manga retrieved successfully", data={
+            "total_results": total,
+            "page": page,
+            "size": size,
+            "items": items
+        })
 
     except Exception as e:
         logger.error(f"Failed to retrieve manga from collection {collection_id}: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))
     
-@router.delete("/{collection_id}/manga", response_model=dict)
+@router.delete("/{collection_id}/mangas", response_model=dict)
 async def remove_manga_from_collection(
     collection_id: int,
     data: MangaInCollectionRequest,
@@ -211,7 +246,7 @@ async def remove_manga_from_collection(
         logger.error(f"Failed to remove manga {data.manga_id} from collection {collection_id}: {e}", exc_info=True)
         return error("Failed to remove manga from collection", detail=str(e))
 
-@router.post("/{collection_id}/manga", response_model=dict)
+@router.post("/{collection_id}/mangas", response_model=dict)
 async def add_manga_to_collection(
     collection_id: int,
     data: MangaInCollectionRequest,

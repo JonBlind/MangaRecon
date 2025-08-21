@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.db.models.user import User
-from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
+from backend.db.models.collection import Collection
+from backend.utils.ordering import MangaOrderField, MangaOrderDirection
 from backend.dependencies import get_user_read_db
 from backend.cache.redis import redis_cache
 from backend.utils.response import success, error
@@ -19,7 +21,7 @@ async def get_recommendations_for_collection(
     order_dir: MangaOrderDirection = Query("desc"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    session: AsyncSession = Depends(get_user_read_db),
+    db = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     """
@@ -27,11 +29,19 @@ async def get_recommendations_for_collection(
     """
     logger.info(f"Generating recommendations for collection: {collection_id}")
     try:
+
+        exists = await db.session.execute(
+            select(Collection.collection_id).where(Collection.collection_id == collection_id,
+                                                Collection.user_id == user.id)
+        )
+        if exists.scalar_one_or_none() is None:
+            return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
+        
         cache_key = f"recommendations:{user.id}:{collection_id}"
         recommendations = await redis_cache.get(cache_key)
         
         if recommendations is None:
-            recommendations = await generate_recommendations(user.id, collection_id, session)
+            recommendations = await generate_recommendations(user.id, collection_id, db.session)
             await redis_cache.set(cache_key, recommendations)
 
         reverse = (order_dir == "desc")

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from sqlalchemy.future import select
+from sqlalchemy import func
 from backend.db.client_db import ClientDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
@@ -12,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ratings", tags=['Rating'])
+router = APIRouter(prefix="/ratings", tags=['Ratings'])
 
 @router.post("/", response_model=dict)
 async def rate_manga(
@@ -54,16 +55,17 @@ async def update_rating(
         existing = await db.get_user_rating_for_manga(user.id, rating_data.manga_id)
 
         if not existing:
-            logger.warning(f"User {user.id} tried to updaste rating for manga {rating_data.manga_id} but no rating exists")
+            logger.warning(f"User {user.id} tried to update rating for manga {rating_data.manga_id} but no rating exists")
             return error("Rating not found", detail="You must create a rating before updating it")
         
         result = await db.rate_manga(
             user_id=user.id,
             manga_id=rating_data.manga_id,
-            score=float(rating_data.personal_rating)
+            personal_rating=float(rating_data.personal_rating)
         )
 
-        return result
+        validated = RatingRead.model_validate(result)
+        return success("Rating updated successfully", data=validated)
     
     except Exception as e:
         await db.session.rollback()
@@ -92,15 +94,18 @@ async def delete_rating(
     
     except Exception as e:
         await db.session.rollback()
-        logger.error(f"Error deleting rating for manga {manga_id}")
+        logger.error(f"Error deleting rating for manga {manga_id}: {e}")
+        return error("Internal server error", detail=str(e))
 
 
     
 @router.get("/", response_model=dict)
 async def get_user_ratings(
-        manga_id: Optional[int] = Query(None),
-        db: ClientDatabase = Depends(get_user_read_db),
-        user: User = Depends(current_user)
+    manga_id: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: ClientDatabase = Depends(get_user_read_db),
+    user: User = Depends(current_user)
 ):
     '''
     Get a user's manga rating(s). If a specific manga_id is provided, then only the rating for that ID returns. Otherwise, all of the user's ratings are returned.
@@ -112,29 +117,37 @@ async def get_user_ratings(
         dict: Standardized success or error response.
     '''
     try:
-        if manga_id:
+        if manga_id is not None:
             logger.info(f"Fetching rating for manga {manga_id} by user {user.id}")
             result = await db.session.execute(
                 select(Rating).where(Rating.user_id == user.id, Rating.manga_id == manga_id)
             )
             rating = result.scalar_one_or_none()
-
             if not rating:
                 return error("Rating not found", detail="User has not rated this manga.")
-
             validated = RatingRead.model_validate(rating)
             return success("Rating retrieved successfully", data=validated)
-        
-        else:
-            logger.info(f"Fetching ALL ratings by user {user.id}")
-            ratings = await db.get_all_user_ratings(user.id)
-    
-            if not ratings:
-                return success("No ratings found", data=[])
-            
-            validated = [RatingRead.model_validate(r) for r in ratings]
-            return success("Ratings retrieved successfully", data=validated)
-        
+
+        # list mode
+        logger.info(f"Fetching paginated ratings for user {user.id} page={page} size={size}")
+        offset = (page - 1) * size
+
+        base = select(Rating).where(Rating.user_id == user.id)
+        count_stmt = base.with_only_columns(func.count()).order_by(None)
+        total = (await db.session.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(Rating.manga_id.asc()).offset(offset).limit(size)
+        result = await db.session.execute(stmt)
+        rows = result.scalars().all()
+
+        items = [RatingRead.model_validate(r) for r in rows]
+        return success("Ratings retrieved successfully", data={
+            "total_results": total,
+            "page": page,
+            "size": size,
+            "items": items
+        })
+
     except Exception as e:
-        logger.error(f"Unexpected error fetching rating for manga {manga_id} by user {user.id}: {e}", exc_info=True)
+        logger.error(f"Unexpected error fetching ratings for user {user.id}: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))

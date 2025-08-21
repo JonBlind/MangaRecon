@@ -21,7 +21,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/manga", tags=["Manga"])
+router = APIRouter(prefix="/mangas", tags=["Mangas"])
 
 @router.get("/{manga_id}", response_model=dict)
 async def get_manga_by_id(
@@ -43,12 +43,12 @@ async def get_manga_by_id(
         manga = result.scalar_one_or_none()
 
         if not manga:
-            return error("Manga not found", detail=f"No manga fround with id {manga_id}")
+            return error("Manga not found", detail=f"No manga found with id {manga_id}")
         
-        genere_result = await db.session.execute(
+        genre_result = await db.session.execute(
             select(Genre).join(manga_genre).where(manga_genre.c.manga_id == manga_id)
         )
-        genres = [GenreRead.model_validate(g) for g in genere_result.scalars().all()]
+        genres = [GenreRead.model_validate(g) for g in genre_result.scalars().all()]
 
         tag_result = await db.session.execute(
             select(Tag).join(manga_tag).where(manga_tag.c.manga_id == manga_id)
@@ -148,6 +148,8 @@ async def filter_manga(
 
         return success("Filtered manga retrieved successfully", data={
             "total_results": total,
+            "page": page,
+            "size": size,
             "items": validated
         })
 
