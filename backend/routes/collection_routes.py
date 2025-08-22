@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.future import select
-from backend.cache.redis import redis_cache
+from backend.cache.invalidation import invalidate_collection_recommendations
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
@@ -124,7 +124,7 @@ async def update_collection(
         await db.session.refresh(collection)
 
         # Remove cache since old data will interfere with new actions
-        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}") 
+        await invalidate_collection_recommendations(user.id, collection_id)
 
         validated = CollectionRead.model_validate(collection)
 
@@ -151,8 +151,8 @@ async def delete_collection(
             return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
 
         await db.session.delete(collection)
-        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
         await db.session.commit()
+        await invalidate_collection_recommendations(user.id, collection_id)
 
         return success("Collection deleted successfully", data={"collection_id": collection_id}) # remove cache for collection getting deleted.
     except Exception as e:
@@ -233,7 +233,7 @@ async def remove_manga_from_collection(
         await db.remove_manga_from_collection(user.id, collection_id, data.manga_id)
 
         # Remove cache since state of collection is now diff.
-        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
+        await invalidate_collection_recommendations(user.id, collection_id)
 
         logger.info(f"Successfully removed manga {data.manga_id} from collection {collection_id}")
         return success("Manga removed from collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
@@ -270,7 +270,7 @@ async def add_manga_to_collection(
         await db.add_manga_to_collection(user.id, collection_id, data.manga_id)
 
         # Delete any cache_version since collection is now different.
-        await redis_cache.delete(f"recommendations:{user.id}:{collection_id}")
+        await invalidate_collection_recommendations(user.id, collection_id)
 
         logger.info(f"Successfully added manga {data.manga_id} to collection {collection_id}")
         return success("Manga added to collection", data={"collection_id": collection_id, "manga_id": data.manga_id})

@@ -2,8 +2,10 @@ import redis.asyncio as redis
 import json
 import os
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class RedisCache:
     def __init__(self, host=None, port=None, db=None, ttl=600):
@@ -22,20 +24,28 @@ class RedisCache:
         try:
             await self.client.setex(key, ttl or self.ttl, json.dumps(value))
         except Exception as e:
-            print(f"Redis SET error for {key}: {e}")
+            logger.warning(f"Redis SET error for {key}: {e}")
 
     async def get(self, key: str):
         try:
             result = await self.client.get(key)
             return json.loads(result) if result else None
         except Exception as e:
-            print(f"Redis GET error for {key}: {e}")
+            logger.warning(f"Redis GET error for {key}: {e}")
             return None
 
     async def delete(self, key: str):
         try:
             await self.client.delete(key)
         except Exception as e:
-            print(f"Redis DELETE error for {key}: {e}")
+            logger.warning(f"Redis DELETE error for {key}: {e}")
+
+    async def delete_multiple(self, *keys: str):
+        if not keys:
+            return
+        try:
+            await self.client.delete(*keys)
+        except Exception as e:
+            logger.warning(f"Redis DELETE_MULTIPLE error for {keys[:3]}... : {e}")
 
 redis_cache = RedisCache()

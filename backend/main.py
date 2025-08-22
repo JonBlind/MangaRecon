@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseSettings, Field
+from backend.utils.errors import register_exception_handlers
 
 from backend.routes import (
     collection_routes,
@@ -51,3 +52,5 @@ app.include_router(recommendation_routes.router)
 @app.get("/healthz")
 def health():
     return {"message": "MangaRecon API is running."}
+
+register_exception_handlers(app)

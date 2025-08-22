@@ -9,6 +9,7 @@ from backend.schemas.rating import RatingCreate, RatingRead
 from backend.db.models.rating import Rating
 from backend.db.models.user import User
 from backend.utils.response import success, error
+from backend.cache.invalidation import invalidate_user_recommendations
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ async def rate_manga(
         result = await db.rate_manga(user_id=user.id, manga_id=rating_data.manga_id, personal_rating=float(rating_data.personal_rating))
         validated = RatingRead.model_validate(result)
 
+        await invalidate_user_recommendations(db, user.id)
         return success("Rating successfully submitted", data=validated) 
     except Exception as e:
         await db.session.rollback()
@@ -65,6 +67,8 @@ async def update_rating(
         )
 
         validated = RatingRead.model_validate(result)
+        await invalidate_user_recommendations(db, user.id)
+
         return success("Rating updated successfully", data=validated)
     
     except Exception as e:
@@ -90,6 +94,8 @@ async def delete_rating(
         await db.session.commit()
 
         logger.info(f"Successfully deleted rating for manga {manga_id} by user {user.id}")
+        await invalidate_user_recommendations(db, user.id)
+        
         return success("Rating deleted successfully.", data={"manga_id": manga_id})
     
     except Exception as e:
