@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.future import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
@@ -29,7 +29,7 @@ async def get_my_profile(
 
         if not me:
             logger.warning(f"No user row found for {user.id}")
-            return error("Profile not found", detail="No profile exists for this user.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
         validated = UserRead.model_validate(me)
         return success("Profile retrieved successfully", data=validated)

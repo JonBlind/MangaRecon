@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
 from backend.cache.invalidation import invalidate_collection_recommendations
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
@@ -64,17 +65,16 @@ async def get_collection_by_id(
     try:
         logger.info(f"Fetching Collection_id: {collection_id} for user: {user.id}")
         result = await db.session.execute(
-            select(Collection).where(Collection.collection_id == collection_id, Collection.user_id == user.id)
-        )
+            select(Collection).where(Collection.collection_id == collection_id, 
+                                     Collection.user_id == user.id))
         collection = result.scalar_one_or_none()
 
         if not collection:
-            return error("Collection Not Found", detail=f"No Collection found with the ID: {collection_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
         
         validated = CollectionRead.model_validate(collection)
         
         return success("Collection retrieved successfully", data=validated)
-    
     except Exception as e:
         logger.error(f"Failed to fetch collection {collection_id} for user {user.id}: {e}")
         return error("Failed to retrieve collection", detail=str(e))
@@ -86,6 +86,13 @@ async def create_collection(
     user: User = Depends(current_user)
 ):
     try:
+        exists = await db.session.execute(
+            select(Collection.collection_id).where(Collection.user_id == user.id, 
+                                                   Collection.collection_name == collection_data.collection_name))
+        
+        if exists.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
+        
         logger.info(f"Creating New Collection for user: {user.id} with title: {collection_data.collection_name}")
         new_collection = Collection(user_id=user.id, collection_name = collection_data.collection_name, description=collection_data.description)
         db.session.add(new_collection)
@@ -96,12 +103,16 @@ async def create_collection(
 
         return success("Collection Created Successfully", data=validated)
     
+    except IntegrityError:
+        await db.session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
+    
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Failed to create collection: {e}")
         return error("Failed To Create Collection", detail=str(e))
     
-@router.put("/{collection_id}", response_class=dict)
+@router.put("/{collection_id}", response_model=dict)
 async def update_collection(
     collection_id: int,
     collection_update: CollectionUpdate,
@@ -110,14 +121,27 @@ async def update_collection(
 ):
     try:
         result = await db.session.execute(
-            select(Collection).where(Collection.collection_id == collection_id, Collection.user_id == user.id))
+            select(Collection).where(Collection.collection_id == collection_id, 
+                                     Collection.user_id == user.id))
         
         collection = result.scalar_one_or_none()
 
         if not collection:
-            return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+        
+        update_fields = collection_update.model_dump(exclude_unset=True)
 
-        for field, value in collection_update.model_dump(exclude_unset=True).items():
+        if "collection_name" in update_fields:
+            exists = await db.session.execute(
+                select(Collection.collection_id).where(
+                    Collection.user_id == user.id,
+                    Collection.collection_name == update_fields["collection_name"],
+                    Collection.collection_id != collection_id))
+            
+            if exists.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
+
+        for field, value in update_fields.items():
             setattr(collection, field, value)
 
         await db.session.commit()
@@ -129,10 +153,15 @@ async def update_collection(
         validated = CollectionRead.model_validate(collection)
 
         return success("Collection updated successfully", data=validated)
+    
+    except IntegrityError:
+        await db.session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
+    
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Failed to update collection {collection_id}: {e}")
-        return error("Failed to update collection", str(e))
+        return error("Failed to update collection", detail=str(e))
     
 # I ideally would want to give this to a role that isn't write. But that might be pushed off to the future since It's too much multitasking currently for a solo work.
 @router.delete("/{collection_id}", response_model=dict)
@@ -148,17 +177,17 @@ async def delete_collection(
         collection = result.scalar_one_or_none()
 
         if not collection:
-            return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
         await db.session.delete(collection)
         await db.session.commit()
         await invalidate_collection_recommendations(user.id, collection_id)
 
-        return success("Collection deleted successfully", data={"collection_id": collection_id}) # remove cache for collection getting deleted.
+        return success("Collection deleted successfully", data={"collection_id": collection_id})
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Failed to delete collection {collection_id}: {e}")
-        return error("Failed to delete collection", str(e))
+        return error("Failed to delete collection", detail=str(e))
     
 @router.get("/{collection_id}/mangas", response_model=dict)
 async def get_manga_in_collection(
@@ -183,7 +212,7 @@ async def get_manga_in_collection(
             )
         )
         if exists_q.scalar_one_or_none() is None:
-            return error("Unauthorized or not found", detail="Cannot locate collection or improper user permissions.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
         base = (
             select(Manga)
@@ -239,8 +268,8 @@ async def remove_manga_from_collection(
         return success("Manga removed from collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
 
     except ValueError as ve:
-        logger.warning(f"Unauthorized deletion attempt or missing link for collection {collection_id}")
-        return error("Unauthorized or not found", detail=str(ve))
+        logger.warning(f"Remove failed for collection {collection_id}: {ve}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
 
     except Exception as e:
         logger.error(f"Failed to remove manga {data.manga_id} from collection {collection_id}: {e}", exc_info=True)
@@ -276,8 +305,8 @@ async def add_manga_to_collection(
         return success("Manga added to collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
 
     except ValueError as ve:
-        logger.warning(f"Unauthorized add attempt or missing collection {collection_id}")
-        return error("Unauthorized or not found", detail=str(ve))
+        logger.warning(f"Add failed for collection {collection_id}: {ve}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     
     except Exception as e:
         logger.error(f"Failed to add manga {data.manga_id} to collection {collection_id}: {e}", exc_info=True)

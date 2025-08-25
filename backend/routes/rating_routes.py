@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from typing import Optional
 from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from backend.db.client_db import ClientDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db
@@ -34,7 +35,12 @@ async def rate_manga(
         validated = RatingRead.model_validate(result)
 
         await invalidate_user_recommendations(db, user.id)
-        return success("Rating successfully submitted", data=validated) 
+        return success("Rating successfully submitted", data=validated)
+    
+    except IntegrityError:
+        await db.session.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
+
     except Exception as e:
         await db.session.rollback()
         logger.error(f"Unexpected error during manga rating: {e}", exc_info=True)
@@ -58,7 +64,7 @@ async def update_rating(
 
         if not existing:
             logger.warning(f"User {user.id} tried to update rating for manga {rating_data.manga_id} but no rating exists")
-            return error("Rating not found", detail="You must create a rating before updating it")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rating not found")
         
         result = await db.rate_manga(
             user_id=user.id,
@@ -70,6 +76,10 @@ async def update_rating(
         await invalidate_user_recommendations(db, user.id)
 
         return success("Rating updated successfully", data=validated)
+    
+    except IntegrityError:
+        await db.session.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
     
     except Exception as e:
         await db.session.rollback()
@@ -88,7 +98,7 @@ async def delete_rating(
         existing = await db.get_user_rating_for_manga(user.id, manga_id)
         if not existing:
             logger.warning(f"User {user.id} attempted to delete rating for manga {manga_id}, but no rating exists.")
-            return error("Rating not found", detail="You have not rated this manga")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rating not found")
         
         await db.session.delete(existing)
         await db.session.commit()
@@ -129,8 +139,10 @@ async def get_user_ratings(
                 select(Rating).where(Rating.user_id == user.id, Rating.manga_id == manga_id)
             )
             rating = result.scalar_one_or_none()
+
             if not rating:
-                return error("Rating not found", detail="User has not rated this manga.")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rating not found")
+            
             validated = RatingRead.model_validate(rating)
             return success("Rating retrieved successfully", data=validated)
 

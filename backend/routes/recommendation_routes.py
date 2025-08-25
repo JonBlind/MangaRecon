@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.dependencies import current_active_verified_user as current_user
@@ -35,7 +35,7 @@ async def get_recommendations_for_collection(
                                                 Collection.user_id == user.id)
         )
         if exists.scalar_one_or_none() is None:
-            return error("Collection not found", detail="Cannot locate collection or improper user permissions.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
         
         cache_key = f"recommendations:{user.id}:{collection_id}"
         recommendations = await redis_cache.get(cache_key)

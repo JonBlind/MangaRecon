@@ -12,7 +12,7 @@ def register_exception_handlers(app):
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
         logger.warning(f"validation error: {exc}")
-        return JSONResponse(status_code=422, content=error("Validation error", detail=str(exc)))
+        return JSONResponse(status_code=422, content=error("Validation error", detail=exc.errors()))
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(_req: Request, exc: StarletteHTTPException):

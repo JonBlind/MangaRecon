@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.future import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.manga import Manga
@@ -43,7 +43,7 @@ async def get_manga_by_id(
         manga = result.scalar_one_or_none()
 
         if not manga:
-            return error("Manga not found", detail=f"No manga found with id {manga_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
         
         genre_result = await db.session.execute(
             select(Genre).join(manga_genre).where(manga_genre.c.manga_id == manga_id)
@@ -132,7 +132,7 @@ async def filter_manga(
             ))
 
         # Count
-        count_stmt = stmt.with_only_columns(func.count(Manga.manga_id)).order_by(None)
+        count_stmt = stmt.with_only_columns(func.count(func.distinct(Manga.manga_id))).order_by(None)
         total = (await db.session.execute(count_stmt)).scalar_one()
 
         # Order

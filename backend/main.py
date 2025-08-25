@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
 
-app = FastAPI()
+app = FastAPI(debug=settings.debug)
+register_exception_handlers(app)
 
 # Allow frontend dev to interact with backend
 app.add_middleware(
@@ -52,5 +53,3 @@ app.include_router(recommendation_routes.router)
 @app.get("/healthz")
 def health():
     return {"message": "MangaRecon API is running."}
-
-register_exception_handlers(app)
