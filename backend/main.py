@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseSettings, Field
 from backend.utils.errors import register_exception_handlers
+from backend.utils.rate_limit import register_rate_limiter
 
 from backend.routes import (
     collection_routes,
@@ -32,6 +33,7 @@ origins = [origin.strip() for origin in settings.frontend_origins.split(",") if 
 
 app = FastAPI(debug=settings.debug)
 register_exception_handlers(app)
+register_rate_limiter(app)
 
 # Allow frontend dev to interact with backend
 app.add_middleware(
