@@ -36,3 +36,12 @@ class UserUpdate(BaseModel):
     class Config:
         orm_mode = True
 
+# Request
+# This is done when a user KNOWS their password, but still wants to change.
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+    class Config:
+        orm_mode = True
+

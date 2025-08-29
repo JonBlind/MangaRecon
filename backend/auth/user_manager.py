@@ -34,6 +34,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     user_db_model = User
     reset_password_token_secret = SECRET
     verification_token_secret = SECRET
+    reset_password_token_lifetime_seconds = 7200      # 2 hours
+    verification_token_lifetime_seconds = 259200   # 3 days
 
     # What to do after a user registers
     async def on_after_register(self, user, request = None):

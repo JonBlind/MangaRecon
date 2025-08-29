@@ -4,7 +4,8 @@ from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
-from backend.schemas.user import UserRead, UserUpdate
+from backend.schemas.user import UserRead, UserUpdate, ChangePassword
+from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
 import logging
@@ -84,3 +85,41 @@ async def update_my_profile(
         await db.session.rollback()
         logger.error(f"Failed to update profile for user {user.id}: {e}", exc_info=True)
         return error("Failed to update profile", detail=str(e))
+    
+@router.post("/me/change-password", response_model=dict)
+@limiter.limit("10/minute")
+async def change_my_password(
+    payload: ChangePassword,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """
+    Change the authenticated user's password by verifying the current password.
+    Done only if user knows their password, but still desires a change.
+    """
+    try:
+        logger.info(f"User {user.id} attempting password change")
+
+        # Verify current password
+        if not user_manager.password_helper.verify(payload.current_password, user.hashed_password):
+            logger.warning(f"User {user.id} provided incorrect current password")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+
+        # validate password
+        await user_manager.validate_password(payload.new_password, user)
+
+        # Update hash and persist
+        user.hashed_password = user_manager.password_helper.hash(payload.new_password)
+        await db.session.commit()
+        await db.session.refresh(user)
+
+        validated = UserRead.model_validate(user)
+        return success("Password changed successfully", data=validated)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.session.rollback()
+        logger.error(f"Failed to change password for user {user.id}: {e}", exc_info=True)
+        return error("Failed to change password", detail=str(e))
