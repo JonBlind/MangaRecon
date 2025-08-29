@@ -6,6 +6,7 @@ from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.schemas.user import UserRead, UserUpdate
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 
 @router.get("/me", response_model=dict)
+@limiter.limit("120/minute")
 async def get_my_profile(
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
@@ -38,7 +40,8 @@ async def get_my_profile(
         logger.error(f"Failed to retrieve profile for user {user.id}: {e}", exc_info=True)
         return error("Failed to retrieve profile", detail=str(e))
     
-@router.put("/me", response_model=dict)
+@router.patch("/me", response_model=dict)
+@limiter.limit("10/minute")
 async def update_my_profile(
     payload: UserUpdate,
     db: ClientDatabase = Depends(get_user_write_db),

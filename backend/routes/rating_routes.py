@@ -10,6 +10,7 @@ from backend.schemas.rating import RatingCreate, RatingRead
 from backend.db.models.rating import Rating
 from backend.db.models.user import User
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 from backend.cache.invalidation import invalidate_user_recommendations
 import logging
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ratings", tags=['Ratings'])
 
 @router.post("/", response_model=dict)
+@limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def rate_manga(
         rating_data: RatingCreate,
         db: ClientDatabase = Depends(get_user_write_db),
@@ -47,6 +49,7 @@ async def rate_manga(
         return error("Internal server error", detail=str(e))
     
 @router.put("/", response_model=dict)
+@limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def update_rating(
         rating_data: RatingCreate,
         db: ClientDatabase = Depends(get_user_write_db),
@@ -87,6 +90,7 @@ async def update_rating(
         return error("Internal server error", detail=str(e))
     
 @router.delete("/{manga_id}", response_model=dict)
+@limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def delete_rating(
     manga_id: int,
     db: ClientDatabase = Depends(get_user_write_db),
@@ -116,6 +120,7 @@ async def delete_rating(
 
     
 @router.get("/", response_model=dict)
+@limiter.limit("120/minute")
 async def get_user_ratings(
     manga_id: Optional[int] = Query(None),
     page: int = Query(1, ge=1),

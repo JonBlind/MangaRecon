@@ -15,6 +15,7 @@ from backend.dependencies import get_manga_read_db
 from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
 from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 from typing import List, Optional
 from sqlalchemy import func
 import logging
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mangas", tags=["Mangas"])
 
 @router.get("/{manga_id}", response_model=dict)
+@limiter.shared_limit("240/minute", scope="manga-detail-ip-min")
+@limiter.shared_limit("10000/day", scope="manga-detail-ip-day") 
 async def get_manga_by_id(
     manga_id: int,
     db: ClientDatabase = Depends(get_manga_read_db)
@@ -80,6 +83,9 @@ async def get_manga_by_id(
         return error("Failed to retrieve manga", detail=str(e))
     
 @router.get("/", response_model=dict)
+@limiter.shared_limit("120/minute", scope="search-ip-min")
+@limiter.shared_limit("3000/hour",   scope="search-ip-hour")
+@limiter.shared_limit("20000/day",   scope="search-ip-day")  
 async def filter_manga(
     genre_ids: Optional[List[int]] = Query(default=None),
     exclude_genres: Optional[List[int]] = Query(default=None),

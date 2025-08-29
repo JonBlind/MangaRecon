@@ -8,6 +8,7 @@ from backend.utils.ordering import MangaOrderField, MangaOrderDirection
 from backend.dependencies import get_user_read_db
 from backend.cache.redis import redis_cache
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 from recommendation.generator import generate_recommendations
 import logging
 
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 @router.get("/{collection_id}", response_model=dict)
+@limiter.shared_limit("30/minute", scope="recs-ip-min")
+@limiter.shared_limit("500/day",   scope="recs-ip-day")
 async def get_recommendations_for_collection(
     collection_id: int,
     order_by: MangaOrderField = Query("score"),

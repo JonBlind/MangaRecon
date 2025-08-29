@@ -18,6 +18,7 @@ from backend.schemas.collection import (
 )
 from backend.schemas.manga import MangaListItem
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/collections", tags=["Collections"])
 
 @router.get("/", response_model=dict)
+@limiter.limit("120/minute")    
 async def get_users_collection(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -57,6 +59,7 @@ async def get_users_collection(
     
 
 @router.get("/{collection_id}", response_model=dict)
+@limiter.limit("120/minute")  
 async def get_collection_by_id(
     collection_id: int,
     db: ClientDatabase = Depends(get_user_read_db),
@@ -80,6 +83,7 @@ async def get_collection_by_id(
         return error("Failed to retrieve collection", detail=str(e))
     
 @router.post("/", response_model=dict)
+@limiter.limit("60/minute")   
 async def create_collection(
     collection_data: CollectionCreate,
     db: ClientDatabase = Depends(get_user_write_db),
@@ -113,6 +117,7 @@ async def create_collection(
         return error("Failed To Create Collection", detail=str(e))
     
 @router.put("/{collection_id}", response_model=dict)
+@limiter.limit("60/minute")
 async def update_collection(
     collection_id: int,
     collection_update: CollectionUpdate,
@@ -165,6 +170,7 @@ async def update_collection(
     
 # I ideally would want to give this to a role that isn't write. But that might be pushed off to the future since It's too much multitasking currently for a solo work.
 @router.delete("/{collection_id}", response_model=dict)
+@limiter.limit("60/minute")
 async def delete_collection(
     collection_id: int,
     db: ClientDatabase = Depends(get_user_write_db),
@@ -190,6 +196,8 @@ async def delete_collection(
         return error("Failed to delete collection", detail=str(e))
     
 @router.get("/{collection_id}/mangas", response_model=dict)
+@limiter.shared_limit("120/minute", scope="collections-read-ip-min")
+@limiter.shared_limit("3000/hour", scope="collections-read-ip-hour")
 async def get_manga_in_collection(
     collection_id: int,
     page: int = Query(1, ge=1),
@@ -240,6 +248,7 @@ async def get_manga_in_collection(
         return error("Internal server error", detail=str(e))
     
 @router.delete("/{collection_id}/mangas", response_model=dict)
+@limiter.limit("60/minute") 
 async def remove_manga_from_collection(
     collection_id: int,
     data: MangaInCollectionRequest,
@@ -276,6 +285,7 @@ async def remove_manga_from_collection(
         return error("Failed to remove manga from collection", detail=str(e))
 
 @router.post("/{collection_id}/mangas", response_model=dict)
+@limiter.limit("60/minute")      
 async def add_manga_to_collection(
     collection_id: int,
     data: MangaInCollectionRequest,

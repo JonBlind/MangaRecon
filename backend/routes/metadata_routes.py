@@ -8,13 +8,21 @@ from backend.db.client_db import ClientDatabase
 from backend.dependencies import get_manga_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
 from backend.utils.response import success, error
+from backend.utils.rate_limit import limiter
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Metadatas"])
 
+S_META_MIN   = "metadata-ip-min"
+S_META_HOUR  = "metadata-ip-hour"
+S_META_DAY   = "metadata-ip-day"
+
 @router.get("/genres", response_model=dict)
+@limiter.shared_limit("240/minute", scope=S_META_MIN)
+@limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
+@limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_genres(
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
@@ -44,6 +52,9 @@ async def get_all_genres(
         return error(message="Failed to retrieve genres", detail=str(e))
     
 @router.get("/tags", response_model=dict)
+@limiter.shared_limit("240/minute", scope=S_META_MIN)
+@limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
+@limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_tags(
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
@@ -73,6 +84,9 @@ async def get_all_tags(
         return error(message="Failed to retrieve tags", detail=str(e))
 
 @router.get("/demographics", response_model=dict)
+@limiter.shared_limit("240/minute", scope=S_META_MIN)
+@limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
+@limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_demographics(
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
