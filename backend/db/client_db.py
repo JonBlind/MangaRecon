@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.db.models.user import User

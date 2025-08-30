@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.future import select
+from sqlalchemy import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db

@@ -1,4 +1,4 @@
-from sqlalchemy.future import select
+from sqlalchemy import select
 from backend.db.models.collection import Collection
 from backend.cache.redis import redis_cache
 
@@ -8,7 +8,7 @@ async def invalidate_user_recommendations(db, user_id: int):
     )
     keys = [f"recommendations:{user_id}:{cid}" for (cid,) in res.all()]
     if keys:
-        await redis_cache.delete_many(*keys)
+        await redis_cache.delete_multiple(*keys)
 
 async def invalidate_collection_recommendations(user_id: int, collection_id: int):
     await redis_cache.delete(f"recommendations:{user_id}:{collection_id}")

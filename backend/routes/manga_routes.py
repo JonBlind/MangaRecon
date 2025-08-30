@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from sqlalchemy.future import select
+from sqlalchemy import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.manga import Manga
 from backend.db.models.genre import Genre
@@ -12,7 +12,7 @@ from backend.db.models.join_tables import (
     manga_demographic
 )
 from backend.dependencies import get_manga_read_db
-from backend.utils.ordering import MangaOrderField, MangaOrderDirection, get_ordering_clause
+from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
@@ -99,7 +99,7 @@ async def filter_manga(
     size: int = Query(50, ge=1, le=100),
 
     order_by: MangaOrderField = Query("title"),
-    order_dir: MangaOrderDirection = Query("asc"),
+    order_dir: OrderDirection = Query("asc"),
 
     db: ClientDatabase = Depends(get_manga_read_db)
 ):

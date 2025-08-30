@@ -1,24 +1,22 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from pydantic import BaseSettings, Field
 from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter
+from backend.cache.redis import redis_cache
 
 from backend.routes import (
     collection_routes,
     manga_routes,
     rating_routes,
     recommendation_routes,
+    profile_routes,
+    metadata_routes
 )
 
 from backend.auth import router as auth_routes
-
-from dotenv import load_dotenv
-
-
-load_dotenv()
-
 
 class Settings(BaseSettings):
     frontend_origins: str = Field(..., env="FRONTEND_ORIGINS")
@@ -31,7 +29,15 @@ class Settings(BaseSettings):
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
 
-app = FastAPI(debug=settings.debug)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        # shutdown
+        await redis_cache.close_cache()
+
+app = FastAPI(lifespan=lifespan, debug=settings.debug)
 register_exception_handlers(app)
 register_rate_limiter(app)
 
@@ -50,6 +56,8 @@ app.include_router(collection_routes.router)
 app.include_router(manga_routes.router)
 app.include_router(rating_routes.router)
 app.include_router(recommendation_routes.router)
+app.include_router(profile_routes.router)
+app.include_router(metadata_routes.router)
 
 # health check
 @app.get("/healthz")

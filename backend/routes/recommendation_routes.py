@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from sqlalchemy.future import select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
-from backend.utils.ordering import MangaOrderField, MangaOrderDirection
+from backend.utils.ordering import OrderDirection , RecommendationOrderField
 from backend.dependencies import get_user_read_db
 from backend.cache.redis import redis_cache
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
-from recommendation.generator import generate_recommendations
+from backend.recommendation.generator import generate_recommendations
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 @limiter.shared_limit("500/day",   scope="recs-ip-day")
 async def get_recommendations_for_collection(
     collection_id: int,
-    order_by: MangaOrderField = Query("score"),
-    order_dir: MangaOrderDirection = Query("desc"),
+    order_by: RecommendationOrderField = Query("score"),
+    order_dir: OrderDirection = Query("desc"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db = Depends(get_user_read_db),
@@ -49,14 +49,18 @@ async def get_recommendations_for_collection(
 
         reverse = (order_dir == "desc")
 
-        recommendations.sort(
-            key=lambda x: (
-                x["score"] if order_by == "score"
-                else x.get(order_by) or "" if order_by == "title"
-                else x.get(order_by) or -float("inf")
-            ),
-            reverse=reverse
-        )
+        # If we get a score that is 0.0, it might be read as False, so the following handles it
+        def key_func(item):
+            if order_by == "score":
+                return item.get("score", float("-inf"))
+            if order_by == "title":
+
+                return (item.get("title") or "").casefold()
+            val = item.get(order_by)
+            # treat only None as missing (not 0.0)
+            return val if val is not None else float("-inf")
+
+        recommendations.sort(key=lambda x: (key_func(x), (x.get("title") or "").casefold()), reverse=reverse)
 
         offset = (page - 1) * size
         paginated = recommendations[offset : offset + size]

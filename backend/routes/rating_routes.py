@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from typing import Optional
-from sqlalchemy.future import select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from backend.db.client_db import ClientDatabase

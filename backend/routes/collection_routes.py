@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy import func
-from sqlalchemy.future import select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from backend.cache.invalidation import invalidate_collection_recommendations
 from backend.db.client_db import ClientDatabase

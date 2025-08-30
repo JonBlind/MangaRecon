@@ -4,7 +4,9 @@ from sqlalchemy import asc, desc
 from backend.db.models.manga import Manga
 
 MangaOrderField = Literal["title", "published_date", "external_average_rating"]
-MangaOrderDirection = Literal["asc", "desc"]
+OrderDirection = Literal["asc", "desc"]
+
+RecommendationOrderField = Literal["score","title","external_average_rating"]
 
 MANGA_SORT_OPTIONS: Dict[str, ColumnElement] = {
     "title": Manga.title,
@@ -14,7 +16,7 @@ MANGA_SORT_OPTIONS: Dict[str, ColumnElement] = {
 
 def get_ordering_clause(
     field: MangaOrderField,
-    direction: MangaOrderDirection
+    direction: OrderDirection
 ) -> ColumnElement:
     """
     Returns the correct ordering clause based on field and direction.

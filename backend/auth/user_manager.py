@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 import os
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 SECRET = os.getenv("AUTH_SECRET")
 
 if not SECRET:

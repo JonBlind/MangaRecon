@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
-from sqlalchemy.future import select
+from sqlalchemy import select
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="", tags=["Metadatas"])
+router = APIRouter(prefix="/metadata", tags=["Metadata"])
 
 S_META_MIN   = "metadata-ip-min"
 S_META_HOUR  = "metadata-ip-hour"

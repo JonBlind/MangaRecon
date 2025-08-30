@@ -1,1 +1,3 @@
 # Package marker for backend
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(), override=False)
