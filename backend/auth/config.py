@@ -1,10 +1,17 @@
 import os
-from pydantic import BaseSettings
+from pydantic import Field, AliasChoices
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi_users.authentication import CookieTransport, JWTStrategy, AuthenticationBackend
 
 class Settings(BaseSettings):
-    auth_secret: str = os.getenv("AUTH_SECRET") or ""
-    debug: bool = (os.getenv("DEBUG","false").lower() == "true")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore")
+
+    auth_secret: str = Field(..., validation_alias=AliasChoices("AUTH_SECRET"))
+    debug: bool = Field(False, validation_alias=AliasChoices("DEBUG"))
 
 settings = Settings()
 

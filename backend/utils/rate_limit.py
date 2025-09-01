@@ -7,11 +7,10 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from backend.utils.response import error
 
-_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI")
-
 limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=_STORAGE_URI,
+    key_func = get_remote_address,
+    default_limits = ["60/minute"],
+    storage_uri = os.getenv("RATELIMIT_STORAGE_URI"),
 )
 
 def register_rate_limiter(app):

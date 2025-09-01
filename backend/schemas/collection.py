@@ -1,16 +1,16 @@
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, StringConstraints, ConfigDict
 from typing import Optional, Annotated
 from datetime import datetime
 
 # Request
 class CollectionCreate(BaseModel):
-    collection_name: Annotated[str, constr(min_length=1, max_length=255)]
-    description: Optional[Annotated[str, constr(min_length=1, max_length=255)]] = None
+    collection_name: Annotated[str, StringConstraints(min_length=1, max_length=255)]
+    description: Optional[Annotated[str, StringConstraints(min_length=1, max_length=255)]] = None
     
 # Request
 class CollectionUpdate(BaseModel):
-    collection_name: Optional[Annotated[str, constr(min_length=1, max_length=255)]] = None
-    description: Optional[Annotated[str, constr(min_length=1, max_length=255)]] = None
+    collection_name: Optional[Annotated[str, StringConstraints(min_length=1, max_length=255)]] = None
+    description: Optional[Annotated[str, StringConstraints(min_length=1, max_length=255)]] = None
 
 # Response
 class CollectionRead(BaseModel):
@@ -19,9 +19,7 @@ class CollectionRead(BaseModel):
     collection_name: str
     description: Optional[str]
     created_at: datetime
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MangaInCollectionRequest(BaseModel):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func
 from sqlalchemy import select
 from backend.db.models.genre import Genre
@@ -24,6 +24,7 @@ S_META_DAY   = "metadata-ip-day"
 @limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_genres(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)
@@ -56,6 +57,7 @@ async def get_all_genres(
 @limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_tags(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)
@@ -88,6 +90,7 @@ async def get_all_tags(
 @limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_demographics(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)

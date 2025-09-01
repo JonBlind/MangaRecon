@@ -1,6 +1,5 @@
 BEFORE DEPLOYMENT:
 - Supply/feed database with manga data.
-- Rate limiting
 
 ONCE FUNCTIONAL:
 - Able to change username
@@ -12,6 +11,3 @@ ONCE FUNCTIONAL:
     Add to Rating System:
     - Give more weight to specific tags or genres that aren't as frequent
     - Slight boost to newer and recently popular stuff
-
-
-- Abstract cache deletion on collection change in routes.

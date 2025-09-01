@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.manga import Manga
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/mangas", tags=["Mangas"])
 @limiter.shared_limit("240/minute", scope="manga-detail-ip-min")
 @limiter.shared_limit("10000/day", scope="manga-detail-ip-day") 
 async def get_manga_by_id(
+    request: Request,
     manga_id: int,
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
@@ -87,6 +88,7 @@ async def get_manga_by_id(
 @limiter.shared_limit("3000/hour",   scope="search-ip-hour")
 @limiter.shared_limit("20000/day",   scope="search-ip-day")  
 async def filter_manga(
+    request: Request,
     genre_ids: Optional[List[int]] = Query(default=None),
     exclude_genres: Optional[List[int]] = Query(default=None),
     tag_ids: Optional[List[int]] = Query(default=None),

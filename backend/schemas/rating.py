@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field, condecimal
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Annotated
 from decimal import Decimal
-import datetime
+from datetime import datetime
 
 # Request
 class RatingCreate(BaseModel):
@@ -13,7 +13,4 @@ class RatingRead(BaseModel):
     manga_id: int
     personal_rating: float
     created_at: datetime
-
-    class Config:
-        orm_mode = True
-        
+    model_config = ConfigDict(from_attributes=True)

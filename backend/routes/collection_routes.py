@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -28,10 +28,11 @@ router = APIRouter(prefix="/collections", tags=["Collections"])
 @router.get("/", response_model=dict)
 @limiter.limit("120/minute")    
 async def get_users_collection(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: ClientDatabase = Depends(get_user_read_db),
-    user: User = Depends(current_user)
+    user: User = Depends(current_user),
 ):
     try:
         logger.info(f"Fetching collections of {user.id} page={page} size={size}")
@@ -61,6 +62,7 @@ async def get_users_collection(
 @router.get("/{collection_id}", response_model=dict)
 @limiter.limit("120/minute")  
 async def get_collection_by_id(
+    request: Request,
     collection_id: int,
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
@@ -85,6 +87,7 @@ async def get_collection_by_id(
 @router.post("/", response_model=dict)
 @limiter.limit("60/minute")   
 async def create_collection(
+    request: Request,
     collection_data: CollectionCreate,
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
@@ -119,6 +122,7 @@ async def create_collection(
 @router.put("/{collection_id}", response_model=dict)
 @limiter.limit("60/minute")
 async def update_collection(
+    request: Request,
     collection_id: int,
     collection_update: CollectionUpdate,
     db: ClientDatabase = Depends(get_user_write_db),
@@ -172,6 +176,7 @@ async def update_collection(
 @router.delete("/{collection_id}", response_model=dict)
 @limiter.limit("60/minute")
 async def delete_collection(
+    request: Request,
     collection_id: int,
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
@@ -199,6 +204,7 @@ async def delete_collection(
 @limiter.shared_limit("120/minute", scope="collections-read-ip-min")
 @limiter.shared_limit("3000/hour", scope="collections-read-ip-hour")
 async def get_manga_in_collection(
+    request: Request,
     collection_id: int,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -250,6 +256,7 @@ async def get_manga_in_collection(
 @router.delete("/{collection_id}/mangas", response_model=dict)
 @limiter.limit("60/minute") 
 async def remove_manga_from_collection(
+    request: Request,
     collection_id: int,
     data: MangaInCollectionRequest,
     db: ClientDatabase = Depends(get_user_write_db),
@@ -287,6 +294,7 @@ async def remove_manga_from_collection(
 @router.post("/{collection_id}/mangas", response_model=dict)
 @limiter.limit("60/minute")      
 async def add_manga_to_collection(
+    request: Request,
     collection_id: int,
     data: MangaInCollectionRequest,
     db: ClientDatabase = Depends(get_user_write_db),

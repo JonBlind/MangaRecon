@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -21,9 +21,10 @@ router = APIRouter(prefix="/ratings", tags=['Ratings'])
 @router.post("/", response_model=dict)
 @limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def rate_manga(
-        rating_data: RatingCreate,
-        db: ClientDatabase = Depends(get_user_write_db),
-        user: User = Depends(current_user)
+    request: Request,
+    rating_data: RatingCreate,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user)
 ):
     '''
     Allows a user to rate or update a rating for a specified manga.
@@ -51,10 +52,11 @@ async def rate_manga(
 @router.put("/", response_model=dict)
 @limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def update_rating(
-        rating_data: RatingCreate,
-        db: ClientDatabase = Depends(get_user_write_db),
-        user: User = Depends(current_user)
-):
+    request: Request,
+    rating_data: RatingCreate,
+    db: ClientDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user)
+    ):
     '''
     Update the current user's existing rating.
 
@@ -92,6 +94,7 @@ async def update_rating(
 @router.delete("/{manga_id}", response_model=dict)
 @limiter.shared_limit("60/minute", scope="ratings-ip-min")
 async def delete_rating(
+    request: Request,
     manga_id: int,
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
@@ -122,6 +125,7 @@ async def delete_rating(
 @router.get("/", response_model=dict)
 @limiter.limit("120/minute")
 async def get_user_ratings(
+    request: Request,
     manga_id: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),

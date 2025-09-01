@@ -2,7 +2,8 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from pydantic import BaseSettings, Field
+from pydantic import Field, AliasChoices
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter
 from backend.cache.redis import redis_cache
@@ -19,12 +20,13 @@ from backend.routes import (
 from backend.auth import router as auth_routes
 
 class Settings(BaseSettings):
-    frontend_origins: str = Field(..., env="FRONTEND_ORIGINS")
-    debug: bool = Field(False, env="DEBUG")
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore")
+    frontend_origins: str = Field(..., validation_alias=AliasChoices("FRONTEND_ORIGINS"))
+    debug: bool = False
 
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]

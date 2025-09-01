@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/profiles", tags=["Profiles"])
 @router.get("/me", response_model=dict)
 @limiter.limit("120/minute")
 async def get_my_profile(
+    request: Request,
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
@@ -44,6 +45,7 @@ async def get_my_profile(
 @router.patch("/me", response_model=dict)
 @limiter.limit("10/minute")
 async def update_my_profile(
+    request: Request,
     payload: UserUpdate,
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
@@ -89,6 +91,7 @@ async def update_my_profile(
 @router.post("/me/change-password", response_model=dict)
 @limiter.limit("10/minute")
 async def change_my_password(
+    request: Request,
     payload: ChangePassword,
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user),

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional, Annotated
 from datetime import date
 import uuid
@@ -8,26 +8,20 @@ import uuid
 class GenreRead(BaseModel):
     genre_id: int
     genre_name: str
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Get the tag
 # Response
 class TagRead(BaseModel):
     tag_id: int
     tag_name: str
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Get the demographic label
 class DemographicRead(BaseModel):
     demographic_id: int
     demographic_name: str
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Get all the info on a manga
 # Response
@@ -43,9 +37,7 @@ class MangaRead(BaseModel):
     genres: List[GenreRead] = []
     tags: List[TagRead] = []
     demographics: List[DemographicRead] = []
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Get very minimal info for listing manga
 # Response
@@ -53,6 +45,4 @@ class MangaListItem(BaseModel):
     manga_id: int
     title: str
     average_rating: Optional[float] = None
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

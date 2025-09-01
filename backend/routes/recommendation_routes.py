@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.dependencies import current_active_verified_user as current_user
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 @limiter.shared_limit("30/minute", scope="recs-ip-min")
 @limiter.shared_limit("500/day",   scope="recs-ip-day")
 async def get_recommendations_for_collection(
+    request: Request,
     collection_id: int,
     order_by: RecommendationOrderField = Query("score"),
     order_dir: OrderDirection = Query("desc"),
