@@ -25,28 +25,27 @@ S_META_DAY   = "metadata-ip-day"
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_genres(
     request: Request,
-    page: int = Query(1, ge=1),
-    size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
+    """
+    Return all available genres.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        db (ClientDatabase): Manga-domain read database client.
+
+    Returns:
+        dict: Standardized 'Response' with list of Genres and total_results (int).
+    """
     try:
-        logger.info(f"Retrieving genres page={page} size={size}")
-        offset = (page - 1) * size
-
-        base = select(Genre)
-        count_stmt = base.with_only_columns(func.count(Genre.genre_id)).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
-
-        stmt = base.order_by(Genre.genre_id.asc()).offset(offset).limit(size)
+        logger.info("Retrieving all genres (no pagination)")
+        stmt = select(Genre).order_by(Genre.genre_id.asc())
         result = await db.session.execute(stmt)
         genres = result.scalars().all()
-
-        validated = [GenreRead.model_validate(g) for g in genres]
+        items = [GenreRead.model_validate(g) for g in genres]
         return success(message="Genres successfully retrieved", data={
-            "total_results": total,
-            "page": page,
-            "size": size,
-            "items": validated
+            "total_results": len(items),
+            "items": items
         })
     except Exception as e:
         logger.error(f"Failed to get all genres: {e}", exc_info=True)
@@ -58,28 +57,27 @@ async def get_all_genres(
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_tags(
     request: Request,
-    page: int = Query(1, ge=1),
-    size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
+    """
+    Return all available tags.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        db (ClientDatabase): Manga-domain read database client.
+
+    Returns:
+        dict: Standardized 'Response' with list of Tags and total_results (int).
+    """
     try:
-        logger.info(f"Retrieving tags page={page} size={size}")
-        offset = (page - 1) * size
-
-        base = select(Tag)
-        count_stmt = base.with_only_columns(func.count(Tag.tag_id)).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
-
-        stmt = base.order_by(Tag.tag_id.asc()).offset(offset).limit(size)
+        logger.info("Retrieving all tags (no pagination)")
+        stmt = select(Tag).order_by(Tag.tag_id.asc())
         result = await db.session.execute(stmt)
         tags = result.scalars().all()
-
-        validated = [TagRead.model_validate(t) for t in tags]
+        items = [TagRead.model_validate(t) for t in tags]
         return success(message="Tags successfully retrieved", data={
-            "total_results": total,
-            "page": page,
-            "size": size,
-            "items": validated
+            "total_results": len(items),
+            "items": items
         })
     except Exception as e:
         logger.error(f"Failed to get all tags: {e}", exc_info=True)
@@ -91,28 +89,27 @@ async def get_all_tags(
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_demographics(
     request: Request,
-    page: int = Query(1, ge=1),
-    size: int = Query(100, ge=1, le=500),
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
+    """
+    Return all available demographics.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        db (ClientDatabase): Manga-domain read database client.
+
+    Returns:
+        dict: Standardized 'Response' with list of Demographics and total_results (int).
+    """
     try:
-        logger.info(f"Retrieving demographics page={page} size={size}")
-        offset = (page - 1) * size
-
-        base = select(Demographic)
-        count_stmt = base.with_only_columns(func.count(Demographic.demographic_id)).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
-
-        stmt = base.order_by(Demographic.demographic_id.asc()).offset(offset).limit(size)
+        logger.info("Retrieving all demographics (no pagination)")
+        stmt = select(Demographic).order_by(Demographic.demographic_id.asc())
         result = await db.session.execute(stmt)
         demographics = result.scalars().all()
-
-        validated = [DemographicRead.model_validate(d) for d in demographics]
+        items = [DemographicRead.model_validate(d) for d in demographics]
         return success(message="Demographics successfully retrieved", data={
-            "total_results": total,
-            "page": page,
-            "size": size,
-            "items": validated
+            "total_results": len(items),
+            "items": items
         })
     except Exception as e:
         logger.error(f"Failed to get all demographics: {e}", exc_info=True)

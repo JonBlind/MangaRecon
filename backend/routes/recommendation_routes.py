@@ -1,3 +1,14 @@
+"""
+FastAPI routes for generating collection-based recommendations.
+
+This router exposes ``GET /recommendations/{collection_id}`` which:
+  1) Verifies the collection belongs to the authenticated (active, verified) user.
+  2) Attempts to return a cached recommendation set from Redis.
+  3) On cache miss, calls the recommendation generator and stores the result.
+  4) Applies sorting and pagination over the in-memory result.
+Returned payloads use the project-wide response envelope.
+"""
+
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +40,20 @@ async def get_recommendations_for_collection(
     user: User = Depends(current_user)
 ):
     """
-    Returns paginated, ordered manga recommendations for a specific user collection.
+    Return paginated, ordered recommendations for the given collection.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier belonging to the current user.
+        order_by (RecommendationOrderField): Field to order results by ("score" or "title").
+        order_dir (OrderDirection): Sort direction ("asc" or "desc").
+        page (int): 1-based page number.
+        size (int): Page size (1 - 100).
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized response with total_results, page, size, and items.
     """
     logger.info(f"Generating recommendations for collection: {collection_id}")
     try:

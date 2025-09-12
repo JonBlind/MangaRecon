@@ -1,3 +1,10 @@
+"""
+FastAPI routes for CRUD operations over user-owned collections.
+
+Endpoints include list/create/update/delete, and membership management for manga
+(add/remove). All handlers enforce ownership via the authenticated user.
+"""
+
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import func
 from sqlalchemy import select
@@ -34,6 +41,19 @@ async def get_users_collection(
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user),
 ):
+    """
+    List the current user's collections (paginated).
+    
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        page (int): 1-based page number.
+        size (int): Page size (1 - 100).
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized 'Response' containing total_results, page, size, and items (CollectionRead).
+    """
     try:
         logger.info(f"Fetching collections of {user.id} page={page} size={size}")
         offset = (page - 1) * size
@@ -67,6 +87,18 @@ async def get_collection_by_id(
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
+    """
+    Retrieve a single collection by ID for the current user.
+   
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier.
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
+   
+    Returns:
+        dict: Standardized 'Response' with the collection (CollectionRead), or 404 if not found/owned.
+    """
     try:
         logger.info(f"Fetching Collection_id: {collection_id} for user: {user.id}")
         result = await db.session.execute(
@@ -92,6 +124,18 @@ async def create_collection(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
+    """
+    Create a new collection owned by the current user.
+    
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_data (CollectionCreate): New collection payload.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized 'Response' with the created collection (CollectionRead).
+    """
     try:
         exists = await db.session.execute(
             select(Collection.collection_id).where(Collection.user_id == user.id, 
@@ -128,6 +172,19 @@ async def update_collection(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
+    """
+    Update a collection's attributes (e.g., name/description).
+    
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to update.
+        collection_update (CollectionUpdate): Patch payload.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized 'Response' with the updated collection (CollectionRead).
+    """
     try:
         result = await db.session.execute(
             select(Collection).where(Collection.collection_id == collection_id, 
@@ -181,6 +238,18 @@ async def delete_collection(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
+    """
+    Delete a collection.
+    
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to update.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized 'Response' with the successfully deleted CollectionID or error msg.
+    """
     try:
         result = await db.session.execute(
             select(Collection).where(Collection.collection_id == collection_id,Collection.user_id == user.id))
@@ -212,7 +281,18 @@ async def get_manga_in_collection(
     user: User = Depends(current_user)
 ):
     """
-    Paginated manga from a user-owned collection.
+    List the manga inside a specified collection (paginated).
+    
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to access and read manga from.
+        page (int): 1-based page number.
+        size (int): Page size (1 - 100).
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
+    
+    Returns:
+        dict: Standardized 'Response' containing total_results, page, size, and items (MangaListItem).
     """
     try:
         logger.info(f"User {user.id} fetching manga from collection {collection_id} page={page} size={size}")
@@ -262,16 +342,19 @@ async def remove_manga_from_collection(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
-    '''
-    Remove a manga from a collection owned by the user.
-
+    """
+    Remove the mangaId specified in the payload from the inputted collectionID.
+    
     Args:
-        collection_id (int): ID of the collection to remove from
-        manga_id (int): ID of the manga to remove (via request body)
-
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to access and remove a manga from.
+        data (MangaInCollectionRequest): Payload containing the manga ID to dlete. (MangaInCollectionRequest)
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
+    
     Returns:
-        dict: Success or error response
-    '''
+       dict: Standardized 'Response' with the successfully deleted mangaID and respective collectionID or 404/generic error msg.
+    """
     try:
         logger.info(f"User {user.id} attempting to remove manga {data.manga_id} from collection {collection_id}")
 
@@ -304,11 +387,14 @@ async def add_manga_to_collection(
     Add a manga to a collection owned by the user.
 
     Args:
-        collection_id (int): ID of the collection to add to
-        manga_id (int): ID of the manga to add (via request body)
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to access and add a manga to.
+        data (MangaInCollectionRequest): Payload containing the manga ID to add. (MangaInCollectionRequest)
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
 
     Returns:
-        dict: Success or error response
+        dict: Standardized 'Response' with the successfully added mangaID and respective collectionID or 404/generic error msg.
     """
     try:
         logger.info(f"User {user.id} attempting to add manga {data.manga_id} to collection {collection_id}")

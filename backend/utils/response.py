@@ -9,7 +9,7 @@ def success(message:str, data: Optional[dict] = None) -> dict:
         data (Dict [Optional]): data/payload to return as a sign of success.
     Returns:
         dict: A dictionary containing response information based on the following keys:
-            - 'status' (str) : 'success' Or 'error' representing state of response
+            - 'status' (str) : 'success' representing state of response
             - 'data' (dict) : Returned payload from the response or proof of success. If nothing returns, it will just be an empty Dict.
             - 'message' (str): Message summarizing the response.
             - 'detail' (None) : FOR SUCCESSES. No details should be returned as this field is used for error strings.
@@ -35,7 +35,7 @@ def error(message:str, detail:str, data: Optional[dict] = None) -> dict:
 
     Returns:
         dict: A dictionary containing response information based on the following keys:
-            - 'status' (str) : 'success' Or 'error' representing state of response
+            - 'status' (str) : 'error' representing state of response
             - 'data' (dict) : Returned payload from the response or proof of success. If nothing returns, it will just be an empty Dict.
             - 'message' (str): Message summarizing the response.
             - 'detail' (str) : Information relating to the error that occurred. Likely the caught error as a string.
