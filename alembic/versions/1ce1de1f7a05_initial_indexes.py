@@ -1,10 +1,10 @@
-"""initial indexes
+'''initial indexes
 
 Revision ID: 1ce1de1f7a05
 Revises: fba11c90de88
 Create Date: 2025-08-22 01:39:41.997163
 
-"""
+'''
 from typing import Sequence, Union
 
 from alembic import op
@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    '''Upgrade schema.'''
     op.create_index("ix_manga_title", "manga", ["title"])
 
     # Join tables 
@@ -41,7 +41,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    '''Downgrade schema.'''
     op.drop_index("ix_rating_manga_id", table_name="rating")
     op.drop_index("ix_rating_user_id", table_name="rating")
 

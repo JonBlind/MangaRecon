@@ -1,3 +1,9 @@
+'''
+Core recommendation utilities.
+Builds a collection metadata profile, retrieves candidate manga, and
+scores candidates against the profile to produce ranked results.
+'''
+
 import uuid
 from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,9 +19,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: int, session: AsyncSession) -> List[int]:
-    """
-    Get all manga IDs in a specific collection owned by the user.
-    """
+    '''
+    Return all manga IDs contained in a user's collection after verifying ownership.
+
+    Args:
+        user_id (uuid.UUID): Identifier of the current user.
+        collection_id (int): Target collection identifier.
+        session (AsyncSession): SQLAlchemy async session bound to the user/manga domain.
+
+    Returns:
+        list: A list of unique manga IDs in the collection. If the collection is not found or not owned, returns an empty list.
+    '''
     try:
         # Confirm ownership
         ownership_stmt = select(Collection).where(
@@ -38,9 +52,16 @@ async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: in
 async def get_metadata_profile_for_collection(
     manga_ids: List[int], session: AsyncSession
 ) -> Dict[str, any]:
-    """
-    Given a list of manga_ids, returns metadata frequency counts and avg external rating.
-    """
+    '''
+    Build a metadata profile for the provided collection (frequency counts, authors, ratings, years).
+
+    Args:
+        manga_ids (List[int]): IDs of manga used to build the collection.
+        session (AsyncSession): SQLAlchemy async session bound to the manga domain.
+
+    Returns:
+        dict: A dictionary with genre/tag/demographic frequency maps, an author set, and aggregates like external ratings and years.
+    '''
     try:
         profile = {
             "genres": Counter(),
@@ -102,11 +123,17 @@ async def get_candidate_manga(
     session: AsyncSession,
     max_candidates: int = 2000  # soft cap for candidates
 ) -> List[Manga]:
-    """
-    Select candidate manga sharing genres, tags, or demographics with the collection profile.
-    Excludes all manga already in the user's selected collection.
-    Applies a high soft cap to prevent runaway queries, but preserves breadth.
-    """
+    '''
+    Fetch candidate manga not in the seed set and return them with lightweight metadata needed for scoring.
+
+    Args:
+        excluded_ids (List[int]): Seed manga IDs to exclude from candidates.
+        session (AsyncSession): SQLAlchemy async session bound to the manga domain.
+        max_candidates (int): Soft cap on number of candidates fetched for scoring.
+
+    Returns:
+        list: A list of candidate manga rows/objects for scoring.
+    '''
     try:
         stmt = (
             select(distinct(Manga))
@@ -139,10 +166,16 @@ async def get_scored_recommendations(
     metadata_profile: Dict[str, Any],
     session: AsyncSession
 ) -> List[Dict[str, Any]]:
-    """
-    Scores each manga candidate based on metadata similarity to the profile.
-    Returns a ranked list of manga with scores.
-    """
+    '''
+    Score candidate manga against the collection's metadata profile and return a ranked list.
+
+    Args:
+        candidates (List[Manga]): Candidate manga rows/objects to score.
+        metadata_profile (dict): Profile including frequency maps and aggregates used as scoring features.
+
+    Returns:
+        list: Ranked recommendations with a final score and a breakdown of contributing feature scores.
+    '''
     if not candidates:
         return []
 

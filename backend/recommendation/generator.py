@@ -9,10 +9,17 @@ async def generate_recommendations(
     collection_id: int,
     session: AsyncSession
 ) -> List[Dict[str, Any]]:
-    """
-    Top-level function to generate recommendations based on a user's selected collection.
-    Calls internal steps for fetching manga, generating metadata profile, candidates, and scoring.
-    """
+    '''
+    Generate recommendations for the given user's collection by composing core steps.
+
+    Args:
+        user_id (uuid.UUID): Identifier of the current user.
+        collection_id (int): Target collection identifier.
+        session (AsyncSession): SQLAlchemy async session bound to the manga domain.
+
+    Returns:
+        list: Ranked recommendations as a list of dictionaries (title, ids, scores, and additional attributes).
+    '''
     # Get all manga in collection
     manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, session)
     if not manga_ids:

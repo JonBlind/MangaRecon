@@ -7,7 +7,18 @@ from backend.db.models.base import Base
 
 class Rating(Base):
     '''
-    Rating Model Class. Represents the rating table in the db for sqlalchemy ORM. 
+    Personal rating given by a user to a manga.
+
+    Primary Key:
+        - Composite PK (`user_id`, `manga_id`).
+
+    Constraints:
+        - `personal_rating` is in [0, 10] and restricted to 0.5 increments
+          (see `rating_range_check` and `rating_half_step_check`).
+
+    Relationships:
+        - `user` (M:1) owner of the rating.
+        - `manga` (M:1) rated title. 
     '''
     __tablename__ = "rating"
 

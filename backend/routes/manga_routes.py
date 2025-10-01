@@ -32,12 +32,17 @@ async def get_manga_by_id(
     manga_id: int,
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
-    """
-    Retrieve full metadata for a specific manga including genres, tags, and demographics.
+    '''
+    Retrieve a single manga by its identifier.
 
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        manga_id (int): Identifier of the manga to retrieve.
+        db (ClientDatabase): Manga-domain read database client.
+    
     Returns:
-        dict: Standardized success or error response.
-    """
+        dict: Standardized response with the manga (MangaRead) or a 404 error if not found.
+    '''
     
     try:
         logger.info(f"Fetching full manga metadata for manga {manga_id}")
@@ -105,6 +110,27 @@ async def filter_manga(
 
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
+    '''
+    List and filter manga with optional genre, tag, and demographic criteria, plus title search.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        genre_ids (Optional[List[int]]): Only include manga that have any of these genres.
+        exclude_genres (Optional[List[int]]): Exclude manga that have any of these genres.
+        tag_ids (Optional[List[int]]): Only include manga that have any of these tags.
+        exclude_tags (Optional[List[int]]): Exclude manga that have any of these tags.
+        demo_ids (Optional[List[int]]): Only include manga that have any of these demographics.
+        exclude_demos (Optional[List[int]]): Exclude manga that have any of these demographics.
+        title (Optional[str]): Case-insensitive substring to match on title.
+        page (int): 1-based page number.
+        size (int): Page size (1 - 100).
+        order_by (MangaOrderField): Field to order the results by.
+        order_dir (OrderDirection): Sort direction ("asc" or "desc").
+        db (ClientDatabase): Manga-domain read database client.
+
+    Returns:
+        dict: Standardized response with total_results, page, size, and items (MangaListItem).
+    '''
     try:
         logger.info(f"Filtering manga - page={page}, size={size}, order_by={order_by}, order_dir={order_dir}")
         offset = (page - 1) * size

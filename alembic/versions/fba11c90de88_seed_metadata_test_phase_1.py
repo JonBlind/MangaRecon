@@ -1,10 +1,10 @@
-"""seed metadata (test phase 1)
+'''seed metadata (test phase 1)
 
 Revision ID: fba11c90de88
 Revises: 97fa363615bb
 Create Date: 2025-08-20 13:15:11.401450
 
-"""
+'''
 from typing import Sequence, Union
 
 from alembic import op
@@ -43,16 +43,16 @@ def _insert_values(connection, table: str, col: str, values: list[str]) -> None:
     '''
     Insert a list of strings into a specified table, column.
     '''
-    stmt = sa.text(f"""
+    stmt = sa.text(f'''
                     INSERT INTO {sa.text(table).text} ({sa.text(col).text})
                     VALUES (:name)
                     ON CONFLICT ({sa.text(col).text}) DO NOTHING
-                   """)
+                   ''')
     for name in values:
         connection.execute(stmt, {"name": name})
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    '''Upgrade schema.'''
     connection = op.get_bind()
 
     _insert_values(connection, "demographic", "demographic_name", DEMOGRAPHICS)
@@ -63,7 +63,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    '''Downgrade schema.'''
     conn = op.get_bind()
 
     conn.execute(sa.text("DELETE FROM tag WHERE tag_name = ANY(:names)"),

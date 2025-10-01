@@ -1,3 +1,12 @@
+'''
+FastAPI application entrypoint for MangaRecon.
+
+- Loads settings from environment (via pydantic-settings).
+- Registers CORS, exception handlers, and global rate limiter.
+- Wires up all routers (auth, collections, manga, ratings, recommendations, profiles, metadata).
+- Basic health check at GET /healthz.
+'''
+
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +29,10 @@ from backend.routes import (
 from backend.auth import router as auth_routes
 
 class Settings(BaseSettings):
+    '''
+    Application settings (CORS, origins, environment flags, and other toggles)
+    loaded via environment variables and used during app construction.
+    '''
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -33,6 +46,15 @@ origins = [origin.strip() for origin in settings.frontend_origins.split(",") if 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    '''
+    Application lifespan context.
+
+    Sets up and tears down global resources (e.g., Redis, rate limiter,
+    DB connections) at startup/shutdown.
+
+    Yields:
+        None: Control is passed to the application while resources are active.
+    '''
     try:
         yield
     finally:
@@ -64,4 +86,5 @@ app.include_router(metadata_routes.router)
 # health check
 @app.get("/healthz")
 def health():
+    '''Simple probe used for uptime checks.'''
     return {"message": "MangaRecon API is running."}

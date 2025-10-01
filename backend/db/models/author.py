@@ -6,6 +6,12 @@ from sqlalchemy.orm import declarative_base, relationship
 from backend.db.models.base import Base
 
 class Author(Base):
+    '''
+    Author master record.
+
+    Relationships:
+        - `manga` (1:M) titles written by this author.
+    '''
     __tablename__ = "author"
 
     author_id = Column(Integer, primary_key=True)

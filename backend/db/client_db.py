@@ -1,3 +1,12 @@
+'''
+High-level database helper used by API handlers.
+
+Wraps an async SQLAlchemy `AsyncSession` and exposes safe, user-facing
+operations for profiles, ratings, and collections. All mutating methods
+handle commit/rollback and log failures with context.
+'''
+
+
 from __future__ import annotations
 
 import uuid
@@ -23,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 class ClientDatabase:
     def __init__(self, session: AsyncSession):
-        """
-        Instance of a user-facing client that interfaces with the database.
-        Only includes generic functions that alter the database based on USER interactions.
-        """
+        '''
+        Wraps an async SQLAlchemy `AsyncSession` and exposes safe, user-facing
+        operations for profiles, ratings, and collections. All mutating methods
+        handle commit/rollback and log failures with context.
+        '''
         self.session = session
 
     # ====================
@@ -34,9 +44,18 @@ class ClientDatabase:
     # ====================
 
     async def create_profile(self, data: dict) -> User:
-        """
-        Create a profile with the provided data and return the User object.
-        """
+        '''
+        Create a new `User` row from the provided dict payload and return it.
+
+        Args:
+            data (dict): Field/value mapping corresponding to the `User` ORM constructor.
+
+        Returns:
+            User: Freshly created user row (post-commit/refresh).
+
+        Raises:
+            SQLAlchemyError: On insert/commit errors (session rolled back).
+        '''
         logger.info(f"Creating profile for email: {data.get('email')}")
         try:
             profile = User(**data)
@@ -50,9 +69,15 @@ class ClientDatabase:
             raise e
 
     async def get_profile_by_email(self, email: str) -> Optional[User]:
-        """
-        Fetches a user by email.
-        """
+        '''
+        Fetch a single user by email.
+
+        Args:
+            email (str): Email address to match.
+
+        Returns:
+            Optional[User]: Matching user if found, otherwise `None`.
+        '''
         logger.info(f"Fetching profile by email: {email}")
         try:
             stmt = select(User).where(User.email == email)
@@ -63,9 +88,15 @@ class ClientDatabase:
             return None
 
     async def get_profile_by_identifier(self, identifier: str) -> Optional[User]:
-        """
-        Fetches a user by either username or email.
-        """
+        '''
+        Fetch a single user by username **or** email.
+
+        Args:
+            identifier (str): Username or email to match.
+
+        Returns:
+            Optional[User]: Matching user if found, otherwise `None`.
+        '''
         logger.info(f"Fetching profile by identifier: {identifier}")
         try:
             stmt = select(User).where((User.username == identifier) | (User.email == identifier))
@@ -81,9 +112,21 @@ class ClientDatabase:
 
     @staticmethod
     def _normalize_score(score: float) -> float:
-        """
-        Clamp to [0, 10] and snap to the nearest 0.5 step to match DB constraints.
-        """
+        '''
+        Clamp and quantize a rating value to DB constraints.
+
+        - Clamps to the inclusive range [0.0, 10.0]
+        - Rounds to the nearest 0.5 increment
+
+        Args:
+            score (float): Raw score input.
+
+        Returns:
+            float: Normalized score suitable for persistence.
+
+        Raises:
+            ValueError: If `score` is `None`.
+        '''
         if score is None:
             raise ValueError("Score is required.")
         # clamp
@@ -93,9 +136,23 @@ class ClientDatabase:
         return snapped
 
     async def rate_manga(self, user_id: uuid.UUID, manga_id: int, score: float) -> Rating:
-        """
-        Create or update a rating for a manga by the given user (UUID).
-        """
+        '''
+        Create or update the caller's personal rating for a manga.
+
+        If an existing `(user_id, manga_id)` rating is present, it is updated;
+        otherwise a new row is inserted.
+
+        Args:
+            user_id (uuid.UUID): Owner of the rating.
+            manga_id (int): Target manga identifier.
+            score (float): Personal rating value (normalized to [0,10] in 0.5 steps).
+
+        Returns:
+            Rating: The upserted rating (post-commit/refresh).
+
+        Raises:
+            SQLAlchemyError: On DB write failure (session rolled back).
+        '''
         try:
             score_norm = self._normalize_score(score)
             existing = await self.session.get(Rating, (user_id, manga_id))
@@ -116,9 +173,16 @@ class ClientDatabase:
             raise e
 
     async def get_user_rating_for_manga(self, user_id: uuid.UUID, manga_id: int) -> Optional[Rating]:
-        """
-        Fetch a specific rating for a user and manga.
-        """
+        '''
+        Retrieve the caller's rating for a specific manga.
+
+        Args:
+            user_id (uuid.UUID): Owner of the rating.
+            manga_id (int): Target manga identifier.
+
+        Returns:
+            Optional[Rating]: Rating if present, otherwise `None`.
+        '''
         try:
             stmt = select(Rating).where(Rating.user_id == user_id, Rating.manga_id == manga_id)
             result = await self.session.execute(stmt)
@@ -128,9 +192,15 @@ class ClientDatabase:
             return None
 
     async def get_all_user_ratings(self, user_id: uuid.UUID) -> List[Rating]:
-        """
-        Fetch all ratings from a given user.
-        """
+        '''
+        Retrieve all ratings authored by the given user.
+
+        Args:
+            user_id (uuid.UUID): Owner whose ratings to list.
+
+        Returns:
+            List[Rating]: Possibly empty list of ratings. Returns `[]` on errors.
+        '''
         try:
             stmt = select(Rating).where(Rating.user_id == user_id)
             result = await self.session.execute(stmt)
@@ -144,9 +214,24 @@ class ClientDatabase:
     # ====================
 
     async def add_manga_to_collection(self, user_id: uuid.UUID, collection_id: int, manga_id: int) -> None:
-        """
-        Add a manga to a collection, verifying the user owns the collection.
-        """
+        '''
+        Link a manga to a collection, enforcing ownership.
+
+        Verifies that the collection exists and is owned by `user_id`. If the link
+        already exists, the method is a no-op.
+
+        Args:
+            user_id (uuid.UUID): Owner of the collection.
+            collection_id (int): Target collection identifier.
+            manga_id (int): Manga to add.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If the collection does not exist or is not owned by the user.
+            Exception: On DB errors (transaction rolled back and re-raised).
+        '''
         try:
             result = await self.session.execute(
                 select(Collection).where(
@@ -179,9 +264,23 @@ class ClientDatabase:
             raise e
 
     async def remove_manga_from_collection(self, user_id: uuid.UUID, collection_id: int, manga_id: int) -> None:
-        """
-        Remove a manga from a user-owned collection.
-        """
+        '''
+        Remove a manga link from a user-owned collection.
+
+        Verifies ownership and the existence of the link; raises if not present.
+
+        Args:
+            user_id (uuid.UUID): Owner of the collection.
+            collection_id (int): Target collection identifier.
+            manga_id (int): Manga to remove.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If collection does not exist/owned, or link is missing.
+            Exception: On DB errors (transaction rolled back and re-raised).
+        '''
         try:
             # Confirm ownership
             result = await self.session.execute(
@@ -215,9 +314,20 @@ class ClientDatabase:
             raise e
 
     async def get_manga_in_collection(self, user_id: uuid.UUID, collection_id: int) -> List[Manga]:
-        """
-        Retrieve all manga in a user-owned collection.
-        """
+        '''
+        List all manga contained in a user-owned collection.
+
+        Args:
+            user_id (uuid.UUID): Owner of the collection.
+            collection_id (int): Target collection identifier.
+
+        Returns:
+            List[Manga]: All manga rows linked to the collection.
+
+        Raises:
+            ValueError: If the collection does not exist or is not owned by the user.
+            Exception: On DB read errors (re-raised).
+        '''
         try:
             # Confirm ownership
             result = await self.session.execute(
@@ -245,9 +355,16 @@ class ClientDatabase:
             raise e
 
     async def is_manga_in_collection(self, collection_id: int, manga_id: int) -> bool:
-        """
-        Check if a manga is already linked to a collection.
-        """
+        '''
+        Check whether a manga is already linked to a collection.
+
+        Args:
+            collection_id (int): Collection to inspect.
+            manga_id (int): Manga identifier.
+
+        Returns:
+            bool: True if the link exists; False on miss or on query failure.
+        '''
         try:
             stmt = select(MangaCollection).where(
                 MangaCollection.collection_id == collection_id,

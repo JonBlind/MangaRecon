@@ -1,3 +1,11 @@
+'''
+Administrative async database helper built on `asyncpg`.
+
+Provides a connection pool and convenience methods for executing parameterized
+statements, fetching rows, and performing generic insert/update/delete across
+arbitrary tables. Intended for admin/ETL scripts — not for end-user API paths.
+'''
+
 import asyncpg
 import asyncio
 import os
@@ -9,13 +17,15 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager():
     '''
-    Class that acts as a foundation for Database interaction via Python Scripts.
-    Enables one to connect to the database and conduct interactions such as:
-    inputting data, update data, delete data, and execute custom queries with data.
-    When initialized, will automatically attempt to connect to the database described in the environment.
-    Utilizes asyncpg.
+    Administrative database manager for scripted operations (maintenance).
 
-    Not to be used by the actual user, only admin/owner use.
+    Args:
+        db_url (str): PostgreSQL DSN (`postgresql+asyncpg://...`).
+
+    Notes:
+        - Lazily initializes an `asyncpg` Pool via `connect()`.
+        - Avoid use in request handlers; prefer SQLAlchemy sessions there.
+        - All statement APIs assume **parameterized** queries (never string format).
     '''
 
     def __init__(self, db_url: str):
@@ -24,19 +34,19 @@ class DatabaseManager():
 
 
     async def connect(self, attempt_limit:int = 10, retry_delay:float = 3.0):
-        """
-        Initializes the connection pool.
+        '''
+        Initialize the asyncpg connection pool with retry logic.
 
         Args:
-            attempt_limit (int, optional): Number of times to attempt a connection, default is 10 times. Does not accept Values over 50.
-            retry_delay   (float, optional): Time in seconds to wait between connection attempts.
-
-        Raises:
-            ValueError: If attempt_limit is greater than 50.
+            attempt_limit (int): Max attempts before failing (default 10; must be ≤ 50).
+            retry_delay (float): Seconds to wait between attempts (default 3.0).
 
         Returns:
             None
-        """
+
+        Raises:
+            ValueError: If `attempt_limit` exceeds 50.
+        '''
         if attempt_limit > 50:
             raise ValueError(f"Attempt Limit Exceed Maximum Attempts Allowed! ({attempt_limit} > 50)")
         
@@ -60,12 +70,12 @@ class DatabaseManager():
         logger.error("Failed to initialize Database Connection Pool after max attempts")
 
     async def disconnect(self):
-        """
+        '''
         Closes the connection pool.
 
         Returns:
             None
-        """
+        '''
         if self.pool:
             try:
                 await self.pool.close()
@@ -77,7 +87,7 @@ class DatabaseManager():
             logger.warning("No Connection Open to Close!")
 
     def _validate_table_name(self, table: str) -> bool:
-        """
+        '''
         Prevents SQL Injection via table names.
 
         Args:
@@ -85,11 +95,11 @@ class DatabaseManager():
 
         Returns:
             bool: True if table name is valid, False otherwise.
-        """
+        '''
         return table.isidentifier()
 
     async def execute(self, query: str, *args):
-        """
+        '''
         Executes a query (INSERT, UPDATE, DELETE).
 
         Args:
@@ -97,8 +107,8 @@ class DatabaseManager():
             *args: values to substitute into the query placeholders. (SO THE ACTUAL VALUES YOU WANT TO INPUT)
 
         Returns:
-            str or None: Command completion string returns if successful; otherwise, will return None if it fails.
-        """
+            str: Command completion tag on success (e.g., "INSERT 0 1"); `None` on failure.
+        '''
         if not self.pool:
             logger.error("No Database Connection Found!")
             return
@@ -115,9 +125,16 @@ class DatabaseManager():
 
     
     async def fetch(self, query: str, *args) -> List[dict]:
-        """
-        Executes a SELECT query and returns results as a list of dictionaries.
-        """
+        '''
+        Execute a **SELECT** statement and return rows as dictionaries.
+
+        Args:
+            query (str): Parameterized SQL with `$N` placeholders.
+            *args: Values corresponding to the placeholders.
+
+        Returns:
+            List[dict] | None: List of row dicts on success; `None` on error.
+        '''
         if not self.pool:
             logger.error("No Database Connection Found!")
             return None
@@ -133,7 +150,7 @@ class DatabaseManager():
         
 
     async def input_data(self, table: str, data: Dict[str, Any]):
-        """
+        '''
         Inserts data into the specified table.
 
         Args:
@@ -142,7 +159,7 @@ class DatabaseManager():
 
         Returns:
             bool: True if the query is successful, False otherwise.
-        """
+        '''
         if not self._validate_table_name(table):
             logger.error(f"Invalid table name: {table}")
             return

@@ -5,6 +5,12 @@ from backend.db.models.base import Base
 from backend.db.models.join_tables import manga_genre
 
 class Genre(Base):
+    '''
+    Genre master record (e.g., Action, Romance, Mystery).
+
+    Relationships:
+        - `manga` (M:N via `manga_genre`) titles classified under this genre.
+    '''
     __tablename__ = "genre"
 
     genre_id = Column(Integer, primary_key=True)

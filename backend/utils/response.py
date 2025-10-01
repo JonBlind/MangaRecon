@@ -1,3 +1,11 @@
+'''
+Standard response helpers used across the API.
+
+Provides small utilities to keep JSON envelopes consistent:
+- success(message, data)
+- error(message, detail, data)
+'''
+
 from typing import Any, Optional
 
 

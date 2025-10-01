@@ -27,10 +27,16 @@ async def rate_manga(
     user: User = Depends(current_user)
 ):
     '''
-    Allows a user to rate or update a rating for a specified manga.
+    Create or update a personal rating for a manga owned by the current user.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        rating_data (RatingCreate): Payload containing the target manga ID and the personal rating value.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
 
     Returns:
-        dict: Standardized success or error response.
+        dict: Standardized response with the upserted rating (RatingRead) or an error detail.
     '''
     try:
         logger.info(f"User {user.id} submitting rating for manga {rating_data.manga_id} with score {rating_data.personal_rating}")
@@ -58,10 +64,16 @@ async def update_rating(
     user: User = Depends(current_user)
     ):
     '''
-    Update the current user's existing rating.
+    Update an existing personal rating for a manga owned by the current user.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        rating_data (RatingCreate): Payload containing the target manga ID and the new personal rating value.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
 
     Returns:
-        dict: Standardized success or error response.
+        dict: Standardized response with the updated rating (RatingRead) or a not-found/error detail.
     '''
     try:
         logger.info(f"User {user.id} attempting to update rating for manga {rating_data.manga_id} with score {rating_data.personal_rating}")
@@ -99,6 +111,18 @@ async def delete_rating(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
+    '''
+    Delete the authenticated user's rating for a specific manga and invalidate cached recommendations.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        manga_id (int): Identifier of the manga whose rating will be removed.
+        db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
+
+    Returns:
+        dict: Standardized response confirming deletion and echoing the manga_id.
+    '''
     try:
         logger.info(f"User {user.id} attempting to delete rating for manga {manga_id}.")
 
@@ -133,13 +157,18 @@ async def get_user_ratings(
     user: User = Depends(current_user)
 ):
     '''
-    Get a user's manga rating(s). If a specific manga_id is provided, then only the rating for that ID returns. Otherwise, all of the user's ratings are returned.
+    List the authenticated user's ratings (optionally filtered by manga) with pagination.
 
     Args:
-        manga_id (int, Optional): ID of manga to fetch a rating for. If left blank or None, will return all ratings. (Defaults to None.)
+        request (Request): FastAPI request (required by rate limiting).
+        manga_id (Optional[int]): If provided, only return the rating for this manga.
+        page (int): 1-based page number.
+        size (int): Page size (1 - 100).
+        db (ClientDatabase): User-domain read database client.
+        user (User): Currently authenticated, active, verified user.
 
     Returns:
-        dict: Standardized success or error response.
+        dict: Standardized response with total_results, page, size, and items (RatingRead).
     '''
     try:
         if manga_id is not None:

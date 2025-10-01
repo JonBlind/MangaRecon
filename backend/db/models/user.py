@@ -5,6 +5,19 @@ from sqlalchemy.orm import relationship
 from backend.db.models.base import Base
 
 class User(Base):
+    '''
+    Application user with authentication flags and profile fields.
+
+    Fields:
+        - `email`, `hashed_password` for auth.
+        - `username`, `displayname` for identity.
+        - `is_active`, `is_superuser`, `is_verified` for authorization flow.
+        - `created_at`, `last_login` timestamps.
+
+    Relationships:
+        - `ratings` (1:M) personal ratings; cascade delete on user removal.
+        - `collections` (1:M) user-created collections; cascade delete on user removal.
+    '''
     __tablename__ = "user"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

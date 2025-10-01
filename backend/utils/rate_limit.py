@@ -1,3 +1,11 @@
+'''
+SlowAPI rate limiting integration and setup.
+
+Exposes:
+- `limiter`: shared Limiter instance (keyed by remote address)
+- `register_rate_limiter(app)`: attach middleware + error handler
+'''
+
 import os
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -14,6 +22,15 @@ limiter = Limiter(
 )
 
 def register_rate_limiter(app):
+    '''
+    Attach SlowAPI rate limiting to the application and its error handler.
+
+    Args:
+        app (FastAPI): The FastAPI application instance.
+
+    Returns:
+        None: Middleware and exception handler are registered on the app.
+    '''
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
 
@@ -21,5 +38,5 @@ def register_rate_limiter(app):
     async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
         return JSONResponse(
             status_code=429,
-            content=error("Too many requests", detail=str(exc))
+            content=error("Too many requests! Rate Limit Exceeded!", detail=str(exc))
         )

@@ -1,3 +1,10 @@
+'''
+Ordering utilities for manga queries and recommendation sorting.
+
+Defines validated order-by fields and a helper to produce SQL ordering
+clauses given user input, guarding against invalid columns or directions.
+'''
+
 from typing import Literal, TypeVar, Dict
 from sqlalchemy.sql import ColumnElement
 from sqlalchemy import asc, desc
@@ -18,7 +25,7 @@ def get_ordering_clause(
     field: MangaOrderField,
     direction: OrderDirection
 ) -> ColumnElement:
-    """
+    '''
     Returns the correct ordering clause based on field and direction.
 
     Args:
@@ -27,6 +34,6 @@ def get_ordering_clause(
 
     Returns:
         A SQLAlchemy ordering clause.
-    """
+    '''
     column = MANGA_SORT_OPTIONS[field]
     return asc(column) if direction == "asc" else desc(column)

@@ -1,3 +1,14 @@
+'''
+Auth and user-management routes assembled from FastAPI Users.
+
+Routes:
+- /auth/jwt/*      : Login/logout via JWT cookie transport.
+- /auth/register   : Account registration.
+- /auth/verify/*   : Email verification flows.
+- /auth/reset/*    : Password reset flows.
+- /users/*         : User CRUD (admin/self as configured).
+'''
+
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from backend.utils.rate_limit import limiter
@@ -13,8 +24,8 @@ verify_router = fastapi_users.get_verify_router(UserRead)
 
 # Combine everything into a central Auth router
 router = APIRouter()
-router.include_router(auth_router, prefix="/auth/jwt", tags=["auth"])
-router.include_router(register_router, prefix="/auth", tags=["auth"])
-router.include_router(users_router, prefix="/users", tags=["users"])
-router.include_router(reset_password_router, prefix="/auth", tags=["auth"])
-router.include_router(verify_router, prefix="/auth", tags=["auth"])
+router.include_router(auth_router, prefix="/auth/jwt", tags=["auth"])           # JWT auth (login/logout)
+router.include_router(register_router, prefix="/auth", tags=["auth"])           # Registration
+router.include_router(users_router, prefix="/users", tags=["users"])            # Users (read/update)
+router.include_router(reset_password_router, prefix="/auth", tags=["auth"])     # Reset password
+router.include_router(verify_router, prefix="/auth", tags=["auth"])             # Email verification

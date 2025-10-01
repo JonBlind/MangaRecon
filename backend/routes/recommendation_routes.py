@@ -1,4 +1,4 @@
-"""
+'''
 FastAPI routes for generating collection-based recommendations.
 
 This router exposes ``GET /recommendations/{collection_id}`` which:
@@ -7,7 +7,7 @@ This router exposes ``GET /recommendations/{collection_id}`` which:
   3) On cache miss, calls the recommendation generator and stores the result.
   4) Applies sorting and pagination over the in-memory result.
 Returned payloads use the project-wide response envelope.
-"""
+'''
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
@@ -39,7 +39,7 @@ async def get_recommendations_for_collection(
     db = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
-    """
+    '''
     Return paginated, ordered recommendations for the given collection.
 
     Args:
@@ -54,7 +54,7 @@ async def get_recommendations_for_collection(
     
     Returns:
         dict: Standardized response with total_results, page, size, and items.
-    """
+    '''
     logger.info(f"Generating recommendations for collection: {collection_id}")
     try:
 
@@ -76,6 +76,13 @@ async def get_recommendations_for_collection(
 
         # If we get a score that is 0.0, it might be read as False, so the following handles it
         def key_func(item):
+            '''
+            Sorting key for recommendations.
+
+            - When ordering by "score", sorts by numeric score (missing -> -inf).
+            - When ordering by "title", sorts case-insensitively by title.
+            - Otherwise sorts by the given field when present, treating None as lowest.
+            '''
             if order_by == "score":
                 return item.get("score", float("-inf"))
             if order_by == "title":

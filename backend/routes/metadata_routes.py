@@ -27,7 +27,7 @@ async def get_all_genres(
     request: Request,
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
-    """
+    '''
     Return all available genres.
 
     Args:
@@ -36,7 +36,7 @@ async def get_all_genres(
 
     Returns:
         dict: Standardized 'Response' with list of Genres and total_results (int).
-    """
+    '''
     try:
         logger.info("Retrieving all genres (no pagination)")
         stmt = select(Genre).order_by(Genre.genre_id.asc())
@@ -59,7 +59,7 @@ async def get_all_tags(
     request: Request,
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
-    """
+    '''
     Return all available tags.
 
     Args:
@@ -68,7 +68,7 @@ async def get_all_tags(
 
     Returns:
         dict: Standardized 'Response' with list of Tags and total_results (int).
-    """
+    '''
     try:
         logger.info("Retrieving all tags (no pagination)")
         stmt = select(Tag).order_by(Tag.tag_id.asc())
@@ -91,7 +91,7 @@ async def get_all_demographics(
     request: Request,
     db: ClientDatabase = Depends(get_manga_read_db)
 ):
-    """
+    '''
     Return all available demographics.
 
     Args:
@@ -100,7 +100,7 @@ async def get_all_demographics(
 
     Returns:
         dict: Standardized 'Response' with list of Demographics and total_results (int).
-    """
+    '''
     try:
         logger.info("Retrieving all demographics (no pagination)")
         stmt = select(Demographic).order_by(Demographic.demographic_id.asc())

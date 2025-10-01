@@ -21,9 +21,17 @@ async def get_my_profile(
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
-    """
-    Return the authenticated user's profile (sanitized).
-    """
+    '''
+    Return the authenticated user's profile.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        db (ClientDatabase): User-domain database client.
+        user (User): Currently authenticated, active, verified user.
+
+    Returns:
+        dict: Standardized response with the user's profile data.
+     '''
     try:
         logger.info(f"Fetching profile for user {user.id}")
         result = await db.session.execute(
@@ -50,10 +58,18 @@ async def update_my_profile(
     db: ClientDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
-    """
-    Update the authenticated user's profile.
-    Only 'displayname' is allowed to change here.
-    """
+    '''
+    Update the authenticated user's profile fields.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        payload (UserUpdate): Patch payload for profile updates.
+        db (ClientDatabase): User-domain database client.
+        user (User): Currently authenticated, active, verified user.
+
+    Returns:
+        dict: Standardized response with the updated profile data.
+    '''
     try:
         logger.info(f"User {user.id} updating profile")
 
@@ -97,10 +113,19 @@ async def change_my_password(
     user: User = Depends(current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    """
-    Change the authenticated user's password by verifying the current password.
-    Done only if user knows their password, but still desires a change.
-    """
+    '''
+    Change the authenticated user's password after verifying the current password.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        payload (ChangePassword): Change-password payload (current and new passwords).
+        db (ClientDatabase): User-domain database client.
+        user (User): Currently authenticated, active, verified user.
+        user_manager (UserManager): User manager used for password verification and update.
+
+    Returns:
+        dict: Standardized response indicating success or an error detail.
+    '''
     try:
         logger.info(f"User {user.id} attempting password change")
 

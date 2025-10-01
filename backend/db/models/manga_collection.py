@@ -6,6 +6,20 @@ from sqlalchemy.orm import relationship
 from backend.db.models.base import Base
 
 class MangaCollection(Base):
+    '''
+    Association entity connecting manga to collections.
+
+    Primary Key:
+        - Composite PK (`collection_id`, `manga_id`).
+
+    Behavior:
+        - Both FKs cascade on delete so links disappear when either parent is removed.
+        - `added_at` captures when the manga was added to the collection.
+
+    Relationships:
+        - `manga` (M:1) linked title.
+        - `collection` (M:1) owning collection.
+    '''
     __tablename__ = "manga_collection"
 
     collection_id = Column(Integer, ForeignKey("collection.collection_id", ondelete="CASCADE"), primary_key=True)

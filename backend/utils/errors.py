@@ -1,3 +1,11 @@
+'''
+Global exception handling utilities for FastAPI.
+
+Registers consistent JSON error responses for:
+- Request validation errors (422)
+- HTTP exceptions raised by routes/middleware
+'''
+
 import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -8,7 +16,19 @@ from backend.utils.response import error
 logger = logging.getLogger(__name__)
 
 def register_exception_handlers(app):
-    
+    '''
+   Register global exception handlers on the FastAPI app.
+
+    Installs handlers for request validation errors and HTTP exceptions to
+    ensure consistent JSON error envelopes and logging behavior.
+
+    Args:
+        app (FastAPI): The FastAPI application instance.
+
+    Returns:
+        None: Handlers are registered via FastAPI decorators.
+   '''
+   
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
         logger.warning(f"validation error: {exc}")
