@@ -1,4 +1,4 @@
-from pydantic import BaseModel, StringConstraints, ConfigDict
+from pydantic import BaseModel, StringConstraints, ConfigDict, field_validator
 from typing import Optional, Annotated
 from datetime import datetime
 
@@ -9,6 +9,13 @@ class CollectionCreate(BaseModel):
     '''
     collection_name: Annotated[str, StringConstraints(min_length=1, max_length=255)]
     description: Optional[Annotated[str, StringConstraints(min_length=1, max_length=255)]] = None
+
+    # enforce that a collection_name cant be whitespace.
+    @field_validator("collection_name")
+    def collection_name_not_whitespace(v: str) -> str:
+        if v.strip() == "":
+            raise ValueError("collection_name cannot be whitespace")
+        return v
     
 # Request
 class CollectionUpdate(BaseModel):

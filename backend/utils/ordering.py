@@ -30,10 +30,18 @@ def get_ordering_clause(
 
     Args:
         field: The field name as a validated string literal.
-        direction: Either 'asc' or 'desc'.
+        direction: Either 'asc' or 'desc'. Defaults to desc.
 
     Returns:
         A SQLAlchemy ordering clause.
     '''
-    column = MANGA_SORT_OPTIONS[field]
-    return asc(column) if direction == "asc" else desc(column)
+    column = MANGA_SORT_OPTIONS.get(field)
+    if column is None:
+        raise ValueError(f"Unsupported sort field: {field}")
+
+    if direction == "asc":
+        return asc(column)
+    if direction == "desc":
+        return desc(column)
+    raise ValueError(f"Unsupported sort direction: {direction}")
+
