@@ -30,4 +30,5 @@ class Collection(Base):
 
     # Many-to-many relationships 
     user = relationship("User", back_populates="collections")
-    manga = relationship("Manga", secondary="manga_collection", back_populates="collections")
+    manga = relationship("Manga", secondary="manga_collection", back_populates="collections", overlaps="manga,collection")
+    manga_collection_links = relationship("MangaCollection", back_populates="collection", overlaps="collections,manga")

@@ -6,7 +6,13 @@ from alembic import context
 from backend.db.models.base import Base
 from backend.db.models import user, rating, manga, collection, genre, demographics, author, join_tables, manga_collection, tag  
 
-load_dotenv()
+_ENV = os.getenv("MANGARECON_ENV", "").lower().strip()
+
+if _ENV == "test":
+    load_dotenv(".env.test", override=True)
+else:
+    # load prod env url instead.
+    load_dotenv(override=False)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -22,6 +28,11 @@ database_url_sync = os.getenv("DATABASE_URL_SYNC")
 if database_url_sync:
     config.set_main_option("sqlalchemy.url", database_url_sync)
 
+if _ENV == "test":
+    if not database_url_sync:
+        raise RuntimeError("MANGARECON_ENV=test but DATABASE_URL_SYNC is not set (check .env.test)")
+    if "test" not in database_url_sync.lower():
+        raise RuntimeError("Refusing to run test migrations against a non-test DATABASE_URL_SYNC")
 
 # add your model's MetaData object here
 # for 'autogenerate' support

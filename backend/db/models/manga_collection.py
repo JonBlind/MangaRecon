@@ -26,5 +26,5 @@ class MangaCollection(Base):
     manga_id = Column(Integer, ForeignKey("manga.manga_id", ondelete="CASCADE"), primary_key=True)
     added_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    manga = relationship("Manga", backref="manga_collection_links")
-    collection = relationship("Collection", backref="manga_collection_links")
+    manga = relationship("Manga", back_populates="manga_collection_links")
+    collection = relationship("Collection", back_populates="manga_collection_links")

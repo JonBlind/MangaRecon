@@ -31,12 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 class ClientDatabase:
+    '''
+    Wraps an async SQLAlchemy `AsyncSession` and exposes safe, user-facing
+    operations for profiles, ratings, and collections. All mutating methods
+    handle commit/rollback and log failures with context.
+    '''
     def __init__(self, session: AsyncSession):
-        '''
-        Wraps an async SQLAlchemy `AsyncSession` and exposes safe, user-facing
-        operations for profiles, ratings, and collections. All mutating methods
-        handle commit/rollback and log failures with context.
-        '''
         self.session = session
 
     # ====================
