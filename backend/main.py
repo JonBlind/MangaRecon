@@ -15,7 +15,7 @@ from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter
-from backend.cache.redis import redis_cache
+from backend.cache.redis import get_redis_cache
 
 from backend.routes import (
     collection_routes,
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
+redis_cache = get_redis_cache()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         # shutdown
-        await redis_cache.close_cache()
+        await redis_cache.close()
 
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 register_exception_handlers(app)

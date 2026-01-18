@@ -17,7 +17,7 @@ from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.utils.ordering import OrderDirection , RecommendationOrderField
 from backend.dependencies import get_user_read_db
-from backend.cache.redis import redis_cache
+from backend.cache.redis import get_redis_cache
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
 from backend.recommendation.generator import generate_recommendations
@@ -25,6 +25,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
+redis_cache = get_redis_cache()
 
 @router.get("/{collection_id}", response_model=dict)
 @limiter.shared_limit("30/minute", scope="recs-ip-min")

@@ -66,7 +66,7 @@ class ClientDatabase:
         except SQLAlchemyError as e:
             await self.session.rollback()
             logger.error(f"Error creating profile: {str(e)}", exc_info=True)
-            raise e
+            raise
 
     async def get_profile_by_email(self, email: str) -> Optional[User]:
         '''
@@ -170,7 +170,7 @@ class ClientDatabase:
         except SQLAlchemyError as e:
             await self.session.rollback()
             logger.error("Error saving rating", exc_info=True)
-            raise e
+            raise
 
     async def get_user_rating_for_manga(self, user_id: uuid.UUID, manga_id: int) -> Optional[Rating]:
         '''
@@ -230,7 +230,7 @@ class ClientDatabase:
 
         Raises:
             ValueError: If the collection does not exist or is not owned by the user.
-            Exception: On DB errors (transaction rolled back and re-raised).
+            SQLAlchemyError: On DB errors (transaction rolled back and re-raised).
         '''
         try:
             result = await self.session.execute(
@@ -258,10 +258,10 @@ class ClientDatabase:
             self.session.add(link)
             await self.session.commit()
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             await self.session.rollback()
             logger.error(f"Error adding manga to collection: {e}", exc_info=True)
-            raise e
+            raise
 
     async def remove_manga_from_collection(self, user_id: uuid.UUID, collection_id: int, manga_id: int) -> None:
         '''
@@ -279,7 +279,7 @@ class ClientDatabase:
 
         Raises:
             ValueError: If collection does not exist/owned, or link is missing.
-            Exception: On DB errors (transaction rolled back and re-raised).
+            SQLAlchemyError: On DB errors (transaction rolled back and re-raised).
         '''
         try:
             # Confirm ownership
@@ -308,10 +308,10 @@ class ClientDatabase:
             await self.session.delete(link)
             await self.session.commit()
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             await self.session.rollback()
             logger.error(f"Error removing manga {manga_id} from collection {collection_id}: {e}", exc_info=True)
-            raise e
+            raise
 
     async def get_manga_in_collection(self, user_id: uuid.UUID, collection_id: int) -> List[Manga]:
         '''
@@ -326,7 +326,7 @@ class ClientDatabase:
 
         Raises:
             ValueError: If the collection does not exist or is not owned by the user.
-            Exception: On DB read errors (re-raised).
+            SQLAlchemyError: On DB read errors (re-raised).
         '''
         try:
             # Confirm ownership
@@ -349,10 +349,10 @@ class ClientDatabase:
             )
             result = await self.session.execute(stmt)
             return result.scalars().all()
-
-        except Exception as e:
-            logger.error(f"Failed to fetch manga for collection {collection_id}: {e}", exc_info=True)
-            raise e
+        
+        except SQLAlchemyError as e:
+            logger.error(f"Error fetching manga for collection {collection_id}: {e}", exc_info=True)
+            raise
 
     async def is_manga_in_collection(self, collection_id: int, manga_id: int) -> bool:
         '''

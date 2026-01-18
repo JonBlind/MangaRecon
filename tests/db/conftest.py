@@ -34,15 +34,14 @@ def test_database_url():
 
 # Run Alembic once per session
 @pytest.fixture(scope="session")
-def migrated_engine(test_database_url):
-    # Test engine (asyncpg)
+async def migrated_engine(test_database_url):
     engine = create_async_engine(test_database_url, future=True)
 
     alembic_cfg = Config("alembic_test.ini")
     command.upgrade(alembic_cfg, "head")
 
     yield engine
-    engine.sync_engine.dispose()
+    await engine.dispose()
 
 # Per-test session with SAVEPOINT isolation
 @pytest.fixture

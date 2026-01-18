@@ -35,13 +35,13 @@ class Manga(Base):
 
     external_average_rating = Column(Numeric(2, 1))
     average_rating = Column(Numeric(2, 1))
+    cover_image_url = Column(String)
 
     # Many-to-many memberships
     author = relationship("Author", back_populates="manga")
     ratings = relationship("Rating", back_populates="manga", cascade="all, delete-orphan")
-    collections = relationship("Collection", secondary="manga_collection", back_populates="manga", overlaps="collection,manga",)
     genres = relationship("Genre", secondary=manga_genre, back_populates="manga")
     tags = relationship("Tag", secondary=manga_tag, back_populates="manga")
     demographics = relationship("Demographic", secondary=manga_demographic, back_populates="manga")
-    manga_collection_links = relationship("MangaCollection", back_populates="manga", overlaps="collections,manga")
-    cover_image_url = Column(String)
+    manga_collection_links = relationship("MangaCollection", back_populates="manga", cascade="all, delete-orphan", lazy="selectin")
+    

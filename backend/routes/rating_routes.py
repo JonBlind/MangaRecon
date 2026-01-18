@@ -40,7 +40,7 @@ async def rate_manga(
     '''
     try:
         logger.info(f"User {user.id} submitting rating for manga {rating_data.manga_id} with score {rating_data.personal_rating}")
-        result = await db.rate_manga(user_id=user.id, manga_id=rating_data.manga_id, personal_rating=float(rating_data.personal_rating))
+        result = await db.rate_manga(user_id=user.id, manga_id=rating_data.manga_id, score=float(rating_data.personal_rating))
         validated = RatingRead.model_validate(result)
 
         await invalidate_user_recommendations(db, user.id)
@@ -86,7 +86,7 @@ async def update_rating(
         result = await db.rate_manga(
             user_id=user.id,
             manga_id=rating_data.manga_id,
-            personal_rating=float(rating_data.personal_rating)
+            score=float(rating_data.personal_rating)
         )
 
         validated = RatingRead.model_validate(result)

@@ -6,7 +6,9 @@ recommendations:{user_id}:{collection_id}
 '''
 from sqlalchemy import select
 from backend.db.models.collection import Collection
-from backend.cache.redis import redis_cache
+from backend.cache.redis import get_redis_cache
+
+redis_cache = get_redis_cache()
 
 async def invalidate_user_recommendations(db, user_id: int):
     '''

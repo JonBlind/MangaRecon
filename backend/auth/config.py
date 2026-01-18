@@ -1,16 +1,9 @@
-'''
-Authentication configuration and FastAPI Users backend wiring.
-
-- Loads settings from environment (.env via pydantic-settings).
-- Configures cookie transport and JWT strategy.
-- Exposes `auth_backend` for use with FastAPI Users routers/dependencies.
-'''
-
 import os
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi_users.authentication import CookieTransport, JWTStrategy, AuthenticationBackend
 
+_ENV = os.getenv("MANGARECON_ENV", "dev").lower().strip()
 class Settings(BaseSettings):
     '''
     Strongly-typed auth settings loaded from environment variables.
@@ -29,13 +22,15 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore")
 
-    auth_secret: str = Field(..., validation_alias=AliasChoices("AUTH_SECRET"))
+    auth_secret: str | None = Field(None, validation_alias=AliasChoices("AUTH_SECRET"))
     debug: bool = Field(False, validation_alias=AliasChoices("DEBUG"))
 
 settings = Settings()
-
 if not settings.auth_secret:
-    raise RuntimeError("AUTH_SECRET not found in environment")
+    if _ENV == "test":
+        settings.auth_secret = "some-fake-secret-for-tests-NOT-4-USE"
+    else:
+        raise RuntimeError("AUTH_SECRET is required (set AUTH_SECRET or run with MANGARECON_ENV=test).")
 
 # Cookie transport for auth flows; uses secure flags unless DEBUG=true.
 cookie_transport = CookieTransport(
