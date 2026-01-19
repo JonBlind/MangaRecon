@@ -1,17 +1,21 @@
 import os
-
-os.environ["MANGARECON_ENV"] = "test"
-
 from dotenv import load_dotenv
+
+# Make sure we set the env before importing the rest!
+# Other modules may not work as intended if we do not mark the env as test!
+os.environ["MANGARECON_ENV"] = "test"
+load_dotenv(".env.test", override=True)
+
+import asyncio
+import logging
+
 import pytest
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from alembic import command
 from alembic.config import Config
-import asyncio
-from backend.db.client_db import ClientDatabase
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-load_dotenv(".env.test", override=True)
+from backend.db.client_db import ClientDatabase
 
 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -25,6 +29,24 @@ def _force_test_env():
     else:
         os.environ["MANGARECON_ENV"] = old
 
+@pytest.fixture(autouse=True)
+def _restore_logging_state():
+    # Make caplog reliable even if other tests/modules modify.
+    logging.disable(logging.NOTSET)
+
+    root = logging.getLogger()
+    if root.level > logging.WARNING:
+        root.setLevel(logging.WARNING)
+
+    for name in ("backend", "backend.utils", "backend.utils.errors"):
+        lg = logging.getLogger(name)
+        lg.disabled = False
+        lg.propagate = True
+        if lg.level == logging.NOTSET:
+            pass
+
+    yield
+
 @pytest.fixture(scope="session")
 def test_database_url():
     url = os.getenv("DATABASE_URL_SYNC")
@@ -32,18 +54,16 @@ def test_database_url():
         raise RuntimeError("DATABASE_URL_SYNC is not set")
     return url
 
-# Run Alembic once per session
 @pytest.fixture(scope="session")
-async def migrated_engine(test_database_url):
+def migrated_engine(test_database_url):
     engine = create_async_engine(test_database_url, future=True)
 
     alembic_cfg = Config("alembic_test.ini")
     command.upgrade(alembic_cfg, "head")
 
     yield engine
-    await engine.dispose()
+    engine.sync_engine.dispose()
 
-# Per-test session with SAVEPOINT isolation
 @pytest.fixture
 async def db_session(migrated_engine):
     Session = async_sessionmaker(
@@ -67,8 +87,6 @@ async def db_session(migrated_engine):
                 await session.close()
                 await outer.rollback()
 
-
-# ClientDatabase fixture
 @pytest.fixture
 def client_db(db_session):
     return ClientDatabase(db_session)

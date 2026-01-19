@@ -23,10 +23,6 @@ from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
 from backend.db.models.manga_collection import MangaCollection
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s - %(name)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 

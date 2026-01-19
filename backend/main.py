@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
-redis_cache = get_redis_cache()
+ENV = os.getenv("MANGARECON_ENV", "dev").lower()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,36 +56,55 @@ async def lifespan(app: FastAPI):
     Yields:
         None: Control is passed to the application while resources are active.
     '''
+    redis_cache = None
+
+    if ENV != "test":
+        redis_cache = get_redis_cache()
+
     try:
         yield
     finally:
-        # shutdown
-        await redis_cache.close()
+        if redis_cache is not None:
+            await redis_cache.close()
 
-app = FastAPI(lifespan=lifespan, debug=settings.debug)
-register_exception_handlers(app)
-register_rate_limiter(app)
+def create_app() -> FastAPI:
+    '''
+    Primary method responsible for producing the backend client application.
+    
+    Returns:
+        FastAPI
+    '''
+    app = FastAPI(lifespan=lifespan, debug=settings.debug)
 
-# Allow frontend dev to interact with backend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    register_exception_handlers(app)
 
-# Register routers
-app.include_router(auth_routes.router)
-app.include_router(collection_routes.router)
-app.include_router(manga_routes.router)
-app.include_router(rating_routes.router)
-app.include_router(recommendation_routes.router)
-app.include_router(profile_routes.router)
-app.include_router(metadata_routes.router)
+    # Rate limiting is disabled in tests
+    if ENV != "test":
+        register_rate_limiter(app)
 
-# health check
-@app.get("/healthz")
-def health():
-    '''Simple probe used for uptime checks.'''
-    return {"message": "MangaRecon API is running."}
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Register routes
+    app.include_router(auth_routes.router)
+    app.include_router(collection_routes.router)
+    app.include_router(manga_routes.router)
+    app.include_router(rating_routes.router)
+    app.include_router(recommendation_routes.router)
+    app.include_router(profile_routes.router)
+    app.include_router(metadata_routes.router)
+
+    # health check
+    @app.get("/healthz")
+    def health():
+        '''Simple probe used for uptime check.'''
+        return {"message": "MangaRecon API is running."}
+
+    return app
+
+app = create_app()
