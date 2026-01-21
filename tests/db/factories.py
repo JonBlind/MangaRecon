@@ -12,13 +12,14 @@ from backend.db.models.collection import Collection
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
-
+from backend.auth.passwords import hash_password
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-DEFAULT_USER_HASHED_PASSWORD = "some-bs-hash"
+DEFAULT_USER_PASSWORD = "password"
+DEFAULT_USER_HASHED_PASSWORD = hash_password(DEFAULT_USER_PASSWORD)
 DEFAULT_AUTHOR_NAME = "Test Author"
 DEFAULT_MANGA_TITLE = "Test Manga"
 DEFAULT_COLLECTION_NAME = "Test Collection"

@@ -1,5 +1,5 @@
 import uuid
-from pydantic import BaseModel, EmailStr, StringConstraints, ConfigDict
+from pydantic import BaseModel, EmailStr, StringConstraints, ConfigDict, Field
 from datetime import datetime
 from typing import Optional, Annotated
 
@@ -27,7 +27,7 @@ class UserCreate(BaseModel):
     and initial profile fields.
     '''
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8)
     username: Annotated[str, StringConstraints(min_length=4)]
     displayname: Annotated[str, StringConstraints(min_length=4, max_length=64)]
     model_config = ConfigDict(from_attributes=True)
@@ -49,6 +49,6 @@ class ChangePassword(BaseModel):
     Change-password request for users who know their current password.
     Provides the current password and the desired new password.
     '''
-    current_password: str
-    new_password: str
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
     model_config = ConfigDict(from_attributes=True)

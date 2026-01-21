@@ -112,6 +112,10 @@ async def get_collection_by_id(
         validated = CollectionRead.model_validate(collection)
         
         return success("Collection retrieved successfully", data=validated)
+    
+    except HTTPException:
+        raise
+
     except Exception as e:
         logger.error(f"Failed to fetch collection {collection_id} for user {user.id}: {e}")
         return error("Failed to retrieve collection", detail=str(e))
@@ -137,31 +141,24 @@ async def create_collection(
         dict: Standardized 'Response' with the created collection (CollectionRead).
     '''
     try:
-        exists = await db.session.execute(
-            select(Collection.collection_id).where(Collection.user_id == user.id, 
-                                                   Collection.collection_name == collection_data.collection_name))
-        
-        if exists.scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
-        
-        logger.info(f"Creating New Collection for user: {user.id} with title: {collection_data.collection_name}")
-        new_collection = Collection(user_id=user.id, collection_name = collection_data.collection_name, description=collection_data.description)
+        logger.info("Creating collection for user %s name=%r", user.id, collection_data.collection_name)
+
+        new_collection = Collection(user_id=user.id, collection_name=collection_data.collection_name, description=collection_data.description)
+
         db.session.add(new_collection)
         await db.session.commit()
         await db.session.refresh(new_collection)
-        
-        validated = CollectionRead.model_validate(new_collection)
 
-        return success("Collection Created Successfully", data=validated)
-    
+        return success("Collection created successfully", data=CollectionRead.model_validate(new_collection))
+
     except IntegrityError:
         await db.session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
-    
+
     except Exception as e:
         await db.session.rollback()
-        logger.error(f"Failed to create collection: {e}")
-        return error("Failed To Create Collection", detail=str(e))
+        logger.error("Failed to create collection: %s", e, exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create collection")
     
 @router.put("/{collection_id}", response_model=dict)
 @limiter.limit("60/minute")

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pwdlib.exceptions import UnknownHashError
 from sqlalchemy import select
 from backend.db.client_db import ClientDatabase
 from backend.db.models.user import User
@@ -126,28 +127,21 @@ async def change_my_password(
     Returns:
         dict: Standardized response indicating success or an error detail.
     '''
+    logger.info(f"User {user.id} attempting password change")
+
     try:
-        logger.info(f"User {user.id} attempting password change")
+        verified, updated_hash = user_manager.password_helper.verify_and_update(payload.current_password, user.hashed_password)
+    except UnknownHashError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
-        # Verify current password
-        if not user_manager.password_helper.verify(payload.current_password, user.hashed_password):
-            logger.warning(f"User {user.id} provided incorrect current password")
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if not verified:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
-        # validate password
-        await user_manager.validate_password(payload.new_password, user)
-
-        # Update hash and persist
-        user.hashed_password = user_manager.password_helper.hash(payload.new_password)
+    if updated_hash is not None:
+        user.hashed_password = updated_hash
         await db.session.commit()
         await db.session.refresh(user)
 
-        validated = UserRead.model_validate(user)
-        return success("Password changed successfully", data=validated)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.session.rollback()
-        logger.error(f"Failed to change password for user {user.id}: {e}", exc_info=True)
-        return error("Failed to change password", detail=str(e))
+    validated = UserRead.model_validate(user)
+    
+    return success("Password changed successfully", data=validated)

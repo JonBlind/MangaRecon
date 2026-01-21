@@ -76,14 +76,12 @@ def test_collection_read_instantiates():
     now = datetime.now()
     obj = CollectionRead(
         collection_id=1,
-        user_id="user-uuid",
         collection_name="Favorites",
         description=None,
         created_at=now,
     )
 
     assert obj.collection_id == 1
-    assert obj.user_id == "user-uuid"
     assert obj.collection_name == "Favorites"
     assert obj.description is None
     assert obj.created_at == now
@@ -93,7 +91,6 @@ def test_collection_read_from_attributes():
     class DummyCollection:
         def __init__(self):
             self.collection_id = 1
-            self.user_id = "user-uuid"
             self.collection_name = "Favorites"
             self.description = None
             self.created_at = datetime.now()
@@ -102,6 +99,5 @@ def test_collection_read_from_attributes():
     obj = CollectionRead.model_validate(dummy)
 
     assert obj.collection_id == dummy.collection_id
-    assert obj.user_id == dummy.user_id
     assert obj.collection_name == dummy.collection_name
     assert obj.created_at == dummy.created_at
