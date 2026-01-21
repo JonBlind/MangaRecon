@@ -104,10 +104,13 @@ async def get_recommendations_for_collection(
             "size": size,
             "items": paginated
         })
+    
+    except HTTPException:
+        raise
     except ValueError as ve:
         logger.warning(f"Recommendation Skipped! (Likely due to no supplied manga): {ve}")
-        return error("Recommendation Skipped!",str(ve))
+        return error("Recommendation Skipped!", detail=str(ve))
 
     except Exception as e:
         logger.error(f"Failed to generate recommendations for user {user.id} on collection {collection_id}: {e}", exc_info=True)
-        return error("Failed to generate recommendations")
+        return error("Failed to generate recommendations", detail=str(e))

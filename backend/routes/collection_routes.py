@@ -74,6 +74,10 @@ async def get_users_collection(
             "size": size,
             "items": validated
         })
+    
+    except HTTPException:
+        raise
+
     except Exception as e:
         logger.error(f"Failed to fetch collections of {user.id}: {e}", exc_info=True)
         return error("Failed to retrieve collections", detail=str(e))
@@ -150,6 +154,9 @@ async def create_collection(
         await db.session.refresh(new_collection)
 
         return success("Collection created successfully", data=CollectionRead.model_validate(new_collection))
+    
+    except HTTPException:
+        raise
 
     except IntegrityError:
         await db.session.rollback()
@@ -217,6 +224,9 @@ async def update_collection(
 
         return success("Collection updated successfully", data=validated)
     
+    except HTTPException:
+        raise
+    
     except IntegrityError:
         await db.session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
@@ -249,10 +259,11 @@ async def delete_collection(
     '''
     try:
         result = await db.session.execute(
-            select(Collection).where(Collection.collection_id == collection_id,Collection.user_id == user.id))
-        
-        collection = result.scalar_one_or_none()
+            select(Collection).where(
+                Collection.collection_id == collection_id,
+                Collection.user_id == user.id))
 
+        collection = result.scalar_one_or_none()
         if not collection:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
@@ -261,9 +272,13 @@ async def delete_collection(
         await invalidate_collection_recommendations(user.id, collection_id)
 
         return success("Collection deleted successfully", data={"collection_id": collection_id})
+
+    except HTTPException:
+        raise
+
     except Exception as e:
         await db.session.rollback()
-        logger.error(f"Failed to delete collection {collection_id}: {e}")
+        logger.error(f"Failed to delete collection {collection_id}: {e}", exc_info=True)
         return error("Failed to delete collection", detail=str(e))
     
 @router.get("/{collection_id}/mangas", response_model=dict)
@@ -325,6 +340,9 @@ async def get_manga_in_collection(
             "size": size,
             "items": items
         })
+    
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.error(f"Failed to retrieve manga from collection {collection_id}: {e}", exc_info=True)
@@ -362,10 +380,18 @@ async def remove_manga_from_collection(
 
         logger.info(f"Successfully removed manga {data.manga_id} from collection {collection_id}")
         return success("Manga removed from collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
+    
+    except HTTPException:
+        raise
 
     except ValueError as ve:
-        logger.warning(f"Remove failed for collection {collection_id}: {ve}")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+        msg = str(ve).strip()
+        logger.warning(f"Remove failed for collection {collection_id}: {msg}")
+
+        if "already" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
 
     except Exception as e:
         logger.error(f"Failed to remove manga {data.manga_id} from collection {collection_id}: {e}", exc_info=True)
@@ -404,10 +430,18 @@ async def add_manga_to_collection(
 
         logger.info(f"Successfully added manga {data.manga_id} to collection {collection_id}")
         return success("Manga added to collection", data={"collection_id": collection_id, "manga_id": data.manga_id})
+    
+    except HTTPException:
+        raise
 
     except ValueError as ve:
-        logger.warning(f"Add failed for collection {collection_id}: {ve}")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+        msg = str(ve).strip()
+        logger.warning(f"Remove failed for collection {collection_id}: {msg}")
+
+        if "already" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
     
     except Exception as e:
         logger.error(f"Failed to add manga {data.manga_id} to collection {collection_id}: {e}", exc_info=True)

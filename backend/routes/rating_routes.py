@@ -46,6 +46,9 @@ async def rate_manga(
         await invalidate_user_recommendations(db, user.id)
         return success("Rating successfully submitted", data=validated)
     
+    except HTTPException:
+        raise
+    
     except IntegrityError:
         await db.session.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
@@ -94,6 +97,9 @@ async def update_rating(
 
         return success("Rating updated successfully", data=validated)
     
+    except HTTPException:
+        raise
+    
     except IntegrityError:
         await db.session.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
@@ -138,6 +144,9 @@ async def delete_rating(
         await invalidate_user_recommendations(db, user.id)
         
         return success("Rating deleted successfully.", data={"manga_id": manga_id})
+    
+    except HTTPException:
+        raise
     
     except Exception as e:
         await db.session.rollback()
@@ -203,6 +212,9 @@ async def get_user_ratings(
             "size": size,
             "items": items
         })
+    
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.error(f"Unexpected error fetching ratings for user {user.id}: {e}", exc_info=True)

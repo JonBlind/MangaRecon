@@ -247,8 +247,7 @@ class ClientDatabase:
                 )
             )
             if exists.scalar_one_or_none():
-                logger.info("Manga already exists in collection.")
-                return
+                raise ValueError("Manga already in collection.")
 
             link = MangaCollection(collection_id=collection_id, manga_id=manga_id)
             self.session.add(link)
