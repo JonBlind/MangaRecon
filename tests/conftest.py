@@ -66,9 +66,7 @@ def migrated_engine(test_database_url):
 
 @pytest.fixture
 async def db_session(migrated_engine):
-    Session = async_sessionmaker(
-        migrated_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    Session = async_sessionmaker(migrated_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with migrated_engine.connect() as conn:
         outer = await conn.begin()
@@ -84,8 +82,22 @@ async def db_session(migrated_engine):
             try:
                 yield session
             finally:
-                await session.close()
-                await outer.rollback()
+                try:
+                    if session.in_transaction():
+                        await session.rollback()
+                except Exception:
+                    pass
+
+                try:
+                    await session.close()
+                except Exception:
+                    pass
+
+                try:
+                    if outer.is_active:
+                        await outer.rollback()
+                except Exception:
+                    pass
 
 @pytest.fixture
 def client_db(db_session):

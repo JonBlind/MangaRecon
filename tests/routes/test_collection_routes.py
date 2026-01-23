@@ -290,3 +290,92 @@ async def test_remove_manga_twice_second_time_returns_404(async_client, db_sessi
         json={"manga_id": manga.manga_id},
     )
     assert rm2.status_code == 404, rm2.text
+
+@pytest.mark.asyncio
+async def test_add_manga_to_missing_collection_returns_404(async_client, db_session):
+    manga = await make_manga(db_session)
+
+    missing_cid = 999999999
+    resp = await async_client.post(
+        f"/collections/{missing_cid}/mangas",
+        json={"manga_id": manga.manga_id},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_get_mangas_in_missing_collection_returns_404(async_client):
+    missing_cid = 999999999
+    resp = await async_client.get(f"/collections/{missing_cid}/mangas?page=1&size=20")
+    assert resp.status_code == 404, resp.text
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_get_collection_by_id_returns_404(async_client, async_client_other_user):
+    c = await async_client.post("/collections/", json={"collection_name": "Private", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    r = await async_client_other_user.get(f"/collections/{cid}")
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_update_collection_returns_404(async_client, async_client_other_user):
+    c = await async_client.post("/collections/", json={"collection_name": "ToRename", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    r = await async_client_other_user.put(f"/collections/{cid}", json={"collection_name": "Hacked"})
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_delete_collection_returns_404(async_client, async_client_other_user):
+    c = await async_client.post("/collections/", json={"collection_name": "ToDelete", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    r = await async_client_other_user.delete(f"/collections/{cid}")
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_add_manga_to_collection_returns_404(async_client, async_client_other_user, db_session):
+    manga = await make_manga(db_session)
+
+    c = await async_client.post("/collections/", json={"collection_name": "AOnly", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    r = await async_client_other_user.post(f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_list_mangas_in_collection_returns_404(async_client, async_client_other_user, db_session):
+    manga = await make_manga(db_session)
+
+    c = await async_client.post("/collections/", json={"collection_name": "AListOnly", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    add = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert add.status_code == 200, add.text
+
+    r = await async_client_other_user.get(f"/collections/{cid}/mangas?page=1&size=20")
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_remove_manga_from_collection_returns_404(async_client, async_client_other_user, db_session):
+    manga = await make_manga(db_session)
+
+    c = await async_client.post("/collections/", json={"collection_name": "ARemoveOnly", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    add = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert add.status_code == 200, add.text
+
+    r = await async_client_other_user.request("DELETE", f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert r.status_code == 404, r.text

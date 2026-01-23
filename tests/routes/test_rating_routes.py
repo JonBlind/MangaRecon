@@ -82,3 +82,57 @@ async def test_rate_manga_upserts_existing_rating(async_client, db_session):
     body = resp3.json()
     assert body["status"] == "success"
     assert body["data"]["personal_rating"] == 8.5
+
+
+@pytest.mark.asyncio
+async def test_post_rating_missing_manga_returns_404(async_client):
+    resp = await async_client.post("/ratings/", json={"manga_id": 999999999, "personal_rating": 7.5})
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_get_rating_by_manga_id_missing_returns_404(async_client):
+    resp = await async_client.get("/ratings/?manga_id=999999999")
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_get_ratings_list_shape(async_client):
+    resp = await async_client.get("/ratings/?page=1&size=20")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "success", body
+
+    data = body["data"]
+    assert "total_results" in data
+    assert "page" in data
+    assert "size" in data
+    assert "items" in data
+    assert isinstance(data["items"], list)
+
+@pytest.mark.asyncio
+async def test_ratings_list_is_user_scoped(async_client, async_client_other_user, db_session):
+    manga = await make_manga(db_session)
+
+    # user A rates
+    r1 = await async_client.post("/ratings/", json={"manga_id": manga.manga_id, "personal_rating": 8.0})
+    assert r1.status_code == 200, r1.text
+
+    # user B lists ratings - should NOT see user A's rating
+    r2 = await async_client_other_user.get("/ratings/?page=1&size=50")
+    assert r2.status_code == 200, r2.text
+    items = r2.json()["data"]["items"]
+    assert all(item["manga_id"] != manga.manga_id for item in items)
+
+
+@pytest.mark.asyncio
+async def test_get_rating_by_manga_id_is_user_scoped(async_client, async_client_other_user, db_session):
+    manga = await make_manga(db_session)
+
+    # user A rates
+    r1 = await async_client.post("/ratings/", json={"manga_id": manga.manga_id, "personal_rating": 7.5})
+    assert r1.status_code == 200, r1.text
+
+    # user B tries to fetch by manga_id - should be 404 (no rating for them)
+    r2 = await async_client_other_user.get(f"/ratings/?manga_id={manga.manga_id}")
+    assert r2.status_code == 404, r2.text

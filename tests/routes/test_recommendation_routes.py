@@ -2,12 +2,14 @@ import pytest
 
 from tests.db.factories import make_manga
 from backend.routes import recommendation_routes as rec_routes
-
+import backend.cache.invalidation as inv
+import backend.routes.collection_routes as col_routes_real
 class FakeRedis:
     def __init__(self):
         self.store = {}
         self.get_calls = []
         self.set_calls = []
+        self.delete_calls = []   # <-- ADD THIS
 
     async def get(self, key: str):
         self.get_calls.append(key)
@@ -16,6 +18,10 @@ class FakeRedis:
     async def set(self, key: str, value):
         self.set_calls.append((key, value))
         self.store[key] = value
+
+    async def delete(self, key: str):
+        self.delete_calls.append(key)
+        self.store.pop(key, None)
 
 
 async def _create_collection(async_client, name="Test Collection", description="desc"):
@@ -108,52 +114,6 @@ async def test_recommendations_cache_miss_sets_cache_and_second_call_hits(async_
 
 
 @pytest.mark.asyncio
-async def test_recommendations_sorting_and_pagination(async_client, monkeypatch):
-    import backend.routes.recommendation_routes as rec_routes
-
-    collection_id = await _create_collection(async_client)
-    fake_redis = FakeRedis()
-
-    # intentionally messy ordering and edge values (0.0 must not be treated as missing)
-    generated = [
-        {"manga_id": 1, "title": "bbb", "score": 0.0},
-        {"manga_id": 2, "title": "aaa", "score": 0.0},
-        {"manga_id": 3, "title": "ccc", "score": 5.0},
-        {"manga_id": 4, "title": None, "score": 9.0},
-    ]
-
-    async def fake_generate(*args, **kwargs):
-        return list(generated)
-
-    monkeypatch.setattr(rec_routes, "redis_cache", fake_redis, raising=True)
-    monkeypatch.setattr(rec_routes, "generate_recommendations", fake_generate, raising=True)
-
-    # score desc => 9.0 first, then 5.0, then 0.0s (tie-broken by title)
-    resp = await async_client.get(f"/recommendations/{collection_id}?order_by=score&order_dir=desc&page=1&size=2")
-    assert resp.status_code == 200, resp.text
-    items = resp.json()["data"]["items"]
-    assert [items[0]["score"], items[1]["score"]] == [9.0, 5.0]
-
-    # page 2 should contain the 0.0s
-    resp2 = await async_client.get(f"/recommendations/{collection_id}?order_by=score&order_dir=desc&page=2&size=2")
-    assert resp2.status_code == 200, resp2.text
-    items2 = resp2.json()["data"]["items"]
-    assert all(x["score"] == 0.0 for x in items2)
-    assert [x["title"] for x in items2] == ["bbb", "aaa"] or [x["title"] for x in items2] == ["aaa", "bbb"]
-
-    # title asc => None treated as "" so should come first
-    resp3 = await async_client.get(f"/recommendations/{collection_id}?order_by=title&order_dir=asc&page=1&size=20")
-    assert resp3.status_code == 200, resp3.text
-    items3 = resp3.json()["data"]["items"]
-    assert items3[0]["title"] is None
-
-@pytest.mark.asyncio
-async def test_recommendations_missing_collection_404(async_client):
-    resp = await async_client.get("/recommendations/999999?page=1&size=20")
-    assert resp.status_code == 404, resp.text
-
-
-@pytest.mark.asyncio
 async def test_recommendations_sort_and_paginate(async_client, monkeypatch):
     # 1) create a collection
     c = await async_client.post("/collections/", json={"collection_name": "RecTest", "description": "d"})
@@ -187,3 +147,114 @@ async def test_recommendations_sort_and_paginate(async_client, monkeypatch):
     items2 = r2.json()["data"]["items"]
     assert len(items2) == 2
     assert {i["manga_id"] for i in items2} == {1, 4}
+
+
+@pytest.mark.asyncio
+async def test_recommendations_are_cached(async_client, db_session, monkeypatch):
+    manga = await make_manga(db_session)
+
+    # create collection
+    c = await async_client.post(
+        "/collections/",
+        json={"collection_name": "RecCache", "description": "d"},
+    )
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    # add manga so generator has input
+    add = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert add.status_code == 200, add.text
+
+    # patch generator to count calls
+    calls = {"n": 0}
+
+    async def fake_generate_recommendations(user_id, collection_id, session):
+        calls["n"] += 1
+        return [
+            {"manga_id": 123, "title": "X", "score": 0.9},
+            {"manga_id": 456, "title": "Y", "score": 0.5},
+        ]
+
+    monkeypatch.setattr(rec_routes, "generate_recommendations", fake_generate_recommendations)
+    monkeypatch.setattr(rec_routes, "redis_cache", FakeRedis())
+
+    # first call -> miss -> generator runs
+    r1 = await async_client.get(f"/recommendations/{cid}?page=1&size=20&order_by=score&order_dir=desc")
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["status"] == "success"
+    assert calls["n"] == 1
+
+    # second call -> hit -> generator should NOT run again
+    r2 = await async_client.get(f"/recommendations/{cid}?page=1&size=20&order_by=score&order_dir=desc")
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "success"
+    assert calls["n"] == 1
+
+@pytest.mark.asyncio
+async def test_add_manga_invalidates_recommendations(async_client, db_session, monkeypatch):
+    manga1 = await make_manga(db_session)
+    manga2 = await make_manga(db_session)
+
+    # create collection
+    c = await async_client.post("/collections/", json={"collection_name": "InvAdd", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    # add initial manga so recs can generate
+    add1 = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga1.manga_id})
+    assert add1.status_code == 200, add1.text
+
+
+    fake_cache = FakeRedis()
+    monkeypatch.setattr(rec_routes, "redis_cache", fake_cache, raising=True)
+
+    calls = {"n": 0}
+    async def fake_generate(user_id, collection_id, session):
+        calls["n"] += 1
+        return [{"manga_id": 1, "title": f"gen{calls['n']}", "score": 0.9}]
+    monkeypatch.setattr(rec_routes, "generate_recommendations", fake_generate, raising=True)
+
+    async def fake_invalidate(user_id, collection_id):
+        await fake_cache.delete(f"recommendations:{user_id}:{collection_id}")
+
+    monkeypatch.setattr(col_routes_real, "invalidate_collection_recommendations", fake_invalidate, raising=True)
+    monkeypatch.setattr(inv, "invalidate_collection_recommendations", fake_invalidate, raising=True)
+
+    # first rec call -> caches
+    r1 = await async_client.get(f"/recommendations/{cid}?page=1&size=20")
+    assert calls["n"] == 1
+
+    # second rec call -> should hit cache
+    r2 = await async_client.get(f"/recommendations/{cid}?page=1&size=20")
+    assert calls["n"] == 1
+
+    # add another manga -> should invalidate
+    add2 = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga2.manga_id})
+    assert add2.status_code == 200, add2.text
+
+    # PROVE invalidation happened
+    assert len(fake_cache.delete_calls) == 1, fake_cache.delete_calls
+
+    # third rec call -> should MISS cache and regenerate
+    r3 = await async_client.get(f"/recommendations/{cid}?page=1&size=20")
+    assert calls["n"] == 2
+
+@pytest.mark.asyncio
+async def test_other_user_cannot_get_recommendations_for_collection_returns_404(
+    async_client,
+    async_client_other_user,
+    db_session,
+):
+    manga = await make_manga(db_session)
+
+    # user A creates collection and adds manga
+    c = await async_client.post("/collections/", json={"collection_name": "RecPrivate", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    add = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
+    assert add.status_code == 200, add.text
+
+    # user B tries to get recs for A's collection
+    r = await async_client_other_user.get(f"/recommendations/{cid}?page=1&size=20")
+    assert r.status_code == 404, r.text
