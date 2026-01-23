@@ -1,5 +1,5 @@
 import pytest
-from uuid import UUID
+from uuid import UUID, uuid4
 
 @pytest.mark.asyncio
 async def test_get_my_profile(async_client, authed_user):
@@ -60,4 +60,34 @@ async def test_change_my_password_rejects_invalid_new_password(async_client):
         json={"current_password": "password", "new_password": "x"},
     )
     assert resp.status_code in (400, 422)
+    assert resp.json()["status"] == "error"
+
+@pytest.mark.asyncio
+async def test_get_my_profile_returns_404_if_user_row_missing(_raw_async_client):
+    from backend.db.models.user import User
+    from tests.routes.conftest import AuthedClient
+
+    ghost = User(
+        id=uuid4(),
+        email="ghost@example.com",
+        hashed_password="x",
+        username="ghost",
+        displayname="Ghost",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+
+    ghost_client = AuthedClient(_raw_async_client, ghost)
+
+    resp = await ghost_client.get("/profiles/me")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_rejects_restricted_fields(async_client):
+    resp = await async_client.patch("/profiles/me", json={"email": "new@example.com"})
+    assert resp.status_code == 403
     assert resp.json()["status"] == "error"

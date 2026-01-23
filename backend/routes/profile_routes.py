@@ -46,6 +46,9 @@ async def get_my_profile(
 
         validated = UserRead.model_validate(me)
         return success("Profile retrieved successfully", data=validated)
+    
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.error(f"Failed to retrieve profile for user {user.id}: {e}", exc_info=True)
@@ -81,13 +84,13 @@ async def update_my_profile(
 
         if not me:
             logger.warning(f"User {user.id} attempted to update a non-existent profile")
-            return error("Profile not found", detail="No profile exists for this user.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
         # Reject unsupported fields here (email/password changes handled in the future)
         incoming = payload.model_dump(exclude_unset=True)
         if any(k in incoming for k in ("email", "password")):
             logger.warning(f"User {user.id} attempted to change restricted fields via /profiles/me")
-            return error("Not allowed", detail="Use the account settings flow to change email or password.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
 
         if "displayname" in incoming:
             setattr(me, "displayname", incoming["displayname"])
@@ -99,6 +102,9 @@ async def update_my_profile(
 
         validated = UserRead.model_validate(me)
         return success("Profile updated successfully", data=validated)
+    
+    except HTTPException:
+        raise
 
     except Exception as e:
         await db.session.rollback()
