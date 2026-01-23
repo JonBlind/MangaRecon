@@ -1,6 +1,6 @@
 import pytest
 from tests.db.factories import make_manga
-
+from tests.db.factories import make_collection
 
 def _unwrap_items(data):
     # collections list / manga list endpoints return paginated dicts
@@ -166,6 +166,28 @@ async def test_remove_manga_from_collection(async_client, db_session):
     assert resp4.status_code == 200, resp4.text
     items = _unwrap_items(resp4.json()["data"])
     assert all(item["manga_id"] != manga.manga_id for item in items)
+
+@pytest.mark.asyncio
+async def test_collections_list_is_ordered_by_id_desc(async_client):
+    created_ids = []
+
+    for i in range(3):
+        r = await async_client.post(
+            "/collections/",
+            json={"collection_name": f"ord{i}", "description": "d"},
+        )
+        assert r.status_code == 200, r.text
+        created_ids.append(r.json()["data"]["collection_id"])
+
+    resp = await async_client.get("/collections/?page=1&size=10")
+    assert resp.status_code == 200, resp.text
+
+    items = _unwrap_items(resp.json()["data"])
+    ids = [c["collection_id"] for c in items]
+
+    # Only assert about the collections we just created (they should appear first in desc order)
+    expected = sorted(created_ids, reverse=True)
+    assert ids[:3] == expected
 
 @pytest.mark.asyncio
 async def test_collections_pagination(async_client):
@@ -379,3 +401,89 @@ async def test_other_user_cannot_remove_manga_from_collection_returns_404(async_
 
     r = await async_client_other_user.request("DELETE", f"/collections/{cid}/mangas", json={"manga_id": manga.manga_id})
     assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_get_mangas_in_collection_order_desc(async_client, db_session):
+    cr = await async_client.post(
+        "/collections/",
+        json={"collection_name": "order-desc", "description": "d"},
+    )
+    assert cr.status_code == 200, cr.text
+    collection_id = cr.json()["data"]["collection_id"]
+
+    m1 = await make_manga(db_session, title="m1")
+    m2 = await make_manga(db_session, title="m2")
+    m3 = await make_manga(db_session, title="m3")
+
+    for m in (m1, m2, m3):
+        r = await async_client.post(
+            f"/collections/{collection_id}/mangas",
+            json={"manga_id": m.manga_id},
+        )
+        assert r.status_code == 200, r.text
+
+    resp = await async_client.get(
+        f"/collections/{collection_id}/mangas?order=desc&page=1&size=20"
+    )
+    assert resp.status_code == 200, resp.text
+    items = _unwrap_items(resp.json()["data"])
+    ids = [x["manga_id"] for x in items]
+
+    assert ids == sorted(ids, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_get_mangas_in_collection_order_asc(async_client, db_session):
+    cr = await async_client.post(
+        "/collections/",
+        json={"collection_name": "order-asc", "description": "d"},
+    )
+    assert cr.status_code == 200, cr.text
+    collection_id = cr.json()["data"]["collection_id"]
+
+    m1 = await make_manga(db_session, title="a1")
+    m2 = await make_manga(db_session, title="a2")
+    m3 = await make_manga(db_session, title="a3")
+
+    for m in (m1, m2, m3):
+        r = await async_client.post(
+            f"/collections/{collection_id}/mangas",
+            json={"manga_id": m.manga_id},
+        )
+        assert r.status_code == 200, r.text
+
+    resp = await async_client.get(
+        f"/collections/{collection_id}/mangas?order=asc&page=1&size=20"
+    )
+    assert resp.status_code == 200, resp.text
+    items = _unwrap_items(resp.json()["data"])
+    ids = [x["manga_id"] for x in items]
+
+    assert ids == sorted(ids)
+
+@pytest.mark.asyncio
+async def test_get_collections_order_desc(async_client):
+    # create 3 collections
+    ids = []
+    for i in range(3):
+        r = await async_client.post("/collections/", json={"collection_name": f"d{i}", "description": "d"})
+        ids.append(r.json()["data"]["collection_id"])
+
+    resp = await async_client.get("/collections/?order=desc&page=1&size=10")
+    items = resp.json()["data"]["items"]
+    got = [c["collection_id"] for c in items][:3]
+    assert got == sorted(ids, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_get_collections_order_asc(async_client):
+    ids = []
+    for i in range(3):
+        r = await async_client.post("/collections/", json={"collection_name": f"a{i}", "description": "d"})
+        ids.append(r.json()["data"]["collection_id"])
+
+    resp = await async_client.get("/collections/?order=asc&page=1&size=10")
+    items = resp.json()["data"]["items"]
+    got = [c["collection_id"] for c in items][:3]
+    assert got == sorted(ids)

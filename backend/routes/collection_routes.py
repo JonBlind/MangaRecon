@@ -26,6 +26,7 @@ from backend.schemas.collection import (
 from backend.schemas.manga import MangaListItem
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
+from typing import Literal
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def get_users_collection(
     request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    order: Literal["asc", "desc"] = Query("desc"),
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user),
 ):
@@ -64,6 +66,10 @@ async def get_users_collection(
         total = (await db.session.execute(count_stmt)).scalar_one()
 
         stmt = base.order_by(Collection.collection_id.desc()).offset(offset).limit(size)
+
+        order_by = Collection.collection_id.asc() if order == "asc" else Collection.collection_id.desc()
+        stmt = base.order_by(order_by).offset(offset).limit(size)
+
         result = await db.session.execute(stmt)
         collections = result.scalars().all()
 
@@ -289,6 +295,7 @@ async def get_manga_in_collection(
     collection_id: int,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    order: Literal["asc", "desc"] = Query("desc"),
     db: ClientDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
@@ -330,6 +337,11 @@ async def get_manga_in_collection(
         total = (await db.session.execute(count_stmt)).scalar_one()
 
         stmt = base.order_by(Manga.manga_id.desc()).offset(offset).limit(size)
+
+        order_by = Manga.manga_id.asc() if order == "asc" else Manga.manga_id.desc()
+
+        stmt = base.order_by(order_by).offset(offset).limit(size)
+
         result = await db.session.execute(stmt)
         manga_list = result.scalars().all()
 

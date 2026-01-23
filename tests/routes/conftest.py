@@ -3,7 +3,7 @@ from httpx import AsyncClient, ASGITransport
 from asgi_lifespan import LifespanManager
 
 from backend.main import app
-from backend.dependencies import get_user_read_db, get_user_write_db
+from backend.dependencies import get_user_read_db, get_user_write_db, get_async_user_write_session
 from backend.auth.dependencies import current_active_verified_user
 from tests.db.factories import make_user
 import backend.routes.rating_routes as rating_routes
@@ -89,20 +89,22 @@ async def other_user(db_session):
 
 
 @pytest.fixture(autouse=True)
+
 async def override_deps(client_db):
-    """
-    Global per-test overrides that should be shared for all clients.
-    IMPORTANT: do NOT override current_active_verified_user here,
-    because user switching is handled per request by AuthedClient.
-    """
+    # override user db wrappers
     async def _user_read_db_override():
         yield client_db
 
     async def _user_write_db_override():
         yield client_db
 
+    # override raw session used by fastapi-users
+    async def _override_user_write_session():
+        yield client_db.session
+
     app.dependency_overrides[get_user_read_db] = _user_read_db_override
     app.dependency_overrides[get_user_write_db] = _user_write_db_override
+    app.dependency_overrides[get_async_user_write_session] = _override_user_write_session
 
     # prevent rating routes from invalidating recommendations during tests
     async def _noop_invalidate(*args, **kwargs):
@@ -115,7 +117,6 @@ async def override_deps(client_db):
 
     rating_routes.invalidate_user_recommendations = orig_invalidate
     app.dependency_overrides.clear()
-
 
 @pytest.fixture
 async def _raw_async_client():
