@@ -5,9 +5,10 @@ from asgi_lifespan import LifespanManager
 from backend.main import app
 from backend.dependencies import get_user_read_db, get_user_write_db, get_async_user_write_session
 from backend.auth.dependencies import current_active_verified_user
-from tests.db.factories import make_user
+from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.routes.rating_routes as rating_routes
 import backend.routes.profile_routes as profile_routes
+from tests.db.factories import make_user
 
 class AuthedClient:
     """
@@ -89,18 +90,24 @@ async def other_user(db_session):
 
 
 @pytest.fixture(autouse=True)
+async def override_deps(db_session):
+    """
+    Global per-test overrides that should be shared for all clients.
+    IMPORTANT: do NOT override current_active_verified_user here,
+    because user switching is handled per request by AuthedClient.
+    """
+    read_db = ClientReadDatabase(db_session)
+    write_db = ClientWriteDatabase(db_session)
 
-async def override_deps(client_db):
-    # override user db wrappers
     async def _user_read_db_override():
-        yield client_db
+        yield read_db
 
     async def _user_write_db_override():
-        yield client_db
+        yield write_db
 
-    # override raw session used by fastapi-users
     async def _override_user_write_session():
-        yield client_db.session
+        # raw session for fastapi-users
+        yield db_session
 
     app.dependency_overrides[get_user_read_db] = _user_read_db_override
     app.dependency_overrides[get_user_write_db] = _user_write_db_override

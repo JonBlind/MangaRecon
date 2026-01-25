@@ -1,21 +1,17 @@
 import pytest
 
-from backend.cache.invalidation import (
-    invalidate_user_recommendations,
-    invalidate_collection_recommendations,
-)
+from backend.cache.invalidation import invalidate_user_recommendations, invalidate_collection_recommendations
 
 
 class FakeResult:
     def __init__(self, rows):
-        # rows should look like [(1,), (2,), ...]
         self._rows = rows
 
     def all(self):
         return self._rows
 
 
-class FakeSession:
+class FakeDB:
     def __init__(self, rows):
         self._rows = rows
         self.executed = False
@@ -23,12 +19,6 @@ class FakeSession:
     async def execute(self, _stmt):
         self.executed = True
         return FakeResult(self._rows)
-
-
-class FakeDB:
-    def __init__(self, rows):
-        self.session = FakeSession(rows)
-
 
 class FakeRedis:
     def __init__(self):
@@ -54,7 +44,7 @@ async def test_invalidate_user_recommendations_deletes_all_keys(monkeypatch):
 
     await invalidate_user_recommendations(db, user_id)
 
-    assert db.session.executed is True
+    assert db.executed is True
     assert fake_redis.deleted == []  # should not delete
     assert fake_redis.deleted_multiple == [
         [
@@ -77,7 +67,7 @@ async def test_invalidate_user_recommendations_no_collections_no_delete(monkeypa
 
     await invalidate_user_recommendations(db, user_id)
 
-    assert db.session.executed is True
+    assert db.executed is True
     assert fake_redis.deleted == []
     assert fake_redis.deleted_multiple == []  # no keys = no delete_multiple call
 

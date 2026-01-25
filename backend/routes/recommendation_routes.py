@@ -11,7 +11,6 @@ Returned payloads use the project-wide response envelope.
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
@@ -59,7 +58,7 @@ async def get_recommendations_for_collection(
     logger.info(f"Generating recommendations for collection: {collection_id}")
     try:
 
-        exists = await db.session.execute(
+        exists = await db.execute(
             select(Collection.collection_id).where(Collection.collection_id == collection_id,
                                                 Collection.user_id == user.id)
         )
@@ -70,7 +69,7 @@ async def get_recommendations_for_collection(
         recommendations = await redis_cache.get(cache_key)
         
         if recommendations is None:
-            recommendations = await generate_recommendations(user.id, collection_id, db.session)
+            recommendations = await generate_recommendations(user.id, collection_id, db)
             await redis_cache.set(cache_key, recommendations)
 
         reverse = (order_dir == "desc")

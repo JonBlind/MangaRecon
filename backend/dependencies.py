@@ -10,7 +10,7 @@ from typing import AsyncGenerator, Optional
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 
 class Settings(BaseSettings):
     '''
@@ -37,8 +37,8 @@ class Settings(BaseSettings):
         extra="ignore")
     
     user_write: Optional[str] = Field(None, validation_alias=AliasChoices("UserWriterDB"))
-    user_read:  Optional[str] = Field(None, validation_alias=AliasChoices("UserReaderDB"))
-    manga_write:Optional[str] = Field(None, validation_alias=AliasChoices("MangaWriterDB"))
+    user_read: Optional[str] = Field(None, validation_alias=AliasChoices("UserReaderDB"))
+    manga_write: Optional[str] = Field(None, validation_alias=AliasChoices("MangaWriterDB"))
     manga_read: Optional[str] = Field(None, validation_alias=AliasChoices("MangaReaderDB"))
 
 settings = Settings()
@@ -56,7 +56,7 @@ _Session_manga_write = async_sessionmaker(_engine_manga_write, class_=AsyncSessi
 _Session_manga_read = async_sessionmaker(_engine_manga_read, class_=AsyncSession, expire_on_commit=False) if _engine_manga_read else None
 
 # Dependency providers
-async def get_user_read_db() -> AsyncGenerator[ClientDatabase, None]:
+async def get_user_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
     '''
     Yield a `ClientDatabase` bound to the **User read** AsyncSession.
 
@@ -68,9 +68,9 @@ async def get_user_read_db() -> AsyncGenerator[ClientDatabase, None]:
         read session (closes on exit).
     '''
     async with _Session_user_read() as session:
-        yield ClientDatabase(session)
+        yield ClientReadDatabase(session)
 
-async def get_user_write_db() -> AsyncGenerator[ClientDatabase, None]:
+async def get_user_write_db() -> AsyncGenerator[ClientWriteDatabase, None]:
     '''
     Yield a `ClientDatabase` bound to the **User write** AsyncSession.
 
@@ -82,9 +82,9 @@ async def get_user_write_db() -> AsyncGenerator[ClientDatabase, None]:
         write session (closes on exit).
     '''
     async with _Session_user_write() as session:
-        yield ClientDatabase(session)
+        yield ClientWriteDatabase(session)
 
-async def get_manga_read_db() -> AsyncGenerator[ClientDatabase, None]:
+async def get_manga_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
     '''
     Yield a `ClientDatabase` bound to the **Manga read** AsyncSession.
 
@@ -96,9 +96,9 @@ async def get_manga_read_db() -> AsyncGenerator[ClientDatabase, None]:
         read session (closes on exit).
     '''
     async with _Session_manga_read() as session:
-        yield ClientDatabase(session)
+        yield ClientReadDatabase(session)
 
-async def get_manga_write_db() -> AsyncGenerator[ClientDatabase, None]:
+async def get_manga_write_db() -> AsyncGenerator[ClientWriteDatabase, None]:
     '''
     Yield a `ClientDatabase` bound to the **Manga write** AsyncSession.
 
@@ -110,14 +110,14 @@ async def get_manga_write_db() -> AsyncGenerator[ClientDatabase, None]:
         write session (closes on exit).
     '''
     async with _Session_manga_write() as session:
-        yield ClientDatabase(session)
+        yield ClientWriteDatabase(session)
 
-# Raw session (for FastAPI Users)
+# Raw session to provide FastAPI User access.
 async def get_async_user_write_session() -> AsyncGenerator[AsyncSession, None]:
     '''
     Yield a raw **User write** `AsyncSession` (for FastAPI Users internals).
 
-    This bypasses `ClientDatabase` and provides a plain SQLAlchemy AsyncSession
+    This bypasses the DB wrapper and provides a plain SQLAlchemy AsyncSession
     for the authentication system’s adapters/managers that expect direct access.
 
     Returns:

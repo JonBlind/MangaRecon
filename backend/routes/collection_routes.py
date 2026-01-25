@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from backend.cache.invalidation import invalidate_collection_recommendations
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
@@ -40,7 +40,7 @@ async def get_users_collection(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     order: Literal["asc", "desc"] = Query("desc"),
-    db: ClientDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user),
 ):
     '''
@@ -63,14 +63,14 @@ async def get_users_collection(
         base = select(Collection).where(Collection.user_id == user.id)
 
         count_stmt = base.with_only_columns(func.count(Collection.collection_id)).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         stmt = base.order_by(Collection.collection_id.desc()).offset(offset).limit(size)
 
         order_by = Collection.collection_id.asc() if order == "asc" else Collection.collection_id.desc()
         stmt = base.order_by(order_by).offset(offset).limit(size)
 
-        result = await db.session.execute(stmt)
+        result = await db.execute(stmt)
         collections = result.scalars().all()
 
         validated = [CollectionRead.model_validate(c) for c in collections]
@@ -94,7 +94,7 @@ async def get_users_collection(
 async def get_collection_by_id(
     request: Request,
     collection_id: int,
-    db: ClientDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -111,7 +111,7 @@ async def get_collection_by_id(
     '''
     try:
         logger.info(f"Fetching Collection_id: {collection_id} for user: {user.id}")
-        result = await db.session.execute(
+        result = await db.execute(
             select(Collection).where(Collection.collection_id == collection_id, 
                                      Collection.user_id == user.id))
         collection = result.scalar_one_or_none()
@@ -135,7 +135,7 @@ async def get_collection_by_id(
 async def create_collection(
     request: Request,
     collection_data: CollectionCreate,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -155,9 +155,9 @@ async def create_collection(
 
         new_collection = Collection(user_id=user.id, collection_name=collection_data.collection_name, description=collection_data.description)
 
-        db.session.add(new_collection)
-        await db.session.commit()
-        await db.session.refresh(new_collection)
+        db.add(new_collection)
+        await db.commit()
+        await db.refresh(new_collection)
 
         return success("Collection created successfully", data=CollectionRead.model_validate(new_collection))
     
@@ -165,11 +165,11 @@ async def create_collection(
         raise
 
     except IntegrityError:
-        await db.session.rollback()
+        await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
 
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error("Failed to create collection: %s", e, exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create collection")
     
@@ -179,7 +179,7 @@ async def update_collection(
     request: Request,
     collection_id: int,
     collection_update: CollectionUpdate,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -196,7 +196,7 @@ async def update_collection(
         dict: Standardized 'Response' with the updated collection (CollectionRead).
     '''
     try:
-        result = await db.session.execute(
+        result = await db.execute(
             select(Collection).where(Collection.collection_id == collection_id, 
                                      Collection.user_id == user.id))
         
@@ -208,7 +208,7 @@ async def update_collection(
         update_fields = collection_update.model_dump(exclude_unset=True)
 
         if "collection_name" in update_fields:
-            exists = await db.session.execute(
+            exists = await db.execute(
                 select(Collection.collection_id).where(
                     Collection.user_id == user.id,
                     Collection.collection_name == update_fields["collection_name"],
@@ -220,8 +220,8 @@ async def update_collection(
         for field, value in update_fields.items():
             setattr(collection, field, value)
 
-        await db.session.commit()
-        await db.session.refresh(collection)
+        await db.commit()
+        await db.refresh(collection)
 
         # Remove cache since old data will interfere with new actions
         await invalidate_collection_recommendations(user.id, collection_id)
@@ -234,11 +234,11 @@ async def update_collection(
         raise
     
     except IntegrityError:
-        await db.session.rollback()
+        await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Collection name already exists")
     
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Failed to update collection {collection_id}: {e}")
         return error("Failed to update collection", detail=str(e))
     
@@ -248,7 +248,7 @@ async def update_collection(
 async def delete_collection(
     request: Request,
     collection_id: int,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -264,7 +264,7 @@ async def delete_collection(
         dict: Standardized 'Response' with the successfully deleted CollectionID or error msg.
     '''
     try:
-        result = await db.session.execute(
+        result = await db.execute(
             select(Collection).where(
                 Collection.collection_id == collection_id,
                 Collection.user_id == user.id))
@@ -273,8 +273,8 @@ async def delete_collection(
         if not collection:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
-        await db.session.delete(collection)
-        await db.session.commit()
+        await db.delete(collection)
+        await db.commit()
         await invalidate_collection_recommendations(user.id, collection_id)
 
         return success("Collection deleted successfully", data={"collection_id": collection_id})
@@ -283,7 +283,7 @@ async def delete_collection(
         raise
 
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Failed to delete collection {collection_id}: {e}", exc_info=True)
         return error("Failed to delete collection", detail=str(e))
     
@@ -296,7 +296,7 @@ async def get_manga_in_collection(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     order: Literal["asc", "desc"] = Query("desc"),
-    db: ClientDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -318,7 +318,7 @@ async def get_manga_in_collection(
         offset = (page - 1) * size
 
         # ownership check (fast fail)
-        exists_q = await db.session.execute(
+        exists_q = await db.execute(
             select(Collection.collection_id).where(
                 Collection.collection_id == collection_id,
                 Collection.user_id == user.id
@@ -334,7 +334,7 @@ async def get_manga_in_collection(
         )
 
         count_stmt = base.with_only_columns(func.count(Manga.manga_id)).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         stmt = base.order_by(Manga.manga_id.desc()).offset(offset).limit(size)
 
@@ -342,7 +342,7 @@ async def get_manga_in_collection(
 
         stmt = base.order_by(order_by).offset(offset).limit(size)
 
-        result = await db.session.execute(stmt)
+        result = await db.execute(stmt)
         manga_list = result.scalars().all()
 
         items = [MangaListItem.model_validate(m) for m in manga_list]
@@ -366,7 +366,7 @@ async def remove_manga_from_collection(
     request: Request,
     collection_id: int,
     data: MangaInCollectionRequest,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -376,7 +376,7 @@ async def remove_manga_from_collection(
         request (Request): FastAPI request (required by rate limiting).
         collection_id (int): Collection identifier to access and remove a manga from.
         data (MangaInCollectionRequest): Payload containing the manga ID to dlete. (MangaInCollectionRequest)
-        db (ClientDatabase): User-domain read database client.
+        db (ClientDatabase): User-domain write database client.
         user (User): Currently authenticated, active, verified user.
     
     Returns:
@@ -415,7 +415,7 @@ async def add_manga_to_collection(
     request: Request,
     collection_id: int,
     data: MangaInCollectionRequest,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -425,7 +425,7 @@ async def add_manga_to_collection(
         request (Request): FastAPI request (required by rate limiting).
         collection_id (int): Collection identifier to access and add a manga to.
         data (MangaInCollectionRequest): Payload containing the manga ID to add. (MangaInCollectionRequest)
-        db (ClientDatabase): User-domain read database client.
+        db (ClientDatabase): User-domain write database client.
         user (User): Currently authenticated, active, verified user.
 
     Returns:

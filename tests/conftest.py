@@ -15,7 +15,7 @@ from alembic.config import Config
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 
 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -100,5 +100,9 @@ async def db_session(migrated_engine):
                     pass
 
 @pytest.fixture
-def client_db(db_session):
-    return ClientDatabase(db_session)
+def client_read_db(db_session):
+    return ClientReadDatabase(db_session)
+
+@pytest.fixture
+def client_write_db(db_session):
+    return ClientWriteDatabase(db_session)

@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter
 from backend.cache.redis import get_redis_cache
-
+from dotenv import load_dotenv
 from backend.routes import (
     collection_routes,
     manga_routes,
@@ -27,6 +27,12 @@ from backend.routes import (
 )
 
 from backend.auth import router as auth_routes
+
+ENV = os.getenv("MANGARECON_ENV", "dev").lower()
+if ENV == "test":
+    load_dotenv(".env.test", override=True)
+else:
+    load_dotenv(".env", override=False)
 
 class Settings(BaseSettings):
     '''

@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientReadDatabase
 from backend.db.models.manga import Manga
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
-from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.db.models.join_tables import (
     manga_tag,
     manga_genre,
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/mangas", tags=["Mangas"])
 async def get_manga_by_id(
     request: Request,
     manga_id: int,
-    db: ClientDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_manga_read_db)
 ):
     '''
     Retrieve a single manga by its identifier.
@@ -47,24 +46,24 @@ async def get_manga_by_id(
     try:
         logger.info(f"Fetching full manga metadata for manga {manga_id}")
 
-        result = await db.session.execute(select(Manga).where(Manga.manga_id == manga_id))
+        result = await db.execute(select(Manga).where(Manga.manga_id == manga_id))
 
         manga = result.scalar_one_or_none()
 
         if not manga:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
         
-        genre_result = await db.session.execute(
+        genre_result = await db.execute(
             select(Genre).join(manga_genre).where(manga_genre.c.manga_id == manga_id)
         )
         genres = [GenreRead.model_validate(g) for g in genre_result.scalars().all()]
 
-        tag_result = await db.session.execute(
+        tag_result = await db.execute(
             select(Tag).join(manga_tag).where(manga_tag.c.manga_id == manga_id)
         )
         tags = [TagRead.model_validate(t) for t in tag_result.scalars().all()]
 
-        demo_result = await db.session.execute(
+        demo_result = await db.execute(
             select(Demographic).join(manga_demographic).where(manga_demographic.c.manga_id == manga_id)
         )
         demographics = [DemographicRead.model_validate(d) for d in demo_result.scalars().all()]
@@ -108,7 +107,7 @@ async def filter_manga(
     order_by: MangaOrderField = Query("title"),
     order_dir: OrderDirection = Query("asc"),
 
-    db: ClientDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_manga_read_db)
 ):
     '''
     List and filter manga with optional genre, tag, and demographic criteria, plus title search.
@@ -167,7 +166,7 @@ async def filter_manga(
 
         # Count
         count_stmt = stmt.with_only_columns(func.count(func.distinct(Manga.manga_id))).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         # Order
         stmt = stmt.order_by(get_ordering_clause(order_by, order_dir))
@@ -175,7 +174,7 @@ async def filter_manga(
         # Paginate
         stmt = stmt.offset(offset).limit(size)
 
-        result = await db.session.execute(stmt)
+        result = await db.execute(stmt)
         manga_list = result.scalars().all()
 
         validated = [MangaListItem.model_validate(manga) for manga in manga_list]

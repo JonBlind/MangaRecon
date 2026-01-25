@@ -7,10 +7,11 @@ recommendations:{user_id}:{collection_id}
 from sqlalchemy import select
 from backend.db.models.collection import Collection
 from backend.cache.redis import get_redis_cache
+from backend.db.client_db import ClientReadDatabase
 
 redis_cache = get_redis_cache()
 
-async def invalidate_user_recommendations(db, user_id: int):
+async def invalidate_user_recommendations(db: ClientReadDatabase, user_id: int):
     '''
     Invalidate all cached recommendation payloads for a user.
 
@@ -20,7 +21,7 @@ async def invalidate_user_recommendations(db, user_id: int):
     Returns:
         None: Performs side effects on the cache (deletes keys), does not return data.
     '''
-    res = await db.session.execute(
+    res = await db.execute(
         select(Collection.collection_id).where(Collection.user_id == user_id)
     )
     keys = [f"recommendations:{user_id}:{cid}" for (cid,) in res.all()]

@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.schemas.rating import RatingCreate, RatingRead
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/ratings", tags=['Ratings'])
 async def rate_manga(
     request: Request,
     rating_data: RatingCreate,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -50,11 +50,11 @@ async def rate_manga(
         raise
     
     except IntegrityError:
-        await db.session.rollback()
+        await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
 
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Unexpected error during manga rating: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))
     
@@ -63,7 +63,7 @@ async def rate_manga(
 async def update_rating(
     request: Request,
     rating_data: RatingCreate,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
     ):
     '''
@@ -101,11 +101,11 @@ async def update_rating(
         raise
     
     except IntegrityError:
-        await db.session.rollback()
+        await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
     
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Unexpected error during manga rating update: {e}", exc_info=True)
         return error("Internal server error", detail=str(e))
     
@@ -114,7 +114,7 @@ async def update_rating(
 async def delete_rating(
     request: Request,
     manga_id: int,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -137,8 +137,8 @@ async def delete_rating(
             logger.warning(f"User {user.id} attempted to delete rating for manga {manga_id}, but no rating exists.")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rating not found")
         
-        await db.session.delete(existing)
-        await db.session.commit()
+        await db.delete(existing)
+        await db.commit()
 
         logger.info(f"Successfully deleted rating for manga {manga_id} by user {user.id}")
         await invalidate_user_recommendations(db, user.id)
@@ -149,7 +149,7 @@ async def delete_rating(
         raise
     
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Error deleting rating for manga {manga_id}: {e}")
         return error("Internal server error", detail=str(e))
 
@@ -162,7 +162,7 @@ async def get_user_ratings(
     manga_id: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    db: ClientDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -182,7 +182,7 @@ async def get_user_ratings(
     try:
         if manga_id is not None:
             logger.info(f"Fetching rating for manga {manga_id} by user {user.id}")
-            result = await db.session.execute(
+            result = await db.execute(
                 select(Rating).where(Rating.user_id == user.id, Rating.manga_id == manga_id)
             )
             rating = result.scalar_one_or_none()
@@ -199,10 +199,10 @@ async def get_user_ratings(
 
         base = select(Rating).where(Rating.user_id == user.id)
         count_stmt = base.with_only_columns(func.count()).order_by(None)
-        total = (await db.session.execute(count_stmt)).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         stmt = base.order_by(Rating.manga_id.asc()).offset(offset).limit(size)
-        result = await db.session.execute(stmt)
+        result = await db.execute(stmt)
         rows = result.scalars().all()
 
         items = [RatingRead.model_validate(r) for r in rows]

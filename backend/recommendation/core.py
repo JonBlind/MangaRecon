@@ -6,7 +6,7 @@ scores candidates against the profile to produce ranked results.
 
 import uuid
 from sqlalchemy import select, distinct
-from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.client_db import ClientReadDatabase
 from sqlalchemy.exc import SQLAlchemyError
 from backend.db.models.collection import Collection
 from backend.db.models.manga_collection import MangaCollection
@@ -18,7 +18,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: int, session: AsyncSession) -> List[int]:
+async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: int, db: ClientReadDatabase) -> List[int]:
     '''
     Return all manga IDs contained in a user's collection after verifying ownership.
 
@@ -36,22 +36,20 @@ async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: in
             Collection.collection_id == collection_id,
             Collection.user_id == user_id
         )
-        ownership_result = await session.execute(ownership_stmt)
+        ownership_result = await db.execute(ownership_stmt)
         if ownership_result.scalar_one_or_none() is None:
             logger.warning(f"User {user_id} tried to access unauthorized or non-existent collection {collection_id}")
             return []
 
         # Get manga in that collection
         stmt = select(MangaCollection.manga_id).where(MangaCollection.collection_id == collection_id)
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         return list({row[0] for row in result.fetchall()})  # deduplicated
     except SQLAlchemyError as e:
         logger.error(f"Error fetching manga from collection {collection_id}: {e}", exc_info=True)
         return []
     
-async def get_metadata_profile_for_collection(
-    manga_ids: List[int], session: AsyncSession
-) -> Dict[str, any]:
+async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientReadDatabase) -> Dict[str, any]:
     '''
     Build a metadata profile for the provided collection (frequency counts, authors, ratings, years).
 
@@ -74,32 +72,32 @@ async def get_metadata_profile_for_collection(
 
         # Genres
         genre_stmt = select(manga_genre.c.genre_id).where(manga_genre.c.manga_id.in_(manga_ids))
-        genre_result = await session.execute(genre_stmt)
+        genre_result = await db.execute(genre_stmt)
         profile["genres"].update([row[0] for row in genre_result.fetchall()])
 
         # Tags
         tag_stmt = select(manga_tag.c.tag_id).where(manga_tag.c.manga_id.in_(manga_ids))
-        tag_result = await session.execute(tag_stmt)
+        tag_result = await db.execute(tag_stmt)
         profile["tags"].update([row[0] for row in tag_result.fetchall()])
 
         # Demographics
         demo_stmt = select(manga_demographic.c.demographic_id).where(manga_demographic.c.manga_id.in_(manga_ids))
-        demo_result = await session.execute(demo_stmt)
+        demo_result = await db.execute(demo_stmt)
         profile["demographics"].update([row[0] for row in demo_result.fetchall()])
 
         # Authors
         author_stmt = select(manga_author.c.author_id).where(manga_author.c.manga_id.in_(manga_ids))
-        author_result = await session.execute(author_stmt)
+        author_result = await db.execute(author_stmt)
         profile["authors"].update([row[0] for row in author_result.fetchall()])
 
         # External ratings
         rating_stmt = select(Manga.external_average_rating).where(Manga.manga_id.in_(manga_ids))
-        rating_result = await session.execute(rating_stmt)
+        rating_result = await db.execute(rating_stmt)
         profile["external_ratings"].extend([row[0] for row in rating_result.fetchall() if row[0] is not None])
 
         # Years
         year_stmt = select(Manga.published_date).where(Manga.manga_id.in_(manga_ids))
-        years_result = await session.execute(year_stmt)
+        years_result = await db.execute(year_stmt)
         profile["years"].extend([row[0].year for row in years_result.fetchall() if row[0] is not None])
 
         return profile
@@ -120,7 +118,7 @@ async def get_candidate_manga(
     genre_ids: List[int],
     tag_ids: List[int],
     demo_ids: List[int],
-    session: AsyncSession,
+    db: ClientReadDatabase,
     max_candidates: int = 2000  # soft cap for candidates
 ) -> List[Manga]:
     '''
@@ -152,7 +150,7 @@ async def get_candidate_manga(
             .limit(max_candidates)
         )
 
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         candidates = result.scalars().all()
         logger.info(f"Generated {len(candidates)} candidate manga to score")
         return candidates
@@ -164,7 +162,7 @@ async def get_candidate_manga(
 async def get_scored_recommendations(
     candidates: List[Manga],
     metadata_profile: Dict[str, Any],
-    session: AsyncSession
+    db: ClientReadDatabase
 ) -> List[Dict[str, Any]]:
     '''
     Score candidate manga against the collection's metadata profile and return a ranked list.
@@ -195,7 +193,7 @@ async def get_scored_recommendations(
     author_stmt = select(manga_author.c.manga_id, manga_author.c.author_id).where(manga_author.c.manga_id.in_(candidate_ids))
 
     for stmt, key in [(genre_stmt, "genres"), (tag_stmt, "tags"), (demo_stmt, "demographics"), (author_stmt, "authors")]:
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         for manga_id, item_id in result.fetchall():
             meta[key][manga_id].add(item_id)
 

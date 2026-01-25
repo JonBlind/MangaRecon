@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pwdlib.exceptions import UnknownHashError
 from sqlalchemy import select
-from backend.db.client_db import ClientDatabase
+from backend.db.client_db import ClientWriteDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/profiles", tags=["Profiles"])
 @limiter.limit("120/minute")
 async def get_my_profile(
     request: Request,
-    db: ClientDatabase = Depends(get_user_read_db),
+    db: ClientWriteDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -35,7 +35,7 @@ async def get_my_profile(
      '''
     try:
         logger.info(f"Fetching profile for user {user.id}")
-        result = await db.session.execute(
+        result = await db.execute(
             select(User).where(User.id == user.id)
         )
         me = result.scalar_one_or_none()
@@ -59,7 +59,7 @@ async def get_my_profile(
 async def update_my_profile(
     request: Request,
     payload: UserUpdate,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user)
 ):
     '''
@@ -77,7 +77,7 @@ async def update_my_profile(
     try:
         logger.info(f"User {user.id} updating profile")
 
-        result = await db.session.execute(
+        result = await db.execute(
             select(User).where(User.id == user.id)
         )
         me = result.scalar_one_or_none()
@@ -97,8 +97,8 @@ async def update_my_profile(
         else:
             return success("No changes applied", data=UserRead.model_validate(me))
 
-        await db.session.commit()
-        await db.session.refresh(me)
+        await db.commit()
+        await db.refresh(me)
 
         validated = UserRead.model_validate(me)
         return success("Profile updated successfully", data=validated)
@@ -107,7 +107,7 @@ async def update_my_profile(
         raise
 
     except Exception as e:
-        await db.session.rollback()
+        await db.rollback()
         logger.error(f"Failed to update profile for user {user.id}: {e}", exc_info=True)
         return error("Failed to update profile", detail=str(e))
     
@@ -116,7 +116,7 @@ async def update_my_profile(
 async def change_my_password(
     request: Request,
     payload: ChangePassword,
-    db: ClientDatabase = Depends(get_user_write_db),
+    db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
@@ -137,17 +137,18 @@ async def change_my_password(
 
     try:
         verified, updated_hash = user_manager.password_helper.verify_and_update(payload.current_password, user.hashed_password)
+
     except UnknownHashError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
     if not verified:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
-    if updated_hash is not None:
-        user.hashed_password = updated_hash
-        await db.session.commit()
-        await db.session.refresh(user)
+    # set the new password hash
+    user.hashed_password = user_manager.password_helper.hash(payload.new_password)
+
+    await db.commit()
+    await db.refresh(user)
 
     validated = UserRead.model_validate(user)
-    
     return success("Password changed successfully", data=validated)
