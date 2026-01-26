@@ -1,5 +1,7 @@
 import pytest
 from uuid import UUID, uuid4
+from backend.db.models.user import User
+from tests.routes.conftest import AuthedClient
 
 @pytest.mark.asyncio
 async def test_get_my_profile(async_client, authed_user):
@@ -64,8 +66,6 @@ async def test_change_my_password_rejects_invalid_new_password(async_client):
 
 @pytest.mark.asyncio
 async def test_get_my_profile_returns_404_if_user_row_missing(_raw_async_client):
-    from backend.db.models.user import User
-    from tests.routes.conftest import AuthedClient
 
     ghost = User(
         id=uuid4(),

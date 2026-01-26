@@ -152,7 +152,6 @@ async def test_remove_manga_from_collection(async_client, db_session):
     )
     assert resp2.status_code == 200, resp2.text
 
-    # Remove manga (your route expects a JSON body)
     resp3 = await async_client.request(
         "DELETE",
         f"/collections/{cid}/mangas",

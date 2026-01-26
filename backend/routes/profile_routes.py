@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pwdlib.exceptions import UnknownHashError
 from sqlalchemy import select
-from backend.db.client_db import ClientWriteDatabase
+from backend.db.client_db import ClientWriteDatabase, ClientReadDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/profiles", tags=["Profiles"])
 @limiter.limit("120/minute")
 async def get_my_profile(
     request: Request,
-    db: ClientWriteDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_user_read_db),
     user: User = Depends(current_user)
 ):
     '''

@@ -1,6 +1,5 @@
 import pytest
 from tests.db.factories import make_manga
-import tests.routes.conftest
 
 @pytest.mark.asyncio
 async def test_post_rating_creates(async_client, db_session):

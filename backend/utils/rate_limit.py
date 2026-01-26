@@ -28,6 +28,10 @@ limiter = Limiter(
     storage_uri = storage_uri,
 )
 
+# For testing purposes, disable rate-limiter because we know it works.
+if ENV == "test":
+    limiter.enabled = False
+
 def register_rate_limiter(app):
     '''
     Attach SlowAPI rate limiting to the application and its error handler.

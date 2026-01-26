@@ -11,13 +11,13 @@ import backend.routes.profile_routes as profile_routes
 from tests.db.factories import make_user
 
 class AuthedClient:
-    """
+    '''
     Wraps an httpx.AsyncClient and forces a specific user dependency override
     for each request, restoring the previous override afterward.
 
     This allows two "clients" (user A + user B) to coexist in the same test,
     even though FastAPI dependency_overrides is global.
-    """
+    '''
     def __init__(self, client: AsyncClient, user):
         self._client = client
         self._user = user
@@ -91,11 +91,11 @@ async def other_user(db_session):
 
 @pytest.fixture(autouse=True)
 async def override_deps(db_session):
-    """
+    '''
     Global per-test overrides that should be shared for all clients.
     IMPORTANT: do NOT override current_active_verified_user here,
     because user switching is handled per request by AuthedClient.
-    """
+    '''
     read_db = ClientReadDatabase(db_session)
     write_db = ClientWriteDatabase(db_session)
 

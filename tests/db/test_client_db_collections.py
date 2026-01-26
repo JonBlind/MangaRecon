@@ -4,7 +4,7 @@ from sqlalchemy import select
 from backend.db.client_db import ClientWriteDatabase
 from backend.db.models.collection import Collection
 from backend.db.models.manga_collection import MangaCollection
-from tests.db.factories import make_manga, make_user  # adjust to your factories
+from tests.db.factories import make_manga, make_user
 
 @pytest.mark.asyncio
 async def test_add_manga_to_collection_inserts_link(db_session):

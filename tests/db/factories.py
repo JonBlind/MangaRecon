@@ -156,31 +156,20 @@ async def make_collection(
     return collection
 
 
-async def make_genre(session, *, name=None, **extra_fields) -> Genre:
-    genre = Genre(
-        name=name or DEFAULT_GENRE_NAME,
-        **extra_fields,
-    )
-    session.add(genre)
-    await session.flush()
-    return genre
+async def make_genre(db_session, genre_name="Action"):
+    g = Genre(genre_name=genre_name)
+    db_session.add(g)
+    await db_session.flush()
+    return g
 
+async def make_tag(db_session, tag_name="Shounen"):
+    t = Tag(tag_name=tag_name)
+    db_session.add(t)
+    await db_session.flush()
+    return t
 
-async def make_tag(session, *, name=None, **extra_fields) -> Tag:
-    tag = Tag(
-        genre_name=name or DEFAULT_TAG_NAME,
-        **extra_fields,
-    )
-    session.add(tag)
-    await session.flush()
-    return tag
-
-
-async def make_demographic(session, *, name=None, **extra_fields) -> Demographic:
-    demographic = Demographic(
-        demographic_name=name or DEFAULT_DEMOGRAPHIC_NAME,
-        **extra_fields,
-    )
-    session.add(demographic)
-    await session.flush()
-    return demographic
+async def make_demographic(db_session, demographic_name="Shounen"):
+    d = Demographic(demographic_name=demographic_name)
+    db_session.add(d)
+    await db_session.flush()
+    return d
