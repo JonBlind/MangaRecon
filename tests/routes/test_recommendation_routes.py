@@ -528,7 +528,6 @@ async def test_collection_recommendations_cache_stores_items_only(async_client, 
 
 @pytest.mark.asyncio
 async def test_remove_manga_invalidates_recommendations(async_client, db_session, monkeypatch):
-
     manga1 = await make_manga(db_session)
 
     # create collection
@@ -558,7 +557,7 @@ async def test_remove_manga_invalidates_recommendations(async_client, db_session
     fake_cache = FakeRedis()
     monkeypatch.setattr(rec_routes, "redis_cache", fake_cache, raising=True)
 
-    # prime the cache by calling recs once
+    # prime cache via recommendations
     async def fake_gen(user_id, collection_id, db):
         return {
             "items": [{"manga_id": 1, "title": "gen", "score": 0.9}],
@@ -579,8 +578,12 @@ async def test_remove_manga_invalidates_recommendations(async_client, db_session
     monkeypatch.setattr(col_routes_real, "invalidate_collection_recommendations", fake_invalidate, raising=True)
     monkeypatch.setattr(inv, "invalidate_collection_recommendations", fake_invalidate, raising=True)
 
-    # now remove manga -> should invalidate
-    rem = await async_client.delete(f"/collections/{cid}/mangas/{manga1.manga_id}")
+    # remove manga -> should invalidate
+    rem = await async_client.request(
+    "DELETE",
+    f"/collections/{cid}/mangas",
+    json={"manga_id": manga1.manga_id},
+)
     assert rem.status_code == 200, rem.text
 
-    assert len(fake_cache.delete_calls) == 1
+    assert len(fake_cache.delete_calls) == 1, fake_cache.delete_calls
