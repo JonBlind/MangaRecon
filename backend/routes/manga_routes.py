@@ -10,7 +10,7 @@ from backend.db.models.join_tables import (
     manga_genre,
     manga_demographic
 )
-from backend.dependencies import get_manga_read_db
+from backend.dependencies import get_manga_read_db, get_public_read_db
 from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
 from backend.utils.response import success, error
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/mangas", tags=["Mangas"])
 async def get_manga_by_id(
     request: Request,
     manga_id: int,
-    db: ClientReadDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db)
 ):
     '''
     Retrieve a single manga by its identifier.
@@ -107,7 +107,7 @@ async def filter_manga(
     order_by: MangaOrderField = Query("title"),
     order_dir: OrderDirection = Query("asc"),
 
-    db: ClientReadDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db)
 ):
     '''
     List and filter manga with optional genre, tag, and demographic criteria, plus title search.

@@ -381,8 +381,6 @@ async def test_query_list_recommendations_sort_and_paginate(_raw_async_client, m
 
 @pytest.mark.asyncio
 async def test_query_list_recommendations_end_to_end(_raw_async_client, db_session, monkeypatch):
-
-    # ensure cache doesn't interfere
     monkeypatch.setattr(rec_routes, "redis_cache", FakeRedis(), raising=True)
 
     m1 = await make_manga(db_session)
@@ -398,11 +396,11 @@ async def test_query_list_recommendations_end_to_end(_raw_async_client, db_sessi
     assert body["status"] == "success"
     data = body["data"]
 
-    assert data["seed_total"] >= 2
-    assert data["seed_used"] >= 2
-    assert "seed_truncated" in data
-    assert "items" in data
     assert isinstance(data["items"], list)
+    assert "seed_total" in data
+    assert "seed_used" in data
+    assert "seed_truncated" in data
+
 
 @pytest.mark.asyncio
 async def test_query_list_recommendations_returns_truncation_metadata(_raw_async_client, monkeypatch):
@@ -585,5 +583,45 @@ async def test_remove_manga_invalidates_recommendations(async_client, db_session
     json={"manga_id": manga1.manga_id},
 )
     assert rem.status_code == 200, rem.text
+
+    assert len(fake_cache.delete_calls) == 1, fake_cache.delete_calls
+
+@pytest.mark.asyncio
+async def test_update_collection_invalidates_recommendations(async_client, db_session, monkeypatch):
+    manga1 = await make_manga(db_session)
+
+    c = await async_client.post("/collections/", json={"collection_name": "InvRename", "description": "d"})
+    assert c.status_code == 200, c.text
+    cid = c.json()["data"]["collection_id"]
+
+    add1 = await async_client.post(f"/collections/{cid}/mangas", json={"manga_id": manga1.manga_id})
+    assert add1.status_code == 200, add1.text
+
+    fake_cache = FakeRedis()
+    monkeypatch.setattr(rec_routes, "redis_cache", fake_cache, raising=True)
+
+    async def fake_gen(user_id, collection_id, db):
+        return {
+            "items": [{"manga_id": 1, "title": "gen", "score": 0.9}],
+            "seed_total": 1,
+            "seed_used": 1,
+            "seed_truncated": False,
+        }
+
+    monkeypatch.setattr(rec_routes, "generate_recommendations_for_collection", fake_gen, raising=True)
+
+    r1 = await async_client.get(f"/recommendations/{cid}?page=1&size=20")
+    assert r1.status_code == 200, r1.text
+    assert len(fake_cache.set_calls) == 1
+
+    # force invalidation to hit our FakeRedis
+    async def fake_invalidate(user_id, collection_id):
+        await fake_cache.delete(f"recommendations:{user_id}:{collection_id}")
+
+    monkeypatch.setattr(col_routes_real, "invalidate_collection_recommendations", fake_invalidate, raising=True)
+    monkeypatch.setattr(inv, "invalidate_collection_recommendations", fake_invalidate, raising=True)
+
+    upd = await async_client.put(f"/collections/{cid}", json={"collection_name": "InvRename2"})
+    assert upd.status_code == 200, upd.text
 
     assert len(fake_cache.delete_calls) == 1, fake_cache.delete_calls

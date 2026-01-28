@@ -11,7 +11,7 @@ from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
-
+from fastapi import HTTPException, status
 class Settings(BaseSettings):
     '''
     Application settings for async database connections (asyncpg URLs).
@@ -58,7 +58,7 @@ _Session_manga_read = async_sessionmaker(_engine_manga_read, class_=AsyncSession
 # Dependency providers
 async def get_user_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
     '''
-    Yield a `ClientDatabase` bound to the **User read** AsyncSession.
+    Yield a `ClientDatabase` bound to the **User read** AsyncSession. (Protected/User Read)
 
     Designed for read-only endpoints in the user domain. The session is opened
     at dependency entry and closed automatically when the request finishes.
@@ -86,7 +86,7 @@ async def get_user_write_db() -> AsyncGenerator[ClientWriteDatabase, None]:
 
 async def get_manga_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
     '''
-    Yield a `ClientDatabase` bound to the **Manga read** AsyncSession.
+    Yield a `ClientDatabase` bound to the **Manga read** AsyncSession. (Public Read)
 
     Use for read-only operations across manga metadata (titles, genres, tags,
     demographics, etc.). The session is request-scoped and disposed on exit.
@@ -126,3 +126,38 @@ async def get_async_user_write_session() -> AsyncGenerator[AsyncSession, None]:
     '''
     async with _Session_user_write() as session:
         yield session
+
+async def get_public_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
+    '''
+    Yield a `ClientDatabase` for **public, read-only** access.
+
+    This dependency is intended for unauthenticated endpoints that only need
+    read access to public-facing data (e.g. manga metadata, tags, genres,
+    public recommendation queries).
+
+    Resolution order:
+        1) Manga read database (preferred, least-privileged)
+        2) User read database (fallback for tests/dev environments)
+
+    If neither read session is configured, this indicates a server
+    misconfiguration and results in a 500 error.
+
+    Returns:
+        Async generator yielding a `ClientDatabase` wrapper tied to the
+        resolved read session (closes on exit).
+    '''
+    if _Session_manga_read is not None:
+        async with _Session_manga_read() as session:
+            yield ClientReadDatabase(session)
+        return
+
+    if _Session_user_read is not None:
+        async with _Session_user_read() as session:
+            yield ClientReadDatabase(session)
+        return
+
+    # If neither is configured, that's a server misconfig
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="No public read database session configured",
+    )

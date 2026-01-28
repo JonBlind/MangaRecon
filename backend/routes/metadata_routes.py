@@ -4,7 +4,7 @@ from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
 from backend.db.client_db import ClientReadDatabase
-from backend.dependencies import get_manga_read_db
+from backend.dependencies import get_public_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
@@ -24,7 +24,7 @@ S_META_DAY   = "metadata-ip-day"
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_genres(
     request: Request,
-    db: ClientReadDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db)
 ):
     '''
     Return all available genres.
@@ -56,7 +56,7 @@ async def get_all_genres(
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_tags(
     request: Request,
-    db: ClientReadDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db)
 ):
     '''
     Return all available tags.
@@ -88,7 +88,7 @@ async def get_all_tags(
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_demographics(
     request: Request,
-    db: ClientReadDatabase = Depends(get_manga_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db)
 ):
     '''
     Return all available demographics.

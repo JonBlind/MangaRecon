@@ -19,5 +19,8 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](
     get_user_manager, [auth_backend]
 )
 
-# Dependency: requires authenticated, active, and verified users.
+# Protected: must be logged in + active + verified
 current_active_verified_user = fastapi_users.current_user(active=True, verified=True)
+
+# Public/read-only routes: works without auth, but returns user when present
+current_active_verified_user_optional = fastapi_users.current_user(optional=True, active=True, verified=True)

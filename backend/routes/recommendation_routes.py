@@ -16,7 +16,7 @@ from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.db.client_db import ClientReadDatabase
 from backend.utils.ordering import OrderDirection , RecommendationOrderField
-from backend.dependencies import get_user_read_db
+from backend.dependencies import get_user_read_db, get_public_read_db
 from backend.cache.redis import get_redis_cache
 from backend.utils.response import success, error
 from backend.utils.rate_limit import limiter
@@ -144,7 +144,7 @@ async def get_recommendations_for_query_list(
     order_dir: OrderDirection = Query("desc"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    db: ClientReadDatabase = Depends(get_user_read_db),
+    db: ClientReadDatabase = Depends(get_public_read_db),
 ):
     '''
     Public endpoint: generate recommendations from a client-provided list of manga IDs.

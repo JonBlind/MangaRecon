@@ -3,7 +3,7 @@ from httpx import AsyncClient, ASGITransport
 from asgi_lifespan import LifespanManager
 
 from backend.main import app
-from backend.dependencies import get_user_read_db, get_user_write_db, get_async_user_write_session
+from backend.dependencies import get_user_read_db, get_user_write_db, get_async_user_write_session, get_manga_read_db, get_public_read_db
 from backend.auth.dependencies import current_active_verified_user
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.routes.rating_routes as rating_routes
@@ -109,6 +109,8 @@ async def override_deps(db_session):
         # raw session for fastapi-users
         yield db_session
 
+    app.dependency_overrides[get_public_read_db] = _user_read_db_override
+    app.dependency_overrides[get_manga_read_db] = _user_read_db_override
     app.dependency_overrides[get_user_read_db] = _user_read_db_override
     app.dependency_overrides[get_user_write_db] = _user_write_db_override
     app.dependency_overrides[get_async_user_write_session] = _override_user_write_session

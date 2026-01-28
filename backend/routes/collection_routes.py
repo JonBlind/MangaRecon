@@ -15,7 +15,7 @@ from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
 from backend.db.models.manga_collection import MangaCollection
-from backend.dependencies import get_user_write_db, get_user_read_db
+from backend.dependencies import get_user_write_db, get_user_read_db, get_user_read_db
 from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.schemas.collection import (
     CollectionCreate,
