@@ -47,7 +47,6 @@ class TestHTTPExceptionHandler:
             assert response_body["message"] == "Error"
             assert response_body["detail"] == "Forbidden"
             assert response_body["data"] == {}
-            assert any("http error:" in rec.message for rec in caplog.records)
     
 class TestValidationHandler:
     def test_validation_error_422(self, client):

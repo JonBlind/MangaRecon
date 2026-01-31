@@ -1,5 +1,8 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+if (!BASE_URL) {
+  throw new Error("VITE_API_BASE_URL is not set. Add it to frontend/.env and restart Vite.");
+}
 export class ApiRequestError extends Error {
   statusCode?: number;
   constructor(message: string, statusCode?: number) {
@@ -26,8 +29,8 @@ export async function apiFetch<T>(
     ...options,
     credentials: "include",
     headers: {
-      ...(options.headers ?? {}),
       "Content-Type": "application/json",
+      ...(options.headers ?? {}),
     },
   });
 

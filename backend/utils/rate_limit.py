@@ -7,6 +7,7 @@ Exposes:
 '''
 
 import os
+import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -15,17 +16,31 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from backend.utils.response import error
 
+logger = logging.getLogger(__name__)
+
 ENV = os.getenv("MANGARECON_ENV", "dev").lower()
 
-if ENV == "test":
-    storage_uri = "memory://"
-else:
-    storage_uri = os.getenv("RATELIMIT_STORAGE_URI") 
+def _get_storage_uri() -> str:
+    '''
+    Helper method to establish the storage uri.
+    Tries to find a value in .env; otherwise, defaults to in-memory.
+    Tests always use in-memory.
+    '''
+    if ENV == "test":
+        return "memory://"
+
+    uri = os.getenv("RATELIMIT_STORAGE_URI")
+
+    if not uri:
+        logger.warning("RATELIMIT_STORAGE_URI not set; using in-memory rate limiter storage.")
+        return "memory://"
+
+    return uri
 
 limiter = Limiter(
     key_func = get_remote_address,
     default_limits = ["60/minute"],
-    storage_uri = storage_uri,
+    storage_uri = _get_storage_uri(),
 )
 
 # For testing purposes, disable rate-limiter because we know it works.

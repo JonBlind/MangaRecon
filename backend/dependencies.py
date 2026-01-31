@@ -11,6 +11,7 @@ from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
+import backend.db.models # This is to just ensure all models are loaded before used.
 from fastapi import HTTPException, status
 class Settings(BaseSettings):
     '''

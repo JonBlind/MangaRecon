@@ -31,13 +31,17 @@ def register_exception_handlers(app):
    
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
-        logger.warning(f"validation error: {exc}", exc_info=True)
         safe_errors = jsonable_encoder(exc.errors())
+        logger.info("validation error: %s", safe_errors)
         return JSONResponse(status_code=422, content=error("Validation error", detail=safe_errors))
 
     @app.exception_handler(HTTPException)
     async def _http(_req: Request, exc: HTTPException):
-        logger.warning(f"http error: {exc.detail}", exc_info=True)
+        # Only retrn the stack trace for errors that are 5xx coded.
+        if exc.status_code >= 500:
+            logger.error("http error %s: %s", exc.status_code, exc.detail, exc_info=True)
+        else:
+            logger.info("http error %s: %s", exc.status_code, exc.detail)
         return JSONResponse(status_code=exc.status_code, content=error("Error", detail=exc.detail))
 
     @app.exception_handler(Exception)

@@ -1,54 +1,45 @@
 import uuid
-from pydantic import BaseModel, EmailStr, StringConstraints, ConfigDict, Field
 from datetime import datetime
 from typing import Optional, Annotated
 
-# Response
-class UserRead(BaseModel):
+from fastapi_users import schemas
+from pydantic import EmailStr, Field, StringConstraints
+
+
+class UserRead(schemas.BaseUser[uuid.UUID]):
     '''
     Public profile fields for the authenticated user, including status flags
     and creation/login timestamps.
     '''
-    id: uuid.UUID
-    email: EmailStr
     username: str
-    displayname:str
-    is_active: bool
-    is_superuser: bool
-    is_verified: bool
+    displayname: str
     created_at: datetime
     last_login: Optional[datetime] = None
-    model_config = ConfigDict(from_attributes=True)
 
-# Request
-class UserCreate(BaseModel):
+
+class UserCreate(schemas.BaseUserCreate):
     '''
     Registration payload for a new user account, including email, password,
     and initial profile fields.
     '''
-    email: EmailStr
-    password: str = Field(min_length=8)
+    # email + password included w/ BaseUserCreate
     username: Annotated[str, StringConstraints(min_length=4)]
     displayname: Annotated[str, StringConstraints(min_length=4, max_length=64)]
-    model_config = ConfigDict(from_attributes=True)
 
-# Request    
-class UserUpdate(BaseModel):
+
+class UserUpdate(schemas.BaseUserUpdate):
     '''
     Partial update for user profile fields. Only provided fields are modified.
     '''
-    email: Optional[EmailStr] = None
-    password: Optional[str] = None
+    # email + password ARE OPTIONAL and included w/ BaseUserCreate
     displayname: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64)]] = None
-    model_config = ConfigDict(from_attributes=True)
+    username: Optional[Annotated[str, StringConstraints(min_length=4)]] = None
 
-# Request
-# This is done when a user KNOWS their password, but still wants to change.
-class ChangePassword(BaseModel):
+
+class ChangePassword(schemas.BaseModel):
     '''
     Change-password request for users who know their current password.
     Provides the current password and the desired new password.
     '''
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8)
-    model_config = ConfigDict(from_attributes=True)

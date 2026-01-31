@@ -2,11 +2,9 @@ import { apiFetch } from "./http";
 
 export async function login(email: string, password: string) {
   const body = new URLSearchParams();
-  body.set("username", email); // FastAPI Users uses "username" even if it's email
+  body.set("username", email);
   body.set("password", password);
-
-  // login route usually returns 204 or a token body depending on config;
-  // but cookie is what matters. We'll just treat success as void.
+  
   return apiFetch<void>("/auth/jwt/login", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
