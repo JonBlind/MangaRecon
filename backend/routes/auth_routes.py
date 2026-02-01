@@ -10,8 +10,6 @@ Routes:
 '''
 
 from fastapi import APIRouter
-from fastapi.routing import APIRoute
-from backend.utils.rate_limit import limiter
 from backend.auth.dependencies import fastapi_users
 from backend.auth.config import auth_backend
 from backend.schemas.user import UserCreate, UserRead, UserUpdate

@@ -18,6 +18,7 @@ from backend.utils.rate_limit import register_rate_limiter
 from backend.cache.redis import get_redis_cache
 from dotenv import load_dotenv
 from backend.routes import (
+    auth_routes,
     collection_routes,
     manga_routes,
     rating_routes,
@@ -25,8 +26,6 @@ from backend.routes import (
     profile_routes,
     metadata_routes
 )
-
-from backend.auth import router as auth_routes
 
 ENV = os.getenv("MANGARECON_ENV", "dev").lower()
 if ENV == "test":
