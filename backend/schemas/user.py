@@ -22,7 +22,8 @@ class UserCreate(schemas.BaseUserCreate):
     Registration payload for a new user account, including email, password,
     and initial profile fields.
     '''
-    # email + password included w/ BaseUserCreate
+    # password included w/ BaseUserCreate
+    password: Annotated[str, StringConstraints(min_length=8)]
     username: Annotated[str, StringConstraints(min_length=4)]
     displayname: Annotated[str, StringConstraints(min_length=4, max_length=64)]
 

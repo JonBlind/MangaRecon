@@ -1,4 +1,5 @@
 import { apiFetch } from "./http";
+import type { UserMe } from "../types/auth";
 
 export async function login(email: string, password: string) {
   const body = new URLSearchParams();
@@ -22,9 +23,8 @@ export async function logout() {
 export type RegisterPayload = {
   email: string;
   password: string;
-  is_active?: boolean;
-  is_superuser?: boolean;
-  is_verified?: boolean;
+  username: string;
+  displayname: string;
 };
 
 export async function register(payload: RegisterPayload) {
@@ -35,5 +35,5 @@ export async function register(payload: RegisterPayload) {
 }
 
 export async function me() {
-  return apiFetch<any>("/users/me", { method: "GET" });
+  return apiFetch<UserMe>("/users/me", { method: "GET" });
 }

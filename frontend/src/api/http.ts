@@ -21,6 +21,44 @@ async function readJsonSafe(res: Response): Promise<any> {
   }
 }
 
+function extractErrorMessage(json: any, status: number): string {
+  if (!json) return `Request failed (${status})`;
+
+  const detail = json.detail;
+
+  // If backend uses a generic message label, prefer the real detail
+  const generic = json.message === "Error" || json.message === "Validation error";
+
+  if (generic) {
+    if (typeof detail === "string" && detail.trim()) return detail;
+
+    if (Array.isArray(detail) && detail.length) {
+      const first = detail[0];
+      const msg = typeof first?.msg === "string" ? first.msg : null;
+
+      const locArr = Array.isArray(first?.loc) ? first.loc : [];
+      const loc = locArr.filter((x: any) => x !== "body").join(".");
+
+      if (msg && loc) return `${loc}: ${msg}`;
+      if (msg) return msg;
+    }
+
+    if (detail && typeof detail === "object") {
+      if (typeof detail.reason === "string" && detail.reason.trim()) return detail.reason;
+      if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
+      if (typeof detail.code === "string" && detail.code.trim()) return detail.code;
+    }
+
+    return json.message;
+  }
+
+  if (typeof json.message === "string" && json.message.trim()) return json.message;
+
+  if (typeof detail === "string" && detail.trim()) return detail;
+
+  return `Request failed (${status})`;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -37,7 +75,7 @@ export async function apiFetch<T>(
   const json = await readJsonSafe(res);
 
   if (!res.ok || json?.status === "error") {
-    const msg = json?.message || json?.detail || `Request failed (${res.status})`;
+    const msg = extractErrorMessage(json, res.status);
     throw new ApiRequestError(msg, res.status);
   }
 

@@ -10,34 +10,19 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import Landing from "../pages/Landing";
 
 export const router = createBrowserRouter([
+  { path: "/", element: <Landing /> },
   { path: "/login", element: <Login /> },
   { path: "/register", element: <Register /> },
   { path: "/verify-email", element: <VerifyEmail /> },
   { path: "/search", element: <Search /> },
-  { path: "/", element: <Landing /> },
 
+  // Protected routes
   {
-    path: "/collections",
-    element: (
-      <ProtectedRoute>
-        <Collections />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: "/collections/:id",
-    element: (
-      <ProtectedRoute>
-        <CollectionDetail />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: "/recommendations/:id",
-    element: (
-      <ProtectedRoute>
-        <Recommendations />
-      </ProtectedRoute>
-    ),
+    element: <ProtectedRoute />,
+    children: [
+      { path: "/collections", element: <Collections /> },
+      { path: "/collections/:id", element: <CollectionDetail /> },
+      { path: "/recommendations/:id", element: <Recommendations /> },
+    ],
   },
 ]);
