@@ -1,3 +1,5 @@
+import type { ApiEnvelope } from "../types/api";
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 if (!BASE_URL) {
@@ -26,7 +28,7 @@ function extractErrorMessage(json: any, status: number): string {
 
   const detail = json.detail;
 
-  // If backend uses a generic message label, prefer the real detail
+  // If backend uses a generic message, prefer the real detail
   const generic = json.message === "Error" || json.message === "Validation error";
 
   if (generic) {
@@ -62,7 +64,7 @@ function extractErrorMessage(json: any, status: number): string {
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
-): Promise<T> {
+): Promise<ApiEnvelope<T>> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: "include",
@@ -75,9 +77,12 @@ export async function apiFetch<T>(
   const json = await readJsonSafe(res);
 
   if (!res.ok || json?.status === "error") {
-    const msg = extractErrorMessage(json, res.status);
+    const msg =
+      json?.message ||
+      json?.detail ||
+      `Request failed (${res.status})`;
     throw new ApiRequestError(msg, res.status);
   }
 
-  return json?.data ?? (json as T);
+  return json as ApiEnvelope<T>;
 }

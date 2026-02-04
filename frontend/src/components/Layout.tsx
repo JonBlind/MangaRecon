@@ -1,7 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMe } from "../hooks/useMe";
-import type { UserMe } from "../types/auth";
 import { logout } from "../api/auth";
 
 export default function Layout() {
@@ -13,46 +12,42 @@ export default function Layout() {
     try {
       await logout();
     } finally {
-      // hard reset auth state immediately
       qc.removeQueries({ queryKey: ["me"] });
       nav("/login");
     }
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="font-semibold">
-              MangaRecon
+    <div className="min-h-screen bg-neutral-950 text-neutral-100">
+      <header className="border-b border-neutral-800">
+        {/* Full-width header background, boxed inner content */}
+        <div className="mx-auto flex max-w-6xl items-center gap-8 px-6 py-4">
+          <Link to="/" className="text-lg font-semibold tracking-tight">
+            MangaRecon
+          </Link>
+
+          <nav className="flex flex-1 items-center gap-6 text-sm">
+            <Link to="/search" className="opacity-90 hover:opacity-100 hover:underline">
+              Search
             </Link>
 
-            <nav className="flex items-center gap-3 text-sm">
-              <Link to="/search" className="hover:underline">
-                Search
+            {me && (
+              <Link to="/collections" className="opacity-90 hover:opacity-100 hover:underline">
+                Collections
               </Link>
+            )}
+          </nav>
 
-              {me && (
-                <>
-                  <Link to="/collections" className="hover:underline">
-                    Collections
-                  </Link>
-                </>
-              )}
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-4 text-sm">
             {isLoading ? (
-              <span className="opacity-70">…</span>
+              <span className="opacity-70">Loading…</span>
             ) : me ? (
               <>
-                <span className="opacity-80">
-                  {me?.displayname ?? me?.email}
+                <span className="max-w-[260px] truncate opacity-80">
+                  {me.displayname || me.email}
                 </span>
                 <button
-                  className="rounded-md border px-3 py-1.5 hover:bg-gray-50"
+                  className="rounded-md border border-neutral-700 px-4 py-2 hover:bg-neutral-900"
                   onClick={handleLogout}
                 >
                   Logout
@@ -60,10 +55,13 @@ export default function Layout() {
               </>
             ) : (
               <>
-                <Link className="hover:underline" to="/login">
+                <Link to="/login" className="opacity-90 hover:opacity-100 hover:underline">
                   Login
                 </Link>
-                <Link className="rounded-md border px-3 py-1.5 hover:bg-gray-50" to="/register">
+                <Link
+                  to="/register"
+                  className="rounded-md border border-neutral-700 px-4 py-2 hover:bg-neutral-900"
+                >
                   Register
                 </Link>
               </>
@@ -72,7 +70,8 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      {/* Boxed content area */}
+      <main className="mx-auto max-w-6xl px-6 py-8">
         <Outlet />
       </main>
     </div>
