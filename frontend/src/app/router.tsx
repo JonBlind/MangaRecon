@@ -24,9 +24,9 @@ export const router = createBrowserRouter([
       {
         element: <ProtectedRoute />,
         children: [
-          { path: "/collections", element: <Collections /> },
-          { path: "/collections/:id", element: <CollectionDetail /> },
-          { path: "/recommendations/:id", element: <Recommendations /> },
+          { path: "collections", element: <Collections /> },
+          { path: "collections/:id", element: <CollectionDetail /> },
+          { path: "recommendations/:id", element: <Recommendations /> },
         ],
       },
     ],

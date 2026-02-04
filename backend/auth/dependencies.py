@@ -22,5 +22,8 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](
 # Protected: must be logged in + active + verified
 current_active_verified_user = fastapi_users.current_user(active=True, verified=True)
 
+# Protected: Logged in and active user, not verified
+current_active_user = fastapi_users.current_user(active=True)
+
 # Public/read-only routes: works without auth, but returns user when present
 current_active_verified_user_optional = fastapi_users.current_user(optional=True, active=True, verified=True)

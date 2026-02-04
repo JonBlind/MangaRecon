@@ -35,6 +35,6 @@ export async function register(payload: RegisterPayload) {
 }
 
 export async function me(): Promise<UserMe> {
-  const res = await apiFetch<UserMe>("/users/me", { method: "GET" });
+  const res = await apiFetch<UserMe>("/profiles/me", { method: "GET" });
   return res.data;
 }

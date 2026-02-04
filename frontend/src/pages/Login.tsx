@@ -14,8 +14,8 @@ export default function Login() {
   const mutation = useMutation({
     mutationFn: () => login(email, password),
     onSuccess: async () => {
+      nav("/collections", { replace: true });
       await qc.invalidateQueries({ queryKey: ["me"] });
-      nav("/collections");
     },
   });
 
