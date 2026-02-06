@@ -46,12 +46,25 @@ async def get_manga_by_id(
     try:
         logger.info(f"Fetching full manga metadata for manga {manga_id}")
 
-        result = await db.execute(select(Manga).where(Manga.manga_id == manga_id))
+        stmt = (
+            select(
+                Manga.manga_id,
+                Manga.title,
+                Manga.description,
+                Manga.published_date,
+                Manga.external_average_rating,
+                Manga.average_rating,
+                Manga.author_id,
+                Manga.cover_image_url,
+            )
+            .where(Manga.manga_id == manga_id)
+        )
 
-        manga = result.scalar_one_or_none()
+        row = (await db.execute(stmt)).one_or_none()
 
-        if not manga:
+        if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manga not found")
+
         
         genre_result = await db.execute(
             select(Genre).join(manga_genre).where(manga_genre.c.manga_id == manga_id)
@@ -69,17 +82,17 @@ async def get_manga_by_id(
         demographics = [DemographicRead.model_validate(d) for d in demo_result.scalars().all()]
 
         manga_response = MangaRead(
-            manga_id=manga.manga_id,
-            title=manga.title,
-            description=manga.description,
-            published_date=manga.published_date,
-            external_average_rating=manga.external_average_rating,
-            average_rating=manga.average_rating,
-            author_id=manga.author_id,
+            manga_id=row.manga_id,
+            title=row.title,
+            description=row.description,
+            published_date=row.published_date,
+            external_average_rating=row.external_average_rating,
+            average_rating=row.average_rating,
+            author_id=row.author_id,
             genres=genres,
             tags=tags,
             demographics=demographics,
-            cover_image_url = manga.cover_image_url
+            cover_image_url = row.cover_image_url
         )
 
         return success("Manga retrieved successfully", data=manga_response)
@@ -134,7 +147,14 @@ async def filter_manga(
         logger.info(f"Filtering manga - page={page}, size={size}, order_by={order_by}, order_dir={order_dir}")
         offset = (page - 1) * size
 
-        stmt = select(Manga).distinct()
+        stmt = select(
+            Manga.manga_id,
+            Manga.title,
+            Manga.description,
+            Manga.cover_image_url,
+            Manga.average_rating,
+            Manga.external_average_rating,
+        ).distinct()
 
         # Filters
         if title:
@@ -175,15 +195,54 @@ async def filter_manga(
         stmt = stmt.offset(offset).limit(size)
 
         result = await db.execute(stmt)
-        manga_list = result.scalars().all()
+        rows = result.all()
 
-        validated = [MangaListItem.model_validate(manga) for manga in manga_list]
+        items = [
+            MangaListItem(
+                manga_id=r.manga_id,
+                title=r.title,
+                description=r.description,
+                cover_image_url=r.cover_image_url,
+                average_rating=r.average_rating,
+                external_average_rating=r.external_average_rating,
+                genres=[],
+            )
+            for r in rows
+        ]
+
+        manga_ids_page = [r.manga_id for r in rows]
+
+        # Bulk-fetch genres for the page
+        if manga_ids_page:
+            genre_rows = (
+                await db.execute(
+                    select(
+                        manga_genre.c.manga_id.label("manga_id"),
+                        Genre.genre_id.label("genre_id"),
+                        Genre.genre_name.label("genre_name"),
+                    )
+                    .select_from(manga_genre)
+                    .join(Genre, Genre.genre_id == manga_genre.c.genre_id)
+                    .where(manga_genre.c.manga_id.in_(manga_ids_page))
+                    .order_by(manga_genre.c.manga_id, Genre.genre_name)
+                )
+            ).all()
+
+            genre_map: dict[int, list[GenreRead]] = {}
+            for gr in genre_rows:
+                genre_map.setdefault(int(gr.manga_id), []).append(
+                    GenreRead(genre_id=int(gr.genre_id), genre_name=gr.genre_name)
+                )
+
+            # Attach genres to each MangaListItem
+            for it in items:
+                it.genres = genre_map.get(it.manga_id, [])
 
         return success("Filtered manga retrieved successfully", data={
             "total_results": total,
             "page": page,
             "size": size,
-            "items": validated
+            "items": items
         })
 
     except Exception as e:

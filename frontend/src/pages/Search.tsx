@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import { keepPreviousData } from "@tanstack/react-query";
-import type { MangaSearchResponse, MangaSearchParams } from "../types/manga";
+import type { MangaSearchResponse } from "../types/manga";
+import MangaCard from "../components/MangaCard";
+import type { MangaCardManga } from "../types/mangacard";
 
 export default function Search() {
   const [title, setTitle] = useState("");
@@ -151,14 +153,18 @@ export default function Search() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {(mangaQ.data?.items ?? []).map((m) => (
-            <div key={m.manga_id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-              <div className="font-semibold">{m.title}</div>
-              {m.description && (
-                <div className="mt-2 text-sm opacity-80 line-clamp-3">{m.description}</div>
-              )}
-            </div>
+            <MangaCard
+              key={m.manga_id}
+              manga={
+                {
+                  manga_id: m.manga_id,
+                  title: m.title,
+                  cover_image_url: m.cover_image_url ?? null,
+                } satisfies MangaCardManga
+              }
+            />
           ))}
         </div>
 

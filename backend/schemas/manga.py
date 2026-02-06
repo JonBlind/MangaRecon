@@ -46,10 +46,12 @@ class MangaRead(BaseModel):
     external_average_rating: Optional[float] = None
     average_rating: Optional[float] = None
 
-    author_id: int
+    author_id: Optional[int]
     genres: List[GenreRead] = []
     tags: List[TagRead] = []
     demographics: List[DemographicRead] = []
+    cover_image_url: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # Get very minimal info for listing manga
@@ -61,5 +63,7 @@ class MangaListItem(BaseModel):
     '''
     manga_id: int
     title: str
+    genres: List[GenreRead] = []
     average_rating: Optional[float] = None
+    cover_image_url: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)

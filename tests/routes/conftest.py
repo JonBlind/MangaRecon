@@ -4,7 +4,7 @@ from asgi_lifespan import LifespanManager
 
 from backend.main import app
 from backend.dependencies import get_user_read_db, get_user_write_db, get_async_user_write_session, get_manga_read_db, get_public_read_db
-from backend.auth.dependencies import current_active_verified_user
+from backend.auth.dependencies import current_active_user
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.routes.rating_routes as rating_routes
 import backend.routes.profile_routes as profile_routes
@@ -24,7 +24,7 @@ class AuthedClient:
 
     async def _with_user(self, coro_fn, *args, **kwargs):
         # Save previous overrides (if any)
-        prev_main = app.dependency_overrides.get(current_active_verified_user)
+        prev_main = app.dependency_overrides.get(current_active_user)
 
         # profile_routes may use a different dependency object (FastAPI-Users)
         profile_dep = getattr(profile_routes, "current_user", None)
@@ -34,7 +34,7 @@ class AuthedClient:
             return self._user
 
         # Override the dependency used by most routes
-        app.dependency_overrides[current_active_verified_user] = _current_user_override
+        app.dependency_overrides[current_active_user] = _current_user_override
 
         # ALSO override the dependency used specifically by profile_routes (if present)
         if profile_dep is not None:
@@ -45,9 +45,9 @@ class AuthedClient:
         finally:
             # restore main dep
             if prev_main is None:
-                app.dependency_overrides.pop(current_active_verified_user, None)
+                app.dependency_overrides.pop(current_active_user, None)
             else:
-                app.dependency_overrides[current_active_verified_user] = prev_main
+                app.dependency_overrides[current_active_user] = prev_main
 
             # restore profile dep
             if profile_dep is not None:
@@ -93,7 +93,7 @@ async def other_user(db_session):
 async def override_deps(db_session):
     '''
     Global per-test overrides that should be shared for all clients.
-    IMPORTANT: do NOT override current_active_verified_user here,
+    IMPORTANT: do NOT override current_active_user here,
     because user switching is handled per request by AuthedClient.
     '''
     read_db = ClientReadDatabase(db_session)

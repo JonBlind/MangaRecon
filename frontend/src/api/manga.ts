@@ -1,5 +1,11 @@
 import { apiFetch } from "./http";
 import type { MangaSearchParams, MangaSearchResponse } from "../types/manga";
+import type { MangaDetail } from "../types/manga";
+
+export async function getMangaById(mangaId: number): Promise<MangaDetail> {
+  const res = await apiFetch<MangaDetail>(`/mangas/${mangaId}`);
+  return res.data;
+}
 
 export async function searchMangas(params: MangaSearchParams): Promise<MangaSearchResponse> {
   const sp = new URLSearchParams();

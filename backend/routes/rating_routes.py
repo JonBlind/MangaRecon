@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db
-from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.auth.dependencies import current_active_user as current_user
 from backend.schemas.rating import RatingCreate, RatingRead
 from backend.db.models.rating import Rating
 from backend.db.models.user import User

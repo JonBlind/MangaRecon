@@ -1,3 +1,5 @@
+import type {Genre, Tap, Demograpgic } from "./metadata";
+
 export type MangaListItem = {
   manga_id: number;
   title: string;
@@ -25,4 +27,22 @@ export type MangaSearchParams = {
 
   order_by?: "title" | "average_rating" | "external_average_rating" | "published_date";
   order_dir?: "asc" | "desc";
+};
+
+export type MangaDetail = {
+  manga_id: number;
+  title: string;
+  description?: string | null;
+  published_date?: string | null;
+
+  external_average_rating?: number | null;
+  average_rating?: number | null;
+
+  author_id: number;
+
+  genres: Genre[];
+  tags: Tag[];
+  demographics: Demographic[];
+
+  cover_image_url?: string | null;
 };

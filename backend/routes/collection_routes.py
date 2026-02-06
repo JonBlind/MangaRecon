@@ -15,8 +15,10 @@ from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
 from backend.db.models.manga_collection import MangaCollection
-from backend.dependencies import get_user_write_db, get_user_read_db, get_user_read_db
-from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.db.models.genre import Genre
+from backend.db.models.join_tables import manga_genre
+from backend.dependencies import get_user_write_db, get_user_read_db, get_manga_read_db
+from backend.auth.dependencies import current_active_user as current_user
 from backend.schemas.collection import (
     CollectionCreate,
     CollectionRead,
@@ -296,8 +298,9 @@ async def get_manga_in_collection(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     order: Literal["asc", "desc"] = Query("desc"),
-    db: ClientReadDatabase = Depends(get_user_read_db),
-    user: User = Depends(current_user)
+    user_db: ClientReadDatabase = Depends(get_user_read_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
+    user: User = Depends(current_user),
 ):
     '''
     List the manga inside a specified collection (paginated).
@@ -314,52 +317,125 @@ async def get_manga_in_collection(
         dict: Standardized 'Response' containing total_results, page, size, and items (MangaListItem).
     '''
     try:
-        logger.info(f"User {user.id} fetching manga from collection {collection_id} page={page} size={size}")
+        logger.info(
+            "User %s fetching manga from collection %s page=%s size=%s",
+            user.id,
+            collection_id,
+            page,
+            size,
+        )
         offset = (page - 1) * size
 
-        # ownership check (fast fail)
-        exists_q = await db.execute(
+        # 1) ownership check (user DB)
+        exists_q = await user_db.execute(
             select(Collection.collection_id).where(
                 Collection.collection_id == collection_id,
-                Collection.user_id == user.id
+                Collection.user_id == user.id,
             )
         )
         if exists_q.scalar_one_or_none() is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
-        base = (
-            select(Manga)
-            .join(MangaCollection, MangaCollection.manga_id == Manga.manga_id)
+        # 2) total count (user DB) from membership table only
+        total_stmt = (
+            select(func.count(MangaCollection.manga_id))
             .where(MangaCollection.collection_id == collection_id)
         )
+        total = (await user_db.execute(total_stmt)).scalar_one()
 
-        count_stmt = base.with_only_columns(func.count(Manga.manga_id)).order_by(None)
-        total = (await db.execute(count_stmt)).scalar_one()
+        # 3) page of manga_ids (user DB)
+        order_by = MangaCollection.manga_id.asc() if order == "asc" else MangaCollection.manga_id.desc()
+        ids_stmt = (
+            select(MangaCollection.manga_id)
+            .where(MangaCollection.collection_id == collection_id)
+            .order_by(order_by)
+            .offset(offset)
+            .limit(size)
+        )
+        ids_res = await user_db.execute(ids_stmt)
+        manga_ids = list(ids_res.scalars().all())
 
-        stmt = base.order_by(Manga.manga_id.desc()).offset(offset).limit(size)
+        if not manga_ids:
+            return success(
+                "Manga retrieved successfully",
+                data={
+                    "total_results": total,
+                    "page": page,
+                    "size": size,
+                    "items": [],
+                },
+            )
 
-        order_by = Manga.manga_id.asc() if order == "asc" else Manga.manga_id.desc()
+        # 4) fetch minimal manga fields (manga DB) as raw rows (NO ORM entities)
+        manga_rows_res = await manga_db.execute(
+            select(
+                Manga.manga_id,
+                Manga.title,
+                Manga.average_rating,
+                Manga.cover_image_url,
+            ).where(Manga.manga_id.in_(manga_ids))
+        )
+        manga_rows = manga_rows_res.all()
 
-        stmt = base.order_by(order_by).offset(offset).limit(size)
+        # Build base payloads keyed by manga_id
+        base_by_id: dict[int, dict] = {}
+        for r in manga_rows:
+            d = dict(r._mapping)
+            base_by_id[d["manga_id"]] = {
+                "manga_id": d["manga_id"],
+                "title": d["title"],
+                "average_rating": d["average_rating"],
+                "cover_image_url": d["cover_image_url"],
+                "genres": [],
+            }
 
-        result = await db.execute(stmt)
-        manga_list = result.scalars().all()
+        # 5) fetch genres via join table (manga DB only)
+        genre_rows_res = await manga_db.execute(
+            select(
+                manga_genre.c.manga_id.label("manga_id"),
+                Genre.genre_id.label("genre_id"),
+                Genre.genre_name.label("genre_name"),
+            )
+            .select_from(manga_genre.join(Genre, Genre.genre_id == manga_genre.c.genre_id))
+            .where(manga_genre.c.manga_id.in_(manga_ids))
+        )
+        genre_rows = genre_rows_res.all()
 
-        items = [MangaListItem.model_validate(m) for m in manga_list]
-        return success("Manga retrieved successfully", data={
-            "total_results": total,
-            "page": page,
-            "size": size,
-            "items": items
-        })
-    
+        for gr in genre_rows:
+            g = dict(gr._mapping)
+            mid = g["manga_id"]
+            if mid in base_by_id:
+                base_by_id[mid]["genres"].append(
+                    {"genre_id": g["genre_id"], "genre_name": g["genre_name"]}
+                )
+
+        # Preserve original order from manga_ids
+        ordered_payloads = [base_by_id[mid] for mid in manga_ids if mid in base_by_id]
+
+        items = [MangaListItem.model_validate(p) for p in ordered_payloads]
+        return success(
+            "Manga retrieved successfully",
+            data={
+                "total_results": total,
+                "page": page,
+                "size": size,
+                "items": items,
+            },
+        )
+
     except HTTPException:
         raise
 
     except Exception as e:
-        logger.error(f"Failed to retrieve manga from collection {collection_id}: {e}", exc_info=True)
+        logger.error(
+            "Failed to retrieve manga from collection %s: %s",
+            collection_id,
+            e,
+            exc_info=True,
+        )
         return error("Internal server error", detail=str(e))
     
+
 @router.delete("/{collection_id}/mangas", response_model=dict)
 @limiter.limit("60/minute") 
 async def remove_manga_from_collection(

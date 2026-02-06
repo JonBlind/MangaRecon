@@ -11,7 +11,7 @@ Returned payloads use the project-wide response envelope.
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy import select
-from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.auth.dependencies import current_active_user as current_user
 from backend.db.models.user import User
 from backend.db.models.collection import Collection
 from backend.db.client_db import ClientReadDatabase

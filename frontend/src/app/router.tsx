@@ -10,6 +10,7 @@ import Search from "../pages/Search";
 import Collections from "../pages/Collections";
 import CollectionDetail from "../pages/CollectionDetail";
 import Recommendations from "../pages/Recommendations";
+import MangaDetail from "../pages/MangaDetail";
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
       { path: "/register", element: <Register /> },
       { path: "/verify-email", element: <VerifyEmail /> },
       { path: "/search", element: <Search /> },
+      { path: "/manga/:id", element: <MangaDetail /> },
 
       {
         element: <ProtectedRoute />,
