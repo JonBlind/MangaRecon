@@ -11,8 +11,8 @@ from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
-import backend.db.models # This is to just ensure all models are loaded before used.
-from fastapi import HTTPException, status
+import backend.db.models # DO NOT REMOVE. This is to just ensure all models are loaded before used.
+
 class Settings(BaseSettings):
     '''
     Application settings for async database connections (asyncpg URLs).
@@ -158,7 +158,4 @@ async def get_public_read_db() -> AsyncGenerator[ClientReadDatabase, None]:
         return
 
     # If neither is configured, that's a server misconfig
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="No public read database session configured",
-    )
+    raise RuntimeError("No public read database session configured")

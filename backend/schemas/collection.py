@@ -15,6 +15,7 @@ class CollectionCreate(BaseModel):
     def collection_name_not_whitespace(v: str) -> str:
         if v.strip() == "":
             raise ValueError("collection_name cannot be empty/whitespace")
+        
         return v
     
 # Request

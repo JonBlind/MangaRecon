@@ -6,7 +6,7 @@ from backend.db.models.demographics import Demographic
 from backend.db.client_db import ClientReadDatabase
 from backend.dependencies import get_public_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
-from backend.utils.response import success, error
+from backend.utils.response import success
 from backend.utils.rate_limit import limiter
 import logging
 
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/metadata", tags=["Metadata"])
 S_META_MIN   = "metadata-ip-min"
 S_META_HOUR  = "metadata-ip-hour"
 S_META_DAY   = "metadata-ip-day"
+
 
 @router.get("/genres", response_model=dict)
 @limiter.shared_limit("240/minute", scope=S_META_MIN)
@@ -47,9 +48,10 @@ async def get_all_genres(
             "items": items
         })
     except Exception as e:
-        logger.error(f"Failed to get all genres: {e}", exc_info=True)
-        return error(message="Failed to retrieve genres", detail=str(e))
-    
+        logger.error("Failed to get all genres: %s", e, exc_info=True)
+        raise
+
+
 @router.get("/tags", response_model=dict)
 @limiter.shared_limit("240/minute", scope=S_META_MIN)
 @limiter.shared_limit("5000/hour",  scope=S_META_HOUR)
@@ -79,8 +81,9 @@ async def get_all_tags(
             "items": items
         })
     except Exception as e:
-        logger.error(f"Failed to get all tags: {e}", exc_info=True)
-        return error(message="Failed to retrieve tags", detail=str(e))
+        logger.error("Failed to get all tags: %s", e, exc_info=True)
+        raise
+
 
 @router.get("/demographics", response_model=dict)
 @limiter.shared_limit("240/minute", scope=S_META_MIN)
@@ -111,5 +114,5 @@ async def get_all_demographics(
             "items": items
         })
     except Exception as e:
-        logger.error(f"Failed to get all demographics: {e}", exc_info=True)
-        return error(message="Failed to retrieve demographics", detail=str(e))
+        logger.error("Failed to get all demographics: %s", e, exc_info=True)
+        raise

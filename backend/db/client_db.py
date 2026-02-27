@@ -22,6 +22,7 @@ from backend.db.models.rating import Rating
 from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
 from backend.db.models.manga_collection import MangaCollection
+from backend.utils.domain_exceptions import BadRequestError, ConflictError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,7 @@ class ClientReadDatabase:
             List[Manga]: All manga rows linked to the collection.
 
         Raises:
-            ValueError: If the collection does not exist or is not owned by the user.
+            NotFoundError: If the collection does not exist or is not owned by the user.
             SQLAlchemyError: On DB read errors (re-raised).
         '''
         try:
@@ -228,7 +229,7 @@ class ClientReadDatabase:
             collection = result.scalar_one_or_none()
 
             if not collection:
-                raise ValueError("Collection not found or unauthorized access.")
+                raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
 
             # Fetch manga
             stmt = (
@@ -375,7 +376,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             ValueError: If `score` is `None`.
         '''
         if score is None:
-            raise ValueError("Score is required.")
+            raise BadRequestError(code="SCORE_MISSING", message="Score is required.")
         clamped = max(0.0, min(10.0, float(score)))
         snapped = round(clamped * 2) / 2.0
         return snapped
@@ -418,6 +419,32 @@ class ClientWriteDatabase(ClientReadDatabase):
             logger.error("Error saving rating", exc_info=True)
             raise
 
+    async def delete_rating(self, user_id: uuid.UUID, manga_id: int) -> None:
+        '''
+        Delete the caller's rating for a manga.
+
+        Args:
+            user_id (uuid.UUID): User ID.
+            manga_id (int): Manga ID.
+
+        Raises:
+            NotFoundError: If the rating doesn't exist.
+        '''
+        stmt = select(Rating).where(Rating.user_id == user_id, Rating.manga_id == manga_id)
+        rating = (await self._session.execute(stmt)).scalar_one_or_none()
+        if rating is None:
+            raise NotFoundError(
+                code="RATING_NOT_FOUND",
+                message="Rating not found."
+            )
+
+        await self._session.delete(rating)
+        try:
+            await self._session.commit()
+        except SQLAlchemyError:
+            await self._session.rollback()
+            raise
+
     # ====================
     # COLLECTIONS (WRITE)
     # ====================
@@ -427,7 +454,7 @@ class ClientWriteDatabase(ClientReadDatabase):
         Link a manga to a collection, enforcing ownership.
 
         Verifies that the collection exists and is owned by `user_id`. If the link
-        already exists, the method is a no-op.
+        already exists, raises.
 
         Args:
             user_id (uuid.UUID): Owner of the collection.
@@ -438,7 +465,8 @@ class ClientWriteDatabase(ClientReadDatabase):
             None
 
         Raises:
-            ValueError: If the collection does not exist or is not owned by the user.
+            NotFoundError: If the collection does not exist or is not owned by the user.
+            ConflictError: If the manga is already in the collection.
             SQLAlchemyError: On DB errors (transaction rolled back and re-raised).
         '''
         try:
@@ -451,7 +479,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             collection = result.scalar_one_or_none()
 
             if not collection:
-                raise ValueError("Collection not found or unauthorized access.")
+                raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
 
             exists = await self.execute(
                 select(MangaCollection).where(
@@ -460,7 +488,9 @@ class ClientWriteDatabase(ClientReadDatabase):
                 )
             )
             if exists.scalar_one_or_none():
-                raise ValueError("Manga already in collection.")
+                raise ConflictError(code="COLLECTION_MANGA_EXISTS",
+                                    message="Manga is already in this collection.",
+                                    detail={"collection_id": collection_id, "manga_id": manga_id})
 
             link = MangaCollection(collection_id=collection_id, manga_id=manga_id)
             self.add(link)
@@ -486,7 +516,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             None
 
         Raises:
-            ValueError: If collection does not exist/owned, or link is missing.
+            NotFoundError: If collection does not exist/owned, or link is missing.
             SQLAlchemyError: On DB errors (transaction rolled back and re-raised).
         '''
         try:
@@ -499,7 +529,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             collection = result.scalar_one_or_none()
 
             if not collection:
-                raise ValueError("Collection not found or unauthorized access.")
+                raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
 
             stmt = select(MangaCollection).where(
                 MangaCollection.collection_id == collection_id,
@@ -509,7 +539,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             link = link_result.scalar_one_or_none()
 
             if not link:
-                raise ValueError("Manga not found in this collection.")
+                raise NotFoundError(code="COLLECTION_MANGA_NOT_FOUND", message="That manga is not in this collection.")
 
             await self.delete(link)
             await self.commit()

@@ -1,26 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pwdlib.exceptions import UnknownHashError
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Request
 from backend.db.client_db import ClientWriteDatabase, ClientReadDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_user as current_user
 from backend.schemas.user import UserRead, UserUpdate, ChangePassword
 from backend.auth.user_manager import get_user_manager, UserManager
-from backend.utils.response import success, error
+from backend.utils.response import success
 from backend.utils.rate_limit import limiter
+from backend.services.profile_service import (
+    get_my_profile as svc_get_my_profile,
+    update_my_profile as svc_update_my_profile,
+    change_my_password as svc_change_my_password,
+)
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 
+
 @router.get("/me", response_model=dict)
 @limiter.limit("120/minute")
 async def get_my_profile(
     request: Request,
     db: ClientReadDatabase = Depends(get_user_read_db),
-    user: User = Depends(current_user)
+    user: User = Depends(current_user),
 ):
     '''
     Return the authenticated user's profile.
@@ -32,35 +36,24 @@ async def get_my_profile(
 
     Returns:
         dict: Standardized response with the user's profile data.
-     '''
+    '''
     try:
-        logger.info(f"Fetching profile for user {user.id}")
-        result = await db.execute(
-            select(User).where(User.id == user.id)
-        )
-        me = result.scalar_one_or_none()
-
-        if not me:
-            logger.warning(f"No user row found for {user.id}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-
-        validated = UserRead.model_validate(me)
+        logger.info("Fetching profile for user %s", user.id)
+        validated = await svc_get_my_profile(user_id=user.id, user_db=db)
         return success("Profile retrieved successfully", data=validated)
-    
-    except HTTPException:
-        raise
 
     except Exception as e:
-        logger.error(f"Failed to retrieve profile for user {user.id}: {e}", exc_info=True)
-        return error("Failed to retrieve profile", detail=str(e))
-    
+        logger.error("Failed to retrieve profile for user %s: %s", user.id, e, exc_info=True)
+        raise
+
+
 @router.patch("/me", response_model=dict)
 @limiter.limit("10/minute")
 async def update_my_profile(
     request: Request,
     payload: UserUpdate,
     db: ClientWriteDatabase = Depends(get_user_write_db),
-    user: User = Depends(current_user)
+    user: User = Depends(current_user),
 ):
     '''
     Update the authenticated user's profile fields.
@@ -75,42 +68,19 @@ async def update_my_profile(
         dict: Standardized response with the updated profile data.
     '''
     try:
-        logger.info(f"User {user.id} updating profile")
+        logger.info("User %s updating profile", user.id)
+        validated = await svc_update_my_profile(user_id=user.id, payload=payload, user_db=db)
 
-        result = await db.execute(
-            select(User).where(User.id == user.id)
-        )
-        me = result.scalar_one_or_none()
+        if validated is None:
+            return success("No changes applied", data=UserRead.model_validate(user))
 
-        if not me:
-            logger.warning(f"User {user.id} attempted to update a non-existent profile")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-
-        # Reject unsupported fields here (email/password changes handled in the future)
-        incoming = payload.model_dump(exclude_unset=True)
-        if any(k in incoming for k in ("email", "password")):
-            logger.warning(f"User {user.id} attempted to change restricted fields via /profiles/me")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
-
-        if "displayname" in incoming:
-            setattr(me, "displayname", incoming["displayname"])
-        else:
-            return success("No changes applied", data=UserRead.model_validate(me))
-
-        await db.commit()
-        await db.refresh(me)
-
-        validated = UserRead.model_validate(me)
         return success("Profile updated successfully", data=validated)
-    
-    except HTTPException:
-        raise
 
     except Exception as e:
-        await db.rollback()
-        logger.error(f"Failed to update profile for user {user.id}: {e}", exc_info=True)
-        return error("Failed to update profile", detail=str(e))
-    
+        logger.error("Failed to update profile for user %s: %s", user.id, e, exc_info=True)
+        raise
+
+
 @router.post("/me/change-password", response_model=dict)
 @limiter.limit("10/minute")
 async def change_my_password(
@@ -133,22 +103,16 @@ async def change_my_password(
     Returns:
         dict: Standardized response indicating success or an error detail.
     '''
-    logger.info(f"User {user.id} attempting password change")
-
     try:
-        verified, updated_hash = user_manager.password_helper.verify_and_update(payload.current_password, user.hashed_password)
+        logger.info("User %s attempting password change", user.id)
+        validated = await svc_change_my_password(
+            user=user,
+            payload=payload,
+            user_db=db,
+            user_manager=user_manager,
+        )
+        return success("Password changed successfully", data=validated)
 
-    except UnknownHashError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
-
-    if not verified:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
-
-    # set the new password hash
-    user.hashed_password = user_manager.password_helper.hash(payload.new_password)
-
-    await db.commit()
-    await db.refresh(user)
-
-    validated = UserRead.model_validate(user)
-    return success("Password changed successfully", data=validated)
+    except Exception as e:
+        logger.error("Failed password change for user %s: %s", user.id, e, exc_info=True)
+        raise

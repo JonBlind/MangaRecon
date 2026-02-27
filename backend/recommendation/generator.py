@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import uuid
-from backend.recommendation import core
-from typing import List, Dict, Any
-from backend.db.client_db import ClientReadDatabase
+from typing import List
+
 from backend.config.limits import MAX_RECOMMENDATION_SEEDS
+from backend.db.client_db import ClientReadDatabase
+from backend.recommendation import core
+from backend.utils.domain_exceptions import BadRequestError
+
 
 async def generate_recommendations_for_collection(
     user_id: uuid.UUID,
     collection_id: int,
-    db: ClientReadDatabase
-) -> List[Dict[str, Any]]:
+    db: ClientReadDatabase,
+) -> dict:
     '''
     Generate recommendations for the given user's collection by composing core steps.
 
@@ -18,7 +23,7 @@ async def generate_recommendations_for_collection(
         db (ClientReadDatabase): Read-only session of the ClientDatabase.
 
     Returns:
-        dict: 
+        dict:
             - items: list of recommendation dicts
             - seed_total: int
             - seed_used: int
@@ -27,8 +32,9 @@ async def generate_recommendations_for_collection(
     # Get all manga in collection
     manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, db)
     if not manga_ids:
-        raise ValueError("Need at least 1 manga in the collection to generate recommendations")
-    
+        raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Need at least 1 manga in the collection to generate recommendations.", 
+                          detail={"collection_id": collection_id})
+
     seed_truncated = False
     seed_total = len(manga_ids)
 
@@ -43,23 +49,23 @@ async def generate_recommendations_for_collection(
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
-        db=db
+        db=db,
     )
 
     scored = await core.get_scored_recommendations(candidates, metadata_profile, db)
-    return {
-    "items": scored,
-    "seed_total": seed_total,
-    "seed_used": len(manga_ids),
-    "seed_truncated": seed_truncated,
-    }
 
+    return {
+        "items": scored,
+        "seed_total": seed_total,
+        "seed_used": len(manga_ids),
+        "seed_truncated": seed_truncated,
+    }
 
 
 async def generate_recommendations_for_list(
     manga_ids: List[int],
     db: ClientReadDatabase,
-) -> List[Dict[str, Any]]:
+) -> dict:
     '''
     Generate recommendations from a raw list of manga IDs (not persisted).
 
@@ -68,17 +74,18 @@ async def generate_recommendations_for_list(
         db (ClientReadDatabase): Read-only session of the ClientDatabase.
 
     Returns:
-        dict: 
+        dict:
             - items: list of recommendation dicts
             - seed_total: int
             - seed_used: int
             - seed_truncated: bool
     '''
     if not manga_ids:
-        raise ValueError("Need at least 1 manga to generate recommendations")
-    
+        raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Please provide at least one manga to generate recommendations.")
+
     seed_total = len(manga_ids)
     seed_truncated = seed_total > MAX_RECOMMENDATION_SEEDS
+
     if seed_truncated:
         manga_ids = manga_ids[:MAX_RECOMMENDATION_SEEDS]
 
@@ -93,9 +100,10 @@ async def generate_recommendations_for_list(
     )
 
     scored = await core.get_scored_recommendations(candidates, metadata_profile, db)
+
     return {
-    "items": scored,
-    "seed_total": seed_total,
-    "seed_used": len(manga_ids),
-    "seed_truncated": seed_truncated,
+        "items": scored,
+        "seed_total": seed_total,
+        "seed_used": len(manga_ids),
+        "seed_truncated": seed_truncated,
     }

@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
-from backend.utils.rate_limit import register_rate_limiter
+from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready
 from backend.cache.redis import get_redis_cache
 from dotenv import load_dotenv
 from backend.routes import (
@@ -27,8 +27,8 @@ from backend.routes import (
     metadata_routes
 )
 
-ENV = os.getenv("MANGARECON_ENV", "dev").lower()
-if ENV == "test":
+ENV = os.getenv("MANGARECON_ENV", "prod").lower()
+if ENV in ("dev", "test"):
     load_dotenv(".env.test", override=True)
 else:
     load_dotenv(".env", override=False)
@@ -48,7 +48,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
-ENV = os.getenv("MANGARECON_ENV", "dev").lower()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,8 +62,18 @@ async def lifespan(app: FastAPI):
     '''
     redis_cache = None
 
-    if ENV != "test":
+    if ENV not in ("dev", "test"):
         redis_cache = get_redis_cache()
+
+    if ENV == "prod":
+        app.state.rate_limit_storage_ready = await rate_limit_storage_ready()
+    else:
+        app.state.rate_limit_storage_ready = True
+
+    app.state.rate_limit_last_log = 0.0
+    app.state.rate_limit_last_check = 0.0
+    app.state.rate_limit_check_interval = float(os.getenv("RATELIMIT_CHECK_SECONDS", "15"))
+    
 
     try:
         yield
@@ -79,7 +88,7 @@ def create_app() -> FastAPI:
     Returns:
         FastAPI
     '''
-    app = FastAPI(lifespan=lifespan, debug=settings.debug)
+    app = FastAPI(lifespan=lifespan, debug=settings.debug, redirect_slashes=False)
 
     register_exception_handlers(app)
 
