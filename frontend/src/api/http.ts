@@ -61,6 +61,23 @@ function extractErrorMessage(json: any, status: number): string {
   return `Request failed (${status})`;
 }
 
+function isMaintenance(res: Response, json: any): boolean {
+  if (res.status !== 503) return false;
+  return true;
+}
+
+function forceMaintenanceRedirect() {
+  const currnetPath = window.location.pathname + window.location.search + window.location.hash;
+  if (window.location.pathname === "/maintenance") return;
+
+  try {
+    sessionStorage.setItem("preMaintenancePatch", currnetPath);
+  } catch {
+    // nothing on failure
+  }
+  window.location.assign("/maintenance")
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -75,6 +92,11 @@ export async function apiFetch<T>(
   });
 
   const json = await readJsonSafe(res);
+
+  if (isMaintenance(res, json)) {
+    forceMaintenanceRedirect();
+    throw new ApiRequestError("Service temporarily unavailable", 503);
+  }
 
   if (!res.ok || json?.status === "error") {
     const msg =

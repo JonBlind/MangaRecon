@@ -8,14 +8,17 @@ FastAPI application entrypoint for MangaRecon.
 '''
 
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from contextlib import asynccontextmanager
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
-from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready
+from backend.utils.response import error
+from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready, validate_rate_limit_config
 from backend.cache.redis import get_redis_cache
+from backend.config.settings import ENV, settings, origins
 from dotenv import load_dotenv
 from backend.routes import (
     auth_routes,
@@ -24,30 +27,9 @@ from backend.routes import (
     rating_routes,
     recommendation_routes,
     profile_routes,
-    metadata_routes
+    metadata_routes,
+    system_routes
 )
-
-ENV = os.getenv("MANGARECON_ENV", "prod").lower()
-if ENV in ("dev", "test"):
-    load_dotenv(".env.test", override=True)
-else:
-    load_dotenv(".env", override=False)
-
-class Settings(BaseSettings):
-    '''
-    Application settings (CORS, origins, environment flags, and other toggles)
-    loaded via environment variables and used during app construction.
-    '''
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore")
-    frontend_origins: str = Field(..., validation_alias=AliasChoices("FRONTEND_ORIGINS"))
-    debug: bool = False
-
-settings = Settings()
-origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,7 +55,6 @@ async def lifespan(app: FastAPI):
     app.state.rate_limit_last_log = 0.0
     app.state.rate_limit_last_check = 0.0
     app.state.rate_limit_check_interval = float(os.getenv("RATELIMIT_CHECK_SECONDS", "15"))
-    
 
     try:
         yield
@@ -91,6 +72,7 @@ def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan, debug=settings.debug, redirect_slashes=False)
 
     register_exception_handlers(app)
+    validate_rate_limit_config()
 
     # Rate limiting is disabled in tests
     if ENV != "test":
@@ -112,12 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(recommendation_routes.router)
     app.include_router(profile_routes.router)
     app.include_router(metadata_routes.router)
-
-    # health check
-    @app.get("/healthz")
-    def health():
-        '''Simple probe used for uptime check.'''
-        return {"message": "MangaRecon API is running."}
+    app.include_router(system_routes.router)
 
     return app
 

@@ -29,6 +29,17 @@ def _get_storage_uri() -> str:
         raise RuntimeError("RATELIMIT_STORAGE_URI must be set when MANGARECON_ENV=prod.")
     return uri
 
+def validate_rate_limit_config() -> None:
+    """
+    Misconfigured environment forces a fail-close.
+    """
+    if ENV in ("dev", "test"):
+        return
+
+    uri = os.getenv("RATELIMIT_STORAGE_URI")
+    if not uri:
+        raise RuntimeError("ENV=prod requires RATELIMIT_STORAGE_URI for rate limiting storage.")
+
 async def rate_limit_storage_ready(timeout: float = 0.25) -> bool:
     if ENV in ("dev", "test"):
         return True
@@ -61,6 +72,9 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
         if ENV in ("dev", "test"):
             return await call_next(request)
 
+        if request.url.path == "/healthz":
+            return JSONResponse(status_code=200, content={"message": "MangaRecon API is running."})
+
         ready = getattr(request.app.state, "rate_limit_storage_ready", False)
 
         if not ready:
@@ -73,14 +87,16 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
                 ok = await rate_limit_storage_ready()
                 request.app.state.rate_limit_storage_ready = ok
                 ready = ok
+        
+        if request.url.path == "/readyz":
+            if ready:
+                return JSONResponse(status_code=200, content={"message": "MangaRecon API is ready"})
+            return JSONResponse(status_code=503, content=error("Service unavailable", detail="TEMPORARILY_UNAVAILABLE"), headers={"Retry-After": "15"})
 
         if ready:
             return await call_next(request)
 
-        if request.url.path == "/healthz":
-            return await call_next(request)
-
-        return JSONResponse(status_code=503, content=error("Service unavailable", detail="TEMPORARILY_UNAVAILABLE"))
+        return JSONResponse(status_code=503, content=error("Service unavailable", detail="TEMPORARILY_UNAVAILABLE"), headers={"Retry-After": "15"})
     
 class SafeSlowAPIMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -98,6 +114,7 @@ class SafeSlowAPIMiddleware(BaseHTTPMiddleware):
             if self._has_connection_error(e):
                 self._log_limiter_down(request)
                 return JSONResponse(status_code=503, content=error("Service unavailable", detail="RATE_LIMIT_UNAVAILABLE"))
+            raise
             
     def _has_detail_attribute_error(self, exc: BaseException) -> bool:
         for sub in self._iter_exceptions(exc):

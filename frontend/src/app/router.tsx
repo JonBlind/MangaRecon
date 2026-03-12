@@ -11,9 +11,15 @@ import Collections from "../pages/Collections";
 import CollectionDetail from "../pages/CollectionDetail";
 import Recommendations from "../pages/Recommendations";
 import MangaDetail from "../pages/MangaDetail";
+import MaintenancePage  from "../pages/Maintenance"
 
 export const router = createBrowserRouter([
   {
+    path: "/maintenance",
+    element: <MaintenancePage />,
+  },
+  {
+    path: "/",
     element: <Layout />,
     children: [
       { path: "/", element: <Landing /> },
