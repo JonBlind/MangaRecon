@@ -8,14 +8,10 @@ FastAPI application entrypoint for MangaRecon.
 '''
 
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
 from contextlib import asynccontextmanager
-from pydantic import Field, AliasChoices
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.utils.errors import register_exception_handlers
-from backend.utils.response import error
 from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready, validate_rate_limit_config
 from backend.cache.redis import get_redis_cache
 from backend.config.settings import ENV, settings, origins

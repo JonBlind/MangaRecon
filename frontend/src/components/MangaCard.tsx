@@ -1,12 +1,16 @@
-import { Link } from "react-router-dom";
-import type { MangaCardManga, MangaCardProps } from "../types/mangaCard";
+import { Link, useLocation } from "react-router-dom";
+import type { MangaCardProps } from "../types/mangaCard";
 
 export default function MangaCard({ manga }: MangaCardProps) {
   const genres = manga.genres?.slice(0, 3) ?? [];
+  const location = useLocation();
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
+
 
   return (
     <Link
       to={`/manga/${manga.manga_id}`}
+      state={{ returnTo }}
       className="group block overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
     >
       {/* Cover */}

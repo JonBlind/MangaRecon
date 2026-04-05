@@ -35,6 +35,7 @@ from backend.services.collection_service import (
 )
 from backend.utils.rate_limit import limiter
 from backend.utils.response import success
+from backend.utils.errors import DomainError
 
 
 logger = logging.getLogger(__name__)
@@ -292,6 +293,9 @@ async def add_manga_to_collection(
             user_db=db,
         )
         return success("Manga added to collection", data=out)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error(
