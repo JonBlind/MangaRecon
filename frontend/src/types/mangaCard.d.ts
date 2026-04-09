@@ -10,6 +10,6 @@ export type MangaCardManga = {
   genres?: MangaCardGenre[];
 };
 
-type MangaCardProps = {
+export type MangaCardProps = {
   manga: MangaCardManga;
 };

@@ -1,4 +1,4 @@
-import type {Genre, Tap, Demograpgic } from "./metadata";
+import type { Genre, Tag, Demographic } from "./metadata";
 
 export type MangaListItem = {
   manga_id: number;
@@ -38,7 +38,7 @@ export type MangaDetail = {
   external_average_rating?: number | null;
   average_rating?: number | null;
 
-  author_id: number;
+  author_id: number | null;
 
   genres: Genre[];
   tags: Tag[];

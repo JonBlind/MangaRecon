@@ -6,22 +6,14 @@ import {
   useCollections,
   useAddMangaToCollection,
 } from "../hooks/useCollections";
+import type { FeedbackMessage, ReturnToLocationState } from "../types/ui";
 
 const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
-
-type MangaDetailLocationState = {
-  returnTo?: string;
-};
-
-type FeedbackState = {
-  type: "success" | "error";
-  message: string;
-} | null;
 
 export default function MangaDetail() {
   const { id } = useParams();
   const location = useLocation();
-  const state = location.state as MangaDetailLocationState | null;
+  const state = location.state as ReturnToLocationState | null;
   const backTo = state?.returnTo || "/search";
 
   const mangaId = Number(id);
@@ -36,7 +28,7 @@ export default function MangaDetail() {
   const meQ = useMe();
   const collectionsQ = useCollections({ page: 1, size: 100 });
   const [selectedCollection, setSelectedCollection] = useState<number | "">("");
-  const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const addM = useAddMangaToCollection(typeof selectedCollection === "number" ? selectedCollection : -1);
 
   useEffect(() => {
