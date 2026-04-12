@@ -38,6 +38,7 @@ async def get_recommendations_for_collection_page(
     page: int,
     size: int,
     user_db: ClientReadDatabase,
+    manga_db: ClientReadDatabase,
     redis_cache,
 ) -> dict:
     """
@@ -54,7 +55,7 @@ async def get_recommendations_for_collection_page(
     seed_truncated = None
 
     if cached_items is None:
-        result = await generate_recommendations_for_collection(user_id, collection_id, user_db)
+        result = await generate_recommendations_for_collection(user_id, collection_id, user_db, manga_db)
         items = result["items"]
 
         seed_total = result.get("seed_total")

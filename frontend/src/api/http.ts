@@ -67,11 +67,11 @@ function isMaintenance(res: Response, json: any): boolean {
 }
 
 function forceMaintenanceRedirect() {
-  const currnetPath = window.location.pathname + window.location.search + window.location.hash;
+  const currentPath = window.location.pathname + window.location.search + window.location.hash;
   if (window.location.pathname === "/maintenance") return;
 
   try {
-    sessionStorage.setItem("preMaintenancePatch", currnetPath);
+    sessionStorage.setItem("preMaintenancePath", currentPath);
   } catch {
     // nothing on failure
   }

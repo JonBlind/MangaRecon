@@ -12,7 +12,8 @@ from backend.utils.domain_exceptions import BadRequestError
 async def generate_recommendations_for_collection(
     user_id: uuid.UUID,
     collection_id: int,
-    db: ClientReadDatabase,
+    user_db: ClientReadDatabase,
+    manga_db: ClientReadDatabase,
 ) -> dict:
     '''
     Generate recommendations for the given user's collection by composing core steps.
@@ -30,7 +31,7 @@ async def generate_recommendations_for_collection(
             - seed_truncated: bool
     '''
     # Get all manga in collection
-    manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, db)
+    manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, user_db)
     if not manga_ids:
         raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Need at least 1 manga in the collection to generate recommendations.", 
                           detail={"collection_id": collection_id})
@@ -42,17 +43,17 @@ async def generate_recommendations_for_collection(
         manga_ids = manga_ids[:MAX_RECOMMENDATION_SEEDS]
         seed_truncated = True
 
-    metadata_profile = await core.get_metadata_profile_for_collection(manga_ids, db)
+    metadata_profile = await core.get_metadata_profile_for_collection(manga_ids, manga_db)
 
     candidates = await core.get_candidate_manga(
         excluded_ids=manga_ids,
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
-        db=db,
+        db=manga_db,
     )
 
-    scored = await core.get_scored_recommendations(candidates, metadata_profile, db)
+    scored = await core.get_scored_recommendations(candidates, metadata_profile, manga_db)
 
     return {
         "items": scored,

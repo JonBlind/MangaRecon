@@ -1,5 +1,21 @@
 import { Link, useLocation } from "react-router-dom";
-import type { MangaCardProps } from "../types/mangaCard";
+
+export type MangaCardGenre = {
+  genre_id: number;
+  genre_name: string;
+};
+
+export type MangaCardManga = {
+  manga_id: number;
+  title: string;
+  cover_image_url?: string | null;
+  genres?: MangaCardGenre[];
+};
+
+export type MangaCardProps = {
+  manga: MangaCardManga;
+};
+
 
 export default function MangaCard({ manga }: MangaCardProps) {
   const genres = manga.genres?.slice(0, 3) ?? [];

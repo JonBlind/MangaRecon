@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
         children: [
           { path: "collections", element: <Collections /> },
           { path: "collections/:id", element: <CollectionDetail /> },
-          { path: "recommendations/:id", element: <Recommendations /> },
+          { path: "recommendations", element: <Recommendations /> },
         ],
       },
     ],

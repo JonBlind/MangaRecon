@@ -40,7 +40,8 @@ async def get_recommendations_for_collection(
     order_dir: OrderDirection = Query("desc"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    db: ClientReadDatabase = Depends(get_user_read_db),
+    user_db: ClientReadDatabase = Depends(get_user_read_db),
+    manga_db: ClientReadDatabase = Depends(get_public_read_db),
     user: User = Depends(current_user),
     redis_cache=Depends(get_redis_cache),
 ):
@@ -55,7 +56,8 @@ async def get_recommendations_for_collection(
         order_dir=order_dir,
         page=page,
         size=size,
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
         redis_cache=redis_cache,
     )
     return success("Recommendations generated successfully", data=data)

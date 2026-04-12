@@ -134,33 +134,47 @@ async def get_candidate_manga(
     '''
     try:
         stmt = (
-            select(distinct(Manga))
+            select(
+                Manga.manga_id,
+                Manga.title,
+                Manga.author_id,
+                Manga.description,
+                Manga.published_date,
+                Manga.external_average_rating,
+                Manga.average_rating,
+                Manga.cover_image_url,
+            )
             .join(manga_genre, Manga.manga_id == manga_genre.c.manga_id, isouter=True)
             .join(manga_tag, Manga.manga_id == manga_tag.c.manga_id, isouter=True)
-            .join(manga_demographic, Manga.manga_id == manga_demographic.c.manga_id, isouter=True)
+            .join(
+                manga_demographic,
+                Manga.manga_id == manga_demographic.c.manga_id,
+                isouter=True,
+            )
             .where(
                 Manga.manga_id.notin_(excluded_ids),
                 (
-                    (manga_genre.c.genre_id.in_(genre_ids)) |
-                    (manga_tag.c.tag_id.in_(tag_ids)) |
-                    (manga_demographic.c.demographic_id.in_(demo_ids))
+                    (manga_genre.c.genre_id.in_(genre_ids))
+                    | (manga_tag.c.tag_id.in_(tag_ids))
+                    | (manga_demographic.c.demographic_id.in_(demo_ids))
                 ),
-                Manga.external_average_rating.is_not(None)
+                Manga.external_average_rating.is_not(None),
             )
+            .distinct()
             .limit(max_candidates)
         )
 
         result = await db.execute(stmt)
-        candidates = result.scalars().all()
-        logger.info(f"Generated {len(candidates)} candidate manga to score")
+        candidates = [dict(row) for row in result.mappings().all()]
+        logger.info("Generated %s candidate manga to score", len(candidates))
         return candidates
 
     except Exception as e:
-        logger.error(f"Error generating candidate manga: {e}", exc_info=True)
+        logger.error("Error generating candidate manga: %s", e, exc_info=True)
         return []
     
 async def get_scored_recommendations(
-    candidates: List[Manga],
+    candidates: List[Dict[str, Any]],
     metadata_profile: Dict[str, Any],
     db: ClientReadDatabase
 ) -> List[Dict[str, Any]]:
@@ -178,7 +192,7 @@ async def get_scored_recommendations(
         return []
 
     # Extract all the manga_ids for candidates
-    candidate_ids = [manga.manga_id for manga in candidates]
+    candidate_ids = [manga["manga_id"] for manga in candidates]
 
     meta = {
         "genres": defaultdict(set),
@@ -211,7 +225,7 @@ async def get_scored_recommendations(
     
     scored = []
     for manga in candidates:
-        manga_id = manga.manga_id
+        manga_id = manga["manga_id"]
         score = 0.0
 
         # For each match:
@@ -224,19 +238,19 @@ async def get_scored_recommendations(
         tag_score = sum(metadata_profile["tags"].get(t, 0) for t in meta["tags"].get(manga_id, [])) * 3
         demo_score = sum(metadata_profile["demographics"].get(d, 0) for d in meta["demographics"].get(manga_id, [])) * 1.25
         author_score = 3 if metadata_profile["authors"] & meta["authors"].get(manga_id, set()) else 0
-        rating_score = max(0, 5 - abs(manga.external_average_rating - avg_rating)) if manga.external_average_rating and avg_rating else 0
+        rating_score = max(0, 5 - abs(float(manga["external_average_rating"] - avg_rating)) if manga["external_average_rating"] and avg_rating else 0)
 
         year_score = 0
-        if manga.published_date and avg_year:
-            year_score = max(0, 5 - (abs(manga.published_date.year - avg_year) * 0.5))
+        if manga["published_date"] and avg_year:
+            year_score = max(0, 5 - (abs(manga["published_date"].year - avg_year) * 0.5))
 
         score = genre_score + tag_score + demo_score + author_score + rating_score + year_score
 
         scored.append({
-            "manga_id": manga.manga_id,
-            "title": manga.title,
-            "external_average_rating": manga.external_average_rating,
-            "cover_image_url": manga.cover_image_url,
+            "manga_id": manga["manga_id"],
+            "title": manga["title"],
+            "external_average_rating": manga["external_average_rating"],
+            "cover_image_url": manga["cover_image_url"],
             "score": round(score, 2),
             "details": {
                 "genre_score": genre_score,
