@@ -1,12 +1,15 @@
 import type { ApiEnvelope } from "../types/api";
+import { queryClient } from "../app/queryClient";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 if (!BASE_URL) {
   throw new Error("VITE_API_BASE_URL is not set. Add it to frontend/.env and restart Vite.");
 }
+
 export class ApiRequestError extends Error {
   statusCode?: number;
+
   constructor(message: string, statusCode?: number) {
     super(message);
     this.name = "ApiRequestError";
@@ -55,19 +58,23 @@ function extractErrorMessage(json: any, status: number): string {
   }
 
   if (typeof json.message === "string" && json.message.trim()) return json.message;
-
   if (typeof detail === "string" && detail.trim()) return detail;
 
   return `Request failed (${status})`;
 }
 
-function isMaintenance(res: Response, json: any): boolean {
-  if (res.status !== 503) return false;
-  return true;
+function isMaintenance(res: Response, _json: any): boolean {
+  return res.status === 503;
+}
+
+function isProtectedPath(pathname: string): boolean {
+  return (pathname.startsWith("/collections") || pathname.startsWith("/recommendations"));
 }
 
 function forceMaintenanceRedirect() {
-  const currentPath = window.location.pathname + window.location.search + window.location.hash;
+  const currentPath =
+    window.location.pathname + window.location.search + window.location.hash;
+
   if (window.location.pathname === "/maintenance") return;
 
   try {
@@ -75,7 +82,23 @@ function forceMaintenanceRedirect() {
   } catch {
     // nothing on failure
   }
-  window.location.assign("/maintenance")
+
+  window.location.assign("/maintenance");
+}
+
+function forceLoginRedirect() {
+  const currentPath =
+    window.location.pathname + window.location.search + window.location.hash;
+
+  if (window.location.pathname === "/login") return;
+
+  try {
+    sessionStorage.setItem("postLoginRedirect", currentPath);
+  } catch {
+    // nothing on failure
+  }
+
+  window.location.assign("/login");
 }
 
 export async function apiFetch<T>(
@@ -98,11 +121,18 @@ export async function apiFetch<T>(
     throw new ApiRequestError("Service temporarily unavailable", 503);
   }
 
+  if (res.status === 401) {
+    queryClient.removeQueries({ queryKey: ["me"] });
+
+    if (isProtectedPath(window.location.pathname)) {
+      forceLoginRedirect();
+    }
+
+    throw new ApiRequestError("Unauthorized", 401);
+  }
+
   if (!res.ok || json?.status === "error") {
-    const msg =
-      json?.message ||
-      json?.detail ||
-      `Request failed (${res.status})`;
+    const msg = extractErrorMessage(json, res.status);
     throw new ApiRequestError(msg, res.status);
   }
 

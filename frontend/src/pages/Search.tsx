@@ -1,12 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
-import { keepPreviousData } from "@tanstack/react-query";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
-import type { MangaCardManga } from "../types/mangaCard";
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,9 +29,23 @@ export default function Search() {
     setSearchParams(next);
   }
 
-  const genresQ = useQuery({ queryKey: ["genres"], queryFn: getGenres, staleTime: 10 * 60_000 });
-  const tagsQ = useQuery({ queryKey: ["tags"], queryFn: getTags, staleTime: 10 * 60_000 });
-  const demosQ = useQuery({ queryKey: ["demographics"], queryFn: getDemographics, staleTime: 10 * 60_000 });
+  const genresQ = useQuery({
+    queryKey: ["genres"],
+    queryFn: getGenres,
+    staleTime: 10 * 60_000,
+  });
+
+  const tagsQ = useQuery({
+    queryKey: ["tags"],
+    queryFn: getTags,
+    staleTime: 10 * 60_000,
+  });
+
+  const demosQ = useQuery({
+    queryKey: ["demographics"],
+    queryFn: getDemographics,
+    staleTime: 10 * 60_000,
+  });
 
   const params = useMemo(
     () => ({
@@ -159,7 +171,7 @@ export default function Search() {
 
       {mangaQ.isError && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {(mangaQ.error as any)?.message ?? "Failed to load manga."}
+          {(mangaQ.error as Error)?.message ?? "Failed to load manga."}
         </div>
       )}
 
@@ -175,17 +187,8 @@ export default function Search() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {(mangaQ.data?.items ?? []).map((m) => (
-            <MangaCard
-              key={m.manga_id}
-              manga={
-                {
-                  manga_id: m.manga_id,
-                  title: m.title,
-                  cover_image_url: m.cover_image_url ?? null,
-                } satisfies MangaCardManga
-              }
-            />
+          {(mangaQ.data?.items ?? []).map((manga) => (
+            <MangaCard key={manga.manga_id} manga={manga} />
           ))}
         </div>
 
@@ -199,7 +202,7 @@ export default function Search() {
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
           disabled={page <= 1 || mangaQ.isLoading}
-          onClick={() => updateParams({page: Math.max(1, page - 1)})}
+          onClick={() => updateParams({ page: Math.max(1, page - 1) })}
         >
           Prev
         </button>
@@ -207,7 +210,7 @@ export default function Search() {
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
           disabled={page >= totalPages || mangaQ.isLoading}
-          onClick={() => updateParams({page: Math.min(totalPages, page + 1)})}
+          onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
         >
           Next
         </button>

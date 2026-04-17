@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { login } from "../api/auth";
 import { ApiRequestError } from "../api/http";
 
 export default function Login() {
   const nav = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
 
   const [email, setEmail] = useState("");
@@ -14,8 +15,22 @@ export default function Login() {
   const mutation = useMutation({
     mutationFn: () => login(email, password),
     onSuccess: async () => {
-      nav("/collections", { replace: true });
       await qc.invalidateQueries({ queryKey: ["me"] });
+
+      const stateFrom = (location.state as { from?: string } | undefined)?.from;
+
+      let savedRedirect: string | null = null;
+
+      try {
+        savedRedirect = sessionStorage.getItem("postLoginRedirect");
+        if (savedRedirect) {
+          sessionStorage.removeItem("postLoginRedirect");
+        }
+      } catch {
+        // ignore failure
+      }
+
+      nav(savedRedirect || stateFrom || "/collections", { replace: true });
     },
   });
 

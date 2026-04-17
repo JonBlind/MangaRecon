@@ -7,6 +7,7 @@ export type MangaListItem = {
   cover_image_url?: string | null;
   average_rating?: number | null;
   external_average_rating?: number | null;
+  genres?: Genre[];
 };
 
 export type MangaSearchResponse = {

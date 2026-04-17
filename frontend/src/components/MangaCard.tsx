@@ -1,57 +1,35 @@
 import { Link, useLocation } from "react-router-dom";
+import type { MangaListItem } from "../types/manga";
 
-export type MangaCardGenre = {
-  genre_id: number;
-  genre_name: string;
+type MangaCardProps = {
+  manga: MangaListItem;
 };
 
-export type MangaCardManga = {
-  manga_id: number;
-  title: string;
-  cover_image_url?: string | null;
-  genres?: MangaCardGenre[];
-};
-
-export type MangaCardProps = {
-  manga: MangaCardManga;
-};
-
+const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
 
 export default function MangaCard({ manga }: MangaCardProps) {
-  const genres = manga.genres?.slice(0, 3) ?? [];
   const location = useLocation();
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
-
 
   return (
     <Link
       to={`/manga/${manga.manga_id}`}
       state={{ returnTo }}
+      title={manga.title}
       className="group block overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
     >
-      {/* Cover */}
-      <div className="aspect-[2/3] overflow-hidden bg-neutral-800">
+      <div className="aspect-[2/3] w-full overflow-hidden bg-neutral-950">
         <img
-          src={manga.cover_image_url ?? "https://placehold.co/400x600?text=No+Cover"}
+          src={manga.cover_image_url || FALLBACK_COVER}
           alt={manga.title}
-          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-          onError={(e) => {
-            e.currentTarget.src = "https://placehold.co/400x600?text=No+Cover";
-          }}
+          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
         />
       </div>
 
-      {/* Meta */}
-      <div className="space-y-1 p-2">
-        <div className="line-clamp-2 text-sm font-medium leading-tight">{manga.title}</div>
-
-        {genres.length > 0 && (
-          <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-neutral-400">
-            {genres.map((g) => (
-              <span key={g.genre_id}>{g.genre_name}</span>
-            ))}
-          </div>
-        )}
+      <div className="flex min-h-[72px] items-start p-3">
+        <h2 className="line-clamp-2 text-sm font-semibold leading-5">
+          {manga.title}
+        </h2>
       </div>
     </Link>
   );
