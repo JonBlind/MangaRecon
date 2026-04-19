@@ -122,9 +122,8 @@ export async function apiFetch<T>(
   }
 
   if (res.status === 401) {
-    queryClient.removeQueries({ queryKey: ["me"] });
-
     if (isProtectedPath(window.location.pathname)) {
+      queryClient.removeQueries({ queryKey: ["me"] });
       forceLoginRedirect();
     }
 

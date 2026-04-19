@@ -8,6 +8,8 @@ export default function Layout() {
   const qc = useQueryClient();
   const { data: me, isLoading } = useMe();
 
+  const isCheckingAuth = isLoading && me === undefined;
+
   async function handleLogout() {
     try {
       await logout();
@@ -20,7 +22,6 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="border-b border-neutral-800">
-        {/* Full-width header background, boxed inner content */}
         <div className="mx-auto flex max-w-6xl items-center gap-8 px-6 py-4">
           <Link to="/" className="text-lg font-semibold tracking-tight">
             MangaRecon
@@ -39,9 +40,7 @@ export default function Layout() {
           </nav>
 
           <div className="flex items-center gap-4 text-sm">
-            {isLoading ? (
-              <span className="opacity-70">Loading…</span>
-            ) : me ? (
+            {me ? (
               <>
                 <span className="max-w-[260px] truncate opacity-80">
                   {me.displayname || me.email}
@@ -53,6 +52,8 @@ export default function Layout() {
                   Logout
                 </button>
               </>
+            ) : isCheckingAuth ? (
+              <span className="opacity-70">Loading…</span>
             ) : (
               <>
                 <Link to="/login" className="opacity-90 hover:opacity-100 hover:underline">
@@ -70,7 +71,6 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* Boxed content area */}
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Outlet />
       </main>

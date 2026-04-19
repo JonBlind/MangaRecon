@@ -1,12 +1,15 @@
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
+import SearchSelectionBar from "../components/SearchSelectionBar";
+import { useMangaSelection } from "../hooks/useMangaSelection";
 
 export default function Search() {
+  const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const title = searchParams.get("title") ?? "";
@@ -14,6 +17,24 @@ export default function Search() {
   const tagId = searchParams.get("tag") ? Number(searchParams.get("tag")) : "";
   const demoId = searchParams.get("demo") ? Number(searchParams.get("demo")) : "";
   const page = Number(searchParams.get("page") ?? "1");
+
+  const {
+    selectedIds,
+    selectedCount,
+    toggleSelection,
+    clearSelection,
+    isSelected,
+  } = useMangaSelection();
+
+  function handleGetRecommendations() {
+    if (selectedIds.length === 0) return;
+
+    nav("/recommendations", {
+      state: {
+        mangaIds: selectedIds,
+      },
+    });
+  }
 
   function updateParams(updates: Record<string, string | number | null | undefined>) {
     const next = new URLSearchParams(searchParams);
@@ -73,13 +94,22 @@ export default function Search() {
 
   return (
     <div className="space-y-6">
+
       <div>
         <h1 className="text-3xl font-semibold">Search</h1>
-        <p className="mt-1 text-sm opacity-80">Browse manga by title and filters.</p>
+        <p className="mt-1 text-sm opacity-80">
+          Browse manga by title and filters.
+        </p>
       </div>
 
-      {/* Controls */}
+      <SearchSelectionBar
+        selectedCount={selectedCount}
+        onClear={clearSelection}
+        onGetRecommendations={handleGetRecommendations}
+      />
+
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+
         <div className="md:col-span-2">
           <label className="mb-1 block text-sm">Title</label>
           <input
@@ -162,12 +192,13 @@ export default function Search() {
         </div>
       </div>
 
-      {/* Status */}
       {(genresQ.isLoading || tagsQ.isLoading || demosQ.isLoading) && (
         <div className="text-sm opacity-80">Loading filters…</div>
       )}
 
-      {mangaQ.isLoading && <div className="text-sm opacity-80">Loading results…</div>}
+      {mangaQ.isLoading && (
+        <div className="text-sm opacity-80">Loading results…</div>
+      )}
 
       {mangaQ.isError && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -175,8 +206,8 @@ export default function Search() {
         </div>
       )}
 
-      {/* Results */}
       <div className="space-y-2">
+
         <div className="flex items-center justify-between text-sm opacity-80">
           <span>
             {total.toLocaleString()} result{total === 1 ? "" : "s"}
@@ -188,7 +219,13 @@ export default function Search() {
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {(mangaQ.data?.items ?? []).map((manga) => (
-            <MangaCard key={manga.manga_id} manga={manga} />
+            <MangaCard
+              key={manga.manga_id}
+              manga={manga}
+              selectable
+              selected={isSelected(manga.manga_id)}
+              onToggleSelect={toggleSelection}
+            />
           ))}
         </div>
 
@@ -197,7 +234,6 @@ export default function Search() {
         )}
       </div>
 
-      {/* Paging */}
       <div className="flex items-center gap-3">
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"

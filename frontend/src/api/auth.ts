@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { apiFetch, ApiRequestError } from "./http";
 import type { UserMe } from "../types/auth";
 
 export async function login(email: string, password: string) {
@@ -34,7 +34,14 @@ export async function register(payload: RegisterPayload) {
   });
 }
 
-export async function me(): Promise<UserMe> {
-  const res = await apiFetch<UserMe>("/profiles/me", { method: "GET" });
-  return res.data;
+export async function me(): Promise<UserMe | null> {
+  try {
+    const res = await apiFetch<UserMe>("/profiles/me", { method: "GET" });
+    return res.data;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.statusCode === 401) {
+      return null;
+    }
+    throw error;
+  }
 }
