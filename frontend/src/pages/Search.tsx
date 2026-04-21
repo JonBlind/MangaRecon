@@ -1,16 +1,22 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
+import { addMangaToCollection } from "../api/collections";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
 import SearchSelectionBar from "../components/SearchSelectionBar";
+import CollectionPickerModal from "../components/CollectionPickerModal";
 import { useMangaSelection } from "../hooks/useMangaSelection";
 
 export default function Search() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
+  const [isBulkAdding, setIsBulkAdding] = useState(false);
+  const [bulkAddFeedback, setBulkAddFeedback] = useState<string | null>(null);
 
   const title = searchParams.get("title") ?? "";
   const genreId = searchParams.get("genre") ? Number(searchParams.get("genre")) : "";
@@ -34,6 +40,72 @@ export default function Search() {
         mangaIds: selectedIds,
       },
     });
+  }
+
+  function handleOpenAddToCollection() {
+    setBulkAddFeedback(null);
+    setIsCollectionModalOpen(true);
+  }
+
+  async function handleConfirmAddToCollection(collectionId: number) {
+    setBulkAddFeedback(null);
+    setIsBulkAdding(true);
+
+    let addedCount = 0;
+    let failedCount = 0;
+    const failureMessages: string[] = [];
+
+    try {
+      for (const mangaId of selectedIds) {
+        try {
+          await addMangaToCollection(collectionId, mangaId);
+          addedCount += 1;
+        } catch (error) {
+          failedCount += 1;
+
+          const message =
+            error instanceof Error
+              ? error.message
+              : `Failed to add manga ${mangaId}.`;
+
+          if (failureMessages.length < 3) {
+            failureMessages.push(message);
+          }
+        }
+      }
+
+      await qc.invalidateQueries({ queryKey: ["collections"] });
+      await qc.invalidateQueries({ queryKey: ["collections", "mangas", collectionId] });
+
+      setIsCollectionModalOpen(false);
+
+      if (addedCount > 0 && failedCount === 0) {
+        setBulkAddFeedback(`${addedCount} manga added to collection.`);
+        clearSelection();
+        return;
+      }
+
+      if (addedCount > 0 && failedCount > 0) {
+        const detail =
+          failureMessages.length > 0
+            ? ` ${failureMessages.join(" ")}`
+            : "";
+
+        setBulkAddFeedback(
+          `${addedCount} manga added, ${failedCount} failed.${detail}`
+        );
+        return;
+      }
+
+      const detail =
+        failureMessages.length > 0
+          ? ` ${failureMessages.join(" ")}`
+          : "";
+
+      setBulkAddFeedback(`No manga were added.${detail}`);
+    } finally {
+      setIsBulkAdding(false);
+    }
   }
 
   function updateParams(updates: Record<string, string | number | null | undefined>) {
@@ -95,6 +167,7 @@ export default function Search() {
   return (
     <div className="space-y-6">
 
+      {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold">Search</h1>
         <p className="mt-1 text-sm opacity-80">
@@ -102,12 +175,28 @@ export default function Search() {
         </p>
       </div>
 
+      {/* Selection Summary Bar */}
       <SearchSelectionBar
         selectedCount={selectedCount}
         onClear={clearSelection}
         onGetRecommendations={handleGetRecommendations}
+        onAddToCollection={handleOpenAddToCollection}
       />
 
+      {bulkAddFeedback && (
+        <div className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm">
+          {bulkAddFeedback}
+        </div>
+      )}
+
+      <CollectionPickerModal
+        open={isCollectionModalOpen}
+        onClose={() => setIsCollectionModalOpen(false)}
+        onConfirm={handleConfirmAddToCollection}
+        isSubmitting={isBulkAdding}
+      />
+
+      {/* Filters */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
 
         <div className="md:col-span-2">
@@ -192,6 +281,7 @@ export default function Search() {
         </div>
       </div>
 
+      {/* Loading States*/}
       {(genresQ.isLoading || tagsQ.isLoading || demosQ.isLoading) && (
         <div className="text-sm opacity-80">Loading filters…</div>
       )}
@@ -206,6 +296,7 @@ export default function Search() {
         </div>
       )}
 
+      {/* Results Section */}
       <div className="space-y-2">
 
         <div className="flex items-center justify-between text-sm opacity-80">
@@ -217,6 +308,7 @@ export default function Search() {
           </span>
         </div>
 
+        {/* Manga Grid */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {(mangaQ.data?.items ?? []).map((manga) => (
             <MangaCard
@@ -229,11 +321,13 @@ export default function Search() {
           ))}
         </div>
 
+        {/* Empty State */}
         {!mangaQ.isLoading && (mangaQ.data?.items?.length ?? 0) === 0 && (
           <div className="text-sm opacity-80">No results.</div>
         )}
       </div>
 
+      {/* Pagination */}
       <div className="flex items-center gap-3">
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
