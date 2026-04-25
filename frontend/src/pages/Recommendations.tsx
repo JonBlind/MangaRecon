@@ -7,7 +7,7 @@ import MangaCard from "../components/MangaCard";
 export default function Recommendations() {
   const nav = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const collectionId = Number(searchParams.get("collectionId") ?? "0");
 
@@ -24,6 +24,20 @@ export default function Recommendations() {
     }),
     [searchParams]
   );
+
+  function updateParams(updates: Record<string, string | number | null | undefined>) {
+    const next = new URLSearchParams(searchParams);
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === undefined || value === "") {
+        next.delete(key);
+      } else {
+        next.set(key, String(value));
+      }
+    }
+
+    setSearchParams(next);
+  }
 
   const collectionQuery = useCollectionRecommendations({
     collectionId,
@@ -99,6 +113,24 @@ export default function Recommendations() {
         {!activeQuery.isLoading && (data?.items?.length ?? 0) === 0 && (
           <div className="text-sm opacity-80">No results.</div>
         )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
+          disabled={page <= 1 || activeQuery.isFetching}
+          onClick={() => updateParams({ page: Math.max(1, page - 1) })}
+        >
+          Prev
+        </button>
+
+        <button
+          className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
+          disabled={page >= totalPages || activeQuery.isFetching}
+          onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
+        >
+          Next
+        </button>
       </div>
     </div>
   );

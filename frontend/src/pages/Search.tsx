@@ -4,17 +4,23 @@ import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-quer
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import { addMangaToCollection } from "../api/collections";
+import { ApiRequestError } from "../api/http";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
 import SearchSelectionBar from "../components/SearchSelectionBar";
 import CollectionPickerModal from "../components/CollectionPickerModal";
+import AuthRequiredModal from "../components/AuthRequiredModal";
 import { useMangaSelection } from "../hooks/useMangaSelection";
+import { useMe } from "../hooks/useMe";
 
 export default function Search() {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const meQ = useMe();
+  const isAuthenticated = Boolean(meQ.data);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
+  const [isAuthRequiredModalOpen, setIsAuthRequiredModalOpen] = useState(false);
   const [isBulkAdding, setIsBulkAdding] = useState(false);
   const [bulkAddFeedback, setBulkAddFeedback] = useState<string | null>(null);
 
@@ -29,6 +35,7 @@ export default function Search() {
     selectedCount,
     toggleSelection,
     clearSelection,
+    removeSelectedIds,
     isSelected,
   } = useMangaSelection();
 
@@ -44,7 +51,32 @@ export default function Search() {
 
   function handleOpenAddToCollection() {
     setBulkAddFeedback(null);
+
+    if (!isAuthenticated) {
+      setIsAuthRequiredModalOpen(true);
+      return;
+    }
+
     setIsCollectionModalOpen(true);
+  }
+
+  function classifyBulkAddError(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      switch (error.errorCode) {
+        case "COLLECTION_MANGA_CONFLICT":
+          return "already_exists";
+        case "COLLECTION_NOT_FOUND":
+          return "collection_missing";
+        case "UNAUTHORIZED":
+          return "unauthorized";
+        case "TEMPORARILY_UNAVAILABLE":
+          return "unavailable";
+        default:
+          return "other";
+      }
+    }
+
+    return "other";
   }
 
   async function handleConfirmAddToCollection(collectionId: number) {
@@ -53,23 +85,41 @@ export default function Search() {
 
     let addedCount = 0;
     let failedCount = 0;
-    const failureMessages: string[] = [];
+    const addedIds: number[] = [];
+
+    let duplicateCount = 0;
+    let missingCollectionCount = 0;
+    let unauthorizedCount = 0;
+    let unavailableCount = 0;
+    let otherFailureCount = 0;
 
     try {
       for (const mangaId of selectedIds) {
         try {
           await addMangaToCollection(collectionId, mangaId);
           addedCount += 1;
+          addedIds.push(mangaId);
         } catch (error) {
           failedCount += 1;
 
-          const message =
-            error instanceof Error
-              ? error.message
-              : `Failed to add manga ${mangaId}.`;
+          const category = classifyBulkAddError(error);
 
-          if (failureMessages.length < 3) {
-            failureMessages.push(message);
+          switch (category) {
+            case "already_exists":
+              duplicateCount += 1;
+              break;
+            case "collection_missing":
+              missingCollectionCount += 1;
+              break;
+            case "unauthorized":
+              unauthorizedCount += 1;
+              break;
+            case "unavailable":
+              unavailableCount += 1;
+              break;
+            default:
+              otherFailureCount += 1;
+              break;
           }
         }
       }
@@ -79,6 +129,33 @@ export default function Search() {
 
       setIsCollectionModalOpen(false);
 
+      const summaryParts: string[] = [];
+
+      if (duplicateCount > 0) {
+        summaryParts.push(`${duplicateCount} already in the collection`);
+      }
+
+      if (missingCollectionCount > 0) {
+        summaryParts.push(`${missingCollectionCount} failed because the collection was not found`);
+      }
+
+      if (unauthorizedCount > 0) {
+        summaryParts.push(`${unauthorizedCount} failed due to authorization`);
+      }
+
+      if (unavailableCount > 0) {
+        summaryParts.push(`${unavailableCount} failed because the service is temporarily unavailable`);
+      }
+
+      if (otherFailureCount > 0) {
+        summaryParts.push(`${otherFailureCount} failed for another reason`);
+      }
+
+      const summaryDetail =
+        summaryParts.length > 0
+          ? ` ${summaryParts.join("; ")}.`
+          : "";
+
       if (addedCount > 0 && failedCount === 0) {
         setBulkAddFeedback(`${addedCount} manga added to collection.`);
         clearSelection();
@@ -86,23 +163,15 @@ export default function Search() {
       }
 
       if (addedCount > 0 && failedCount > 0) {
-        const detail =
-          failureMessages.length > 0
-            ? ` ${failureMessages.join(" ")}`
-            : "";
+        removeSelectedIds(addedIds);
 
         setBulkAddFeedback(
-          `${addedCount} manga added, ${failedCount} failed.${detail}`
+          `${addedCount} manga added, ${failedCount} failed.${summaryDetail}`
         );
         return;
       }
 
-      const detail =
-        failureMessages.length > 0
-          ? ` ${failureMessages.join(" ")}`
-          : "";
-
-      setBulkAddFeedback(`No manga were added.${detail}`);
+      setBulkAddFeedback(`No manga were added.${summaryDetail}`);
     } finally {
       setIsBulkAdding(false);
     }
@@ -181,6 +250,7 @@ export default function Search() {
         onClear={clearSelection}
         onGetRecommendations={handleGetRecommendations}
         onAddToCollection={handleOpenAddToCollection}
+        canAddToCollection={isAuthenticated}
       />
 
       {bulkAddFeedback && (
@@ -188,6 +258,13 @@ export default function Search() {
           {bulkAddFeedback}
         </div>
       )}
+      
+      <AuthRequiredModal
+        open={isAuthRequiredModalOpen}
+        onClose={() => setIsAuthRequiredModalOpen(false)}
+        title="Sign in required"
+        message="You need an account to save manga to a collection."
+      />
 
       <CollectionPickerModal
         open={isCollectionModalOpen}

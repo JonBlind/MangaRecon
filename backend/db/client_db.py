@@ -488,7 +488,7 @@ class ClientWriteDatabase(ClientReadDatabase):
                 )
             )
             if exists.scalar_one_or_none():
-                raise ConflictError(code="COLLECTION_MANGA_EXISTS",
+                raise ConflictError(code="COLLECTION_MANGA_CONFLICT",
                                     message="Manga is already in this collection.",
                                     detail={"collection_id": collection_id, "manga_id": manga_id})
 

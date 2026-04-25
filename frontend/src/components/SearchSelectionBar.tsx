@@ -3,6 +3,7 @@ type SearchSelectionBarProps = {
   onClear: () => void;
   onGetRecommendations: () => void;
   onAddToCollection: () => void;
+  canAddToCollection?: boolean;
 };
 
 export default function SearchSelectionBar({
@@ -10,6 +11,7 @@ export default function SearchSelectionBar({
   onClear,
   onGetRecommendations,
   onAddToCollection,
+  canAddToCollection = true,
 }: SearchSelectionBarProps) {
   if (selectedCount <= 0) return null;
 
@@ -32,8 +34,13 @@ export default function SearchSelectionBar({
           type="button"
           className="rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
           onClick={onAddToCollection}
+          title={
+            canAddToCollection
+              ? "Add selected manga to a collection"
+              : "Sign in to save manga to a collection"
+          }
         >
-          Add to Collection
+          {canAddToCollection ? "Add to Collection" : "Sign in to Save"}
         </button>
 
         <button

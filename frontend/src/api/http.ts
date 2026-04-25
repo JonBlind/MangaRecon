@@ -9,11 +9,20 @@ if (!BASE_URL) {
 
 export class ApiRequestError extends Error {
   statusCode?: number;
+  errorCode?: string;
+  errorData?: unknown;
 
-  constructor(message: string, statusCode?: number) {
+  constructor(
+    message: string,
+    statusCode?: number,
+    errorCode?: string,
+    errorData?: unknown
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.statusCode = statusCode;
+    this.errorCode = errorCode;
+    this.errorData = errorData;
   }
 }
 
@@ -31,7 +40,6 @@ function extractErrorMessage(json: any, status: number): string {
 
   const detail = json.detail;
 
-  // If backend uses a generic message, prefer the real detail
   const generic = json.message === "Error" || json.message === "Validation error";
 
   if (generic) {
@@ -61,6 +69,28 @@ function extractErrorMessage(json: any, status: number): string {
   if (typeof detail === "string" && detail.trim()) return detail;
 
   return `Request failed (${status})`;
+}
+
+function extractErrorCode(json: any): string | undefined {
+  if (!json || typeof json !== "object") return undefined;
+
+  if (typeof json.detail === "string" && json.detail.trim()) {
+    return json.detail;
+  }
+
+  if (json.data && typeof json.data === "object") {
+    const nestedDetail = (json.data as any).detail;
+    if (typeof nestedDetail === "string" && nestedDetail.trim()) {
+      return nestedDetail;
+    }
+  }
+
+  return undefined;
+}
+
+function extractErrorData(json: any): unknown {
+  if (!json || typeof json !== "object") return undefined;
+  return json.data;
 }
 
 function isMaintenance(res: Response, _json: any): boolean {
@@ -118,7 +148,7 @@ export async function apiFetch<T>(
 
   if (isMaintenance(res, json)) {
     forceMaintenanceRedirect();
-    throw new ApiRequestError("Service temporarily unavailable", 503);
+    throw new ApiRequestError("Service temporarily unavailable", 503, "TEMPORARILY_UNAVAILABLE");
   }
 
   if (res.status === 401) {
@@ -127,12 +157,15 @@ export async function apiFetch<T>(
       forceLoginRedirect();
     }
 
-    throw new ApiRequestError("Unauthorized", 401);
+    throw new ApiRequestError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   if (!res.ok || json?.status === "error") {
     const msg = extractErrorMessage(json, res.status);
-    throw new ApiRequestError(msg, res.status);
+    const code = extractErrorCode(json);
+    const data = extractErrorData(json);
+
+    throw new ApiRequestError(msg, res.status, code, data);
   }
 
   return json as ApiEnvelope<T>;

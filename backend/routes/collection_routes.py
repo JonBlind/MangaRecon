@@ -35,7 +35,7 @@ from backend.services.collection_service import (
 )
 from backend.utils.rate_limit import limiter
 from backend.utils.response import success
-from backend.utils.errors import DomainError
+from backend.utils.domain_exceptions import DomainError
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,9 @@ async def get_users_collection(
         )
         return success("Collections retrieved", data=data)
 
+    except DomainError:
+        raise
+
     except Exception as e:
         logger.error("Failed to fetch collections for user %s: %s", user.id, e, exc_info=True)
         raise
@@ -110,6 +113,9 @@ async def get_collection_by_id(
         )
         return success("Collection retrieved successfully", data=data)
 
+    except DomainError:
+        raise
+
     except Exception as e:
         logger.error("Failed to fetch collection %s for user %s: %s", collection_id, user.id, e, exc_info=True)
         raise
@@ -142,6 +148,9 @@ async def create_collection(
             user_db=db,
         )
         return success("Collection created successfully", data=data)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error("Failed to create collection for user %s: %s", user.id, e, exc_info=True)
@@ -179,6 +188,9 @@ async def update_collection(
         )
         return success("Collection updated successfully", data=data)
 
+    except DomainError:
+        raise
+
     except Exception as e:
         logger.error("Failed to update collection %s for user %s: %s", collection_id, user.id, e, exc_info=True)
         raise
@@ -211,6 +223,9 @@ async def delete_collection(
             user_db=db,
         )
         return success("Collection deleted successfully", data=data)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error("Failed to delete collection %s for user %s: %s", collection_id, user.id, e, exc_info=True)
@@ -257,6 +272,9 @@ async def get_manga_in_collection(
             manga_db=manga_db,
         )
         return success("Manga retrieved successfully", data=data)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error("Failed to retrieve manga from collection %s: %s", collection_id, e, exc_info=True)
@@ -339,6 +357,9 @@ async def remove_manga_from_collection(
             user_db=db,
         )
         return success("Manga removed from collection", data=out)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error(

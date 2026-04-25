@@ -24,6 +24,20 @@ export function useMangaSelection() {
     setSelectedById({});
   }
 
+  function removeSelectedIds(mangaIds: number[]) {
+    if (mangaIds.length === 0) return;
+
+    setSelectedById((prev) => {
+      const next = { ...prev };
+
+      for (const mangaId of mangaIds) {
+        delete next[mangaId];
+      }
+
+      return next;
+    });
+  }
+
   function isSelected(mangaId: number): boolean {
     return Boolean(selectedById[mangaId]);
   }
@@ -46,6 +60,7 @@ export function useMangaSelection() {
     selectedCount,
     toggleSelection,
     clearSelection,
+    removeSelectedIds,
     isSelected,
   };
 }
