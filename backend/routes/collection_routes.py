@@ -22,6 +22,7 @@ from backend.schemas.collection import (
     CollectionRead,
     CollectionUpdate,
     MangaInCollectionRequest,
+    BulkMangaInCollectionRequest,
 )
 from backend.services.collection_service import (
     list_user_collections_page,
@@ -31,6 +32,7 @@ from backend.services.collection_service import (
     delete_user_collection,
     get_collection_manga_page,
     add_manga_to_user_collection,
+    add_manga_bulk_to_user_collection,
     remove_manga_from_user_collection,
 )
 from backend.utils.rate_limit import limiter
@@ -280,6 +282,49 @@ async def get_manga_in_collection(
         logger.error("Failed to retrieve manga from collection %s: %s", collection_id, e, exc_info=True)
         raise
 
+@router.post("/{collection_id}/mangas/bulk", response_model=dict)
+@limiter.limit("30/minute")
+async def add_manga_bulk_to_collection(
+    request: Request,
+    collection_id: int,
+    data: BulkMangaInCollectionRequest,
+    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user),
+):
+    '''
+    Add multiple manga to a collection owned by the current user.
+
+    Args:
+        request (Request): FastAPI request (required by rate limiting).
+        collection_id (int): Collection identifier to add to.
+        data (BulkMangaInCollectionRequest): Payload containing manga IDs to add.
+        user_db (ClientDatabase): User-domain write database client.
+        user (User): Currently authenticated, active, verified user.
+
+    Returns:
+        dict: Standardized 'Response' with added and failed manga results.
+    '''
+    try:
+        out = await add_manga_bulk_to_user_collection(
+            user_id=user.id,
+            collection_id=collection_id,
+            manga_ids=data.manga_ids,
+            user_db=db,
+        )
+        return success("Manga bulk add completed", data=out)
+
+    except DomainError:
+        raise
+
+    except Exception as e:
+        logger.error(
+            "Failed to bulk add manga to collection %s for user %s: %s",
+            collection_id,
+            user.id,
+            e,
+            exc_info=True,
+        )
+        raise
 
 @router.post("/{collection_id}/mangas", response_model=dict)
 @limiter.limit("60/minute")

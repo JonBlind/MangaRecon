@@ -36,5 +36,23 @@ export type ListCollectionMangaParams = {
   order?: "asc" | "desc";
 };
 
+export type BulkAddFailureReason =
+  | "ALREADY_EXISTS"
+  | "COLLECTION_NOT_FOUND"
+  | "UNKNOWN";
+
+export type BulkAddFailure = {
+  manga_id: number;
+  reason: BulkAddFailureReason;
+};
+
+export type BulkAddMangaResponse = {
+  collection_id: number;
+  added_count: number;
+  failed_count: number;
+  added_ids: number[];
+  failed: BulkAddFailure[];
+};
+
 export type CollectionMangaPage = Paginated<MangaListItem>;
 export type CollectionPage = Paginated<Collection>;

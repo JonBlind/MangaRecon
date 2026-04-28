@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
-import { addMangaToCollection } from "../api/collections";
+import { addMangasBulkToCollection } from "../api/collections";
 import { ApiRequestError } from "../api/http";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
@@ -83,72 +83,42 @@ export default function Search() {
     setBulkAddFeedback(null);
     setIsBulkAdding(true);
 
-    let addedCount = 0;
-    let failedCount = 0;
-    const addedIds: number[] = [];
-
-    let duplicateCount = 0;
-    let missingCollectionCount = 0;
-    let unauthorizedCount = 0;
-    let unavailableCount = 0;
-    let otherFailureCount = 0;
-
     try {
-      for (const mangaId of selectedIds) {
-        try {
-          await addMangaToCollection(collectionId, mangaId);
-          addedCount += 1;
-          addedIds.push(mangaId);
-        } catch (error) {
-          failedCount += 1;
+      const result = await addMangasBulkToCollection(collectionId, selectedIds);
 
-          const category = classifyBulkAddError(error);
-
-          switch (category) {
-            case "already_exists":
-              duplicateCount += 1;
-              break;
-            case "collection_missing":
-              missingCollectionCount += 1;
-              break;
-            case "unauthorized":
-              unauthorizedCount += 1;
-              break;
-            case "unavailable":
-              unavailableCount += 1;
-              break;
-            default:
-              otherFailureCount += 1;
-              break;
-          }
-        }
-      }
-
-      await qc.invalidateQueries({ queryKey: ["collections"] });
+      await qc.invalidateQueries({ queryKey: ["collections", "list"] });
       await qc.invalidateQueries({ queryKey: ["collections", "mangas", collectionId] });
 
       setIsCollectionModalOpen(false);
 
+      if (result.added_count > 0) {
+        removeSelectedIds(result.added_ids);
+      }
+
+      const alreadyExistsCount = result.failed.filter(
+        (failure) => failure.reason === "ALREADY_EXISTS"
+      ).length;
+
+      const collectionMissingCount = result.failed.filter(
+        (failure) => failure.reason === "COLLECTION_NOT_FOUND"
+      ).length;
+
+      const unknownFailureCount = result.failed.filter(
+        (failure) => failure.reason === "UNKNOWN"
+      ).length;
+
       const summaryParts: string[] = [];
 
-      if (duplicateCount > 0) {
-        summaryParts.push(`${duplicateCount} already in the collection`);
+      if (alreadyExistsCount > 0) {
+        summaryParts.push(`${alreadyExistsCount} already in the collection`);
       }
 
-      if (missingCollectionCount > 0) {
-        summaryParts.push(`${missingCollectionCount} failed because the collection was not found`);
+      if (collectionMissingCount > 0) {
+        summaryParts.push(`${collectionMissingCount} failed because the collection was not found`);
       }
 
-      if (unauthorizedCount > 0) {
-        summaryParts.push(`${unauthorizedCount} failed due to authorization`);
-      }
-
-      if (unavailableCount > 0) {
-        summaryParts.push(`${unavailableCount} failed because the service is temporarily unavailable`);
-      }
-
-      if (otherFailureCount > 0) {
-        summaryParts.push(`${otherFailureCount} failed for another reason`);
+      if (unknownFailureCount > 0) {
+        summaryParts.push(`${unknownFailureCount} failed for another reason`);
       }
 
       const summaryDetail =
@@ -156,17 +126,14 @@ export default function Search() {
           ? ` ${summaryParts.join("; ")}.`
           : "";
 
-      if (addedCount > 0 && failedCount === 0) {
-        setBulkAddFeedback(`${addedCount} manga added to collection.`);
-        clearSelection();
+      if (result.added_count > 0 && result.failed_count === 0) {
+        setBulkAddFeedback(`${result.added_count} manga added to collection.`);
         return;
       }
 
-      if (addedCount > 0 && failedCount > 0) {
-        removeSelectedIds(addedIds);
-
+      if (result.added_count > 0 && result.failed_count > 0) {
         setBulkAddFeedback(
-          `${addedCount} manga added, ${failedCount} failed.${summaryDetail}`
+          `${result.added_count} manga added, ${result.failed_count} failed.${summaryDetail}`
         );
         return;
       }

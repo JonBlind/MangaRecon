@@ -1,5 +1,5 @@
-from pydantic import BaseModel, StringConstraints, ConfigDict, field_validator
-from typing import Optional, Annotated
+from pydantic import BaseModel, StringConstraints, ConfigDict, field_validator, Field
+from typing import Optional, Annotated, Literal
 from datetime import datetime
 
 # Request
@@ -50,3 +50,19 @@ class MangaInCollectionRequest(BaseModel):
     API representation of a collection returned from the server.
     '''
     manga_id: int
+
+class BulkMangaInCollectionRequest(BaseModel):
+    manga_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class BulkMangaAddFailure(BaseModel):
+    manga_id: int
+    reason: Literal["ALREADY_EXISTS", "COLLECTION_NOT_FOUND", "UNKNOWN"]
+
+
+class BulkMangaInCollectionResponse(BaseModel):
+    collection_id: int
+    added_count: int
+    failed_count: int
+    added_ids: list[int]
+    failed: list[BulkMangaAddFailure]

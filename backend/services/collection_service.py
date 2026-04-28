@@ -18,9 +18,11 @@ from backend.schemas.collection import (
     CollectionCreate,
     CollectionRead,
     CollectionUpdate,
+    BulkMangaInCollectionResponse,
+    BulkMangaAddFailure,
 )
 from backend.schemas.manga import MangaListItem
-from backend.utils.domain_exceptions import NotFoundError, ConflictError
+from backend.utils.domain_exceptions import NotFoundError, ConflictError, DomainError
 
 
 async def list_user_collections_page(
@@ -242,6 +244,64 @@ async def add_manga_to_user_collection(
     await user_db.add_manga_to_collection(user_id, collection_id, manga_id)
     await invalidate_collection_recommendations(user_id, collection_id)
     return {"collection_id": collection_id, "manga_id": manga_id}
+
+
+async def add_manga_bulk_to_user_collection(
+    *,
+    user_id,
+    collection_id: int,
+    manga_ids: list[int],
+    user_db: ClientWriteDatabase,
+) -> BulkMangaInCollectionResponse:
+    """
+    Add multiple manga to a user's collection.
+    """
+    added_ids: list[int] = []
+    failed: list[BulkMangaAddFailure] = []
+
+    owned = await get_owned_collection_id(user_db, user_id=user_id, collection_id=collection_id)
+    if owned is None:
+        raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
+
+    for manga_id in manga_ids:
+        try:
+            await user_db.add_manga_to_collection(user_id, collection_id, manga_id)
+            added_ids.append(manga_id)
+
+        except ConflictError:
+            failed.append(
+                BulkMangaAddFailure(
+                    manga_id=manga_id,
+                    reason="ALREADY_EXISTS",
+                )
+            )
+
+        except NotFoundError:
+            failed.append(
+                BulkMangaAddFailure(
+                    manga_id=manga_id,
+                    reason="COLLECTION_NOT_FOUND",
+                )
+            )
+
+        except DomainError:
+            failed.append(
+                BulkMangaAddFailure(
+                    manga_id=manga_id,
+                    reason="UNKNOWN",
+                )
+            )
+
+    if added_ids:
+        await invalidate_collection_recommendations(user_id, collection_id)
+
+    return BulkMangaInCollectionResponse(
+        collection_id=collection_id,
+        added_count=len(added_ids),
+        failed_count=len(failed),
+        added_ids=added_ids,
+        failed=failed,
+    )
 
 
 async def remove_manga_from_user_collection(

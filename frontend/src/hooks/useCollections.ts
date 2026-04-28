@@ -143,7 +143,10 @@ export function useRemoveMangaFromCollection(collectionId: number) {
       qc.invalidateQueries({
         queryKey: ["collections", "mangas", collectionId],
       });
-      qc.invalidateQueries({ queryKey: collectionsKeys.all });
+
+      qc.invalidateQueries({
+        queryKey: collectionsKeys.detail(collectionId),
+      });
     },
   });
 }

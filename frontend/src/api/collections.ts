@@ -7,6 +7,7 @@ import type {
   CollectionMangaPage,
   ListCollectionsParams,
   ListCollectionMangaParams,
+  BulkAddMangaResponse
 } from "../types/collection";
 
 function buildPaginationParams(
@@ -86,6 +87,21 @@ export async function addMangaToCollection(
     method: "POST",
     body: JSON.stringify({ manga_id: mangaId }),
   });
+}
+
+export async function addMangasBulkToCollection(
+  collectionId: number,
+  mangaIds: number[]
+): Promise<BulkAddMangaResponse> {
+  const res = await apiFetch<BulkAddMangaResponse>(
+    `/collections/${collectionId}/mangas/bulk`,
+    {
+      method: "POST",
+      body: JSON.stringify({ manga_ids: mangaIds }),
+    }
+  );
+
+  return res.data;
 }
 
 export async function removeMangaFromCollection(
