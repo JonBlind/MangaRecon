@@ -4,7 +4,6 @@ import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-quer
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import { addMangasBulkToCollection } from "../api/collections";
-import { ApiRequestError } from "../api/http";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
 import SearchSelectionBar from "../components/SearchSelectionBar";
@@ -60,25 +59,6 @@ export default function Search() {
     setIsCollectionModalOpen(true);
   }
 
-  function classifyBulkAddError(error: unknown): string {
-    if (error instanceof ApiRequestError) {
-      switch (error.errorCode) {
-        case "COLLECTION_MANGA_CONFLICT":
-          return "already_exists";
-        case "COLLECTION_NOT_FOUND":
-          return "collection_missing";
-        case "UNAUTHORIZED":
-          return "unauthorized";
-        case "TEMPORARILY_UNAVAILABLE":
-          return "unavailable";
-        default:
-          return "other";
-      }
-    }
-
-    return "other";
-  }
-
   async function handleConfirmAddToCollection(collectionId: number) {
     setBulkAddFeedback(null);
     setIsBulkAdding(true);
@@ -87,6 +67,7 @@ export default function Search() {
       const result = await addMangasBulkToCollection(collectionId, selectedIds);
 
       await qc.invalidateQueries({ queryKey: ["collections", "list"] });
+      await qc.invalidateQueries({ queryKey: ["collections", "detail", collectionId] });
       await qc.invalidateQueries({ queryKey: ["collections", "mangas", collectionId] });
 
       setIsCollectionModalOpen(false);
@@ -225,7 +206,7 @@ export default function Search() {
           {bulkAddFeedback}
         </div>
       )}
-      
+
       <AuthRequiredModal
         open={isAuthRequiredModalOpen}
         onClose={() => setIsAuthRequiredModalOpen(false)}

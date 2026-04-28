@@ -128,7 +128,14 @@ export function useAddMangaToCollection(collectionId: number) {
       qc.invalidateQueries({
         queryKey: ["collections", "mangas", collectionId],
       });
-      qc.invalidateQueries({ queryKey: collectionsKeys.all });
+
+      qc.invalidateQueries({
+        queryKey: collectionsKeys.detail(collectionId),
+      });
+
+      qc.invalidateQueries({
+        queryKey: ["collections", "list"],
+      });
     },
   });
 }
@@ -146,6 +153,10 @@ export function useRemoveMangaFromCollection(collectionId: number) {
 
       qc.invalidateQueries({
         queryKey: collectionsKeys.detail(collectionId),
+      });
+
+      qc.invalidateQueries({
+        queryKey: ["collections", "list"],
       });
     },
   });
