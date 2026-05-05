@@ -41,6 +41,12 @@ export default function Search() {
   function handleGetRecommendations() {
     if (selectedIds.length === 0) return;
 
+    try {
+      sessionStorage.setItem("recommendationSeedIds", JSON.stringify(selectedIds));
+    } catch {
+      // ignore storage failure
+    }
+
     nav("/recommendations", {
       state: {
         mangaIds: selectedIds,
@@ -219,6 +225,7 @@ export default function Search() {
         onClose={() => setIsCollectionModalOpen(false)}
         onConfirm={handleConfirmAddToCollection}
         isSubmitting={isBulkAdding}
+        selectedCount={selectedCount}
       />
 
       {/* Filters */}

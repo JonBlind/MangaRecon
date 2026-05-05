@@ -6,6 +6,7 @@ type CollectionPickerModalProps = {
   onClose: () => void;
   onConfirm: (collectionId: number) => void;
   isSubmitting?: boolean;
+  selectedCount: number;
 };
 
 type Mode = "existing" | "create";
@@ -15,6 +16,7 @@ export default function CollectionPickerModal({
   onClose,
   onConfirm,
   isSubmitting = false,
+  selectedCount,
 }: CollectionPickerModalProps) {
   const { data, isLoading, isError } = useCollections({ page: 1, size: 100 });
   const createCollectionMutation = useCreateCollection();
@@ -24,6 +26,10 @@ export default function CollectionPickerModal({
   const [newCollectionName, setNewCollectionName] = useState("");
   const [newCollectionDescription, setNewCollectionDescription] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+
+  const collections = data?.items ?? [];
+  const isCreating = createCollectionMutation.isPending;
+  const isBusy = isSubmitting || isCreating;
 
   useEffect(() => {
     if (open) {
@@ -35,11 +41,20 @@ export default function CollectionPickerModal({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (
+      open &&
+      !isLoading &&
+      !isError &&
+      collections.length === 0
+    ) {
+      setMode("create");
+    }
+  }, [open, isLoading, isError, collections.length]);
+
+
   if (!open) return null;
 
-  const collections = data?.items ?? [];
-  const isCreating = createCollectionMutation.isPending;
-  const isBusy = isSubmitting || isCreating;
 
   async function handleConfirm() {
     setLocalError(null);
@@ -87,6 +102,9 @@ export default function CollectionPickerModal({
       >
         <h2 className="text-xl font-semibold">Add to Collection</h2>
         <p className="mt-1 text-sm opacity-80">
+          Add {selectedCount} selected manga to a collection.
+        </p>
+        <p className="mt-1 text-sm opacity-80">
           Choose an existing collection or create a new one.
         </p>
 
@@ -104,7 +122,7 @@ export default function CollectionPickerModal({
             }}
             disabled={isBusy}
           >
-            Use Existing
+            Add to existing collection
           </button>
 
           <button
@@ -120,7 +138,7 @@ export default function CollectionPickerModal({
             }}
             disabled={isBusy}
           >
-            Create New
+            Create new collection
           </button>
         </div>
 

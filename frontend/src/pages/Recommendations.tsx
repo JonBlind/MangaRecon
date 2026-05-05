@@ -4,6 +4,21 @@ import { useCollectionRecommendations, useQueryListRecommendations } from "../ho
 import type { RecommendationPage } from "../types/recommendation";
 import MangaCard from "../components/MangaCard";
 
+function getStoredRecommendationSeedIds(): number[] {
+  try {
+    const stored = sessionStorage.getItem("rec-seeds");
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((id) => Number.isInteger(id));
+  } catch {
+    return [];
+  }
+}
+
 export default function Recommendations() {
   const nav = useNavigate();
   const location = useLocation();
@@ -11,9 +26,20 @@ export default function Recommendations() {
 
   const collectionId = Number(searchParams.get("collectionId") ?? "0");
 
-  const mangaIds = location.state?.mangaIds ?? [];
+  const mangaIds = useMemo(() => {
+    const stateMangaIds = Array.isArray(location.state?.mangaIds)
+      ? location.state.mangaIds.filter((id: unknown) => Number.isInteger(id))
+      : [];
+
+    if (stateMangaIds.length > 0) {
+      return stateMangaIds;
+    }
+
+    return getStoredRecommendationSeedIds();
+  }, [location.state]);
 
   const isQueryListMode = mangaIds.length > 0;
+  const hasRecommendationSource = isQueryListMode || !!collectionId;
 
   const params = useMemo(
     () => ({
@@ -76,62 +102,82 @@ export default function Recommendations() {
         <p className="text-sm opacity-80 mt-1">
           {isQueryListMode
             ? "Based on selected manga"
-            : "Based on collection"}
+            : hasRecommendationSource
+              ? "Based on collection"
+              : "Choose manga or a collection to get recommendations"}
         </p>
       </div>
 
-      {activeQuery.isLoading && (
-        <div className="text-sm opacity-80">Loading recommendations…</div>
+      {!hasRecommendationSource ? (
+        <div className="rounded-md border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm">
+          <p className="font-medium">No recommendation source selected.</p>
+          <p className="mt-1 opacity-80">
+            Select manga from Search or choose a collection to generate recommendations.
+          </p>
+          <button
+            type="button"
+            className="mt-3 rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
+            onClick={() => nav("/search")}
+          >
+            Go to Search
+          </button>
+        </div>
+      ) : (
+        <>
+          {activeQuery.isLoading && (
+            <div className="text-sm opacity-80">Loading recommendations…</div>
+          )}
+
+          {activeQuery.isError && (
+            <div className="text-sm text-red-400">
+              Failed to load recommendations.
+            </div>
+          )}
+
+          <div className="space-y-2">
+
+            <div className="flex items-center justify-between text-sm opacity-80">
+              <span>
+                {total.toLocaleString()} result{total === 1 ? "" : "s"}
+              </span>
+              <span>
+                Page {page} / {totalPages}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {(data?.items ?? []).map((manga) => (
+                <MangaCard
+                  key={manga.manga_id}
+                  manga={manga}
+                />
+              ))}
+            </div>
+
+            {!activeQuery.isLoading && (data?.items?.length ?? 0) === 0 && (
+              <div className="text-sm opacity-80">No results.</div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
+              disabled={page <= 1 || activeQuery.isFetching}
+              onClick={() => updateParams({ page: Math.max(1, page - 1) })}
+            >
+              Prev
+            </button>
+
+            <button
+              className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
+              disabled={page >= totalPages || activeQuery.isFetching}
+              onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
+            >
+              Next
+            </button>
+          </div>
+        </>
       )}
-
-      {activeQuery.isError && (
-        <div className="text-sm text-red-400">
-          Failed to load recommendations.
-        </div>
-      )}
-
-      <div className="space-y-2">
-
-        <div className="flex items-center justify-between text-sm opacity-80">
-          <span>
-            {total.toLocaleString()} result{total === 1 ? "" : "s"}
-          </span>
-          <span>
-            Page {page} / {totalPages}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {(data?.items ?? []).map((manga) => (
-            <MangaCard
-              key={manga.manga_id}
-              manga={manga}
-            />
-          ))}
-        </div>
-
-        {!activeQuery.isLoading && (data?.items?.length ?? 0) === 0 && (
-          <div className="text-sm opacity-80">No results.</div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
-          disabled={page <= 1 || activeQuery.isFetching}
-          onClick={() => updateParams({ page: Math.max(1, page - 1) })}
-        >
-          Prev
-        </button>
-
-        <button
-          className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
-          disabled={page >= totalPages || activeQuery.isFetching}
-          onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
-        >
-          Next
-        </button>
-      </div>
     </div>
   );
 }
