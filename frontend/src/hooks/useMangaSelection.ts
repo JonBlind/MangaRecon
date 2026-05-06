@@ -1,10 +1,22 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { MangaListItem } from "../types/manga";
 
 type SelectedMangaMap = Record<number, MangaListItem>;
 
 export function useMangaSelection() {
-  const [selectedById, setSelectedById] = useState<SelectedMangaMap>({});
+  const [selectedById, setSelectedById] = useState<SelectedMangaMap>(() => {
+    try {
+      const stored = sessionStorage.getItem("search-selected-manga");
+      if (!stored) return {};
+
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return {};
+
+      return parsed;
+    } catch {
+      return {};
+    }
+  });
 
   function toggleSelection(manga: MangaListItem) {
     setSelectedById((prev) => {
@@ -22,6 +34,9 @@ export function useMangaSelection() {
 
   function clearSelection() {
     setSelectedById({});
+    try {
+      sessionStorage.removeItem("search-selected-manga");
+    } catch {}
   }
 
   function removeSelectedIds(mangaIds: number[]) {
@@ -53,6 +68,14 @@ export function useMangaSelection() {
   );
 
   const selectedCount = selectedItems.length;
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("search-selected-manga", JSON.stringify(selectedById));
+    } catch {
+      // ignore
+    }
+  }, [selectedById]);
 
   return {
     selectedItems,
