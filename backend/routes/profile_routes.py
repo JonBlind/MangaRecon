@@ -7,6 +7,7 @@ from backend.schemas.user import UserRead, UserUpdate, ChangePassword
 from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success
 from backend.utils.rate_limit import limiter
+from backend.utils.domain_exceptions import DomainError
 from backend.services.profile_service import (
     get_my_profile as svc_get_my_profile,
     update_my_profile as svc_update_my_profile,
@@ -42,6 +43,9 @@ async def get_my_profile(
         validated = await svc_get_my_profile(user_id=user.id, user_db=db)
         return success("Profile retrieved successfully", data=validated)
 
+    except DomainError:
+        raise
+
     except Exception as e:
         logger.error("Failed to retrieve profile for user %s: %s", user.id, e, exc_info=True)
         raise
@@ -75,6 +79,9 @@ async def update_my_profile(
             return success("No changes applied", data=UserRead.model_validate(user))
 
         return success("Profile updated successfully", data=validated)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error("Failed to update profile for user %s: %s", user.id, e, exc_info=True)
@@ -112,6 +119,9 @@ async def change_my_password(
             user_manager=user_manager,
         )
         return success("Password changed successfully", data=validated)
+
+    except DomainError:
+        raise
 
     except Exception as e:
         logger.error("Failed password change for user %s: %s", user.id, e, exc_info=True)

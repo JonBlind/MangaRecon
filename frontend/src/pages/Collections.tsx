@@ -25,7 +25,7 @@ export default function Collections() {
   const params = useMemo(
     () => ({
       page,
-      size: 20,
+      size: 10,
       order: "desc" as const,
     }),
     [page]

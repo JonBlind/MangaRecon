@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { login } from "../api/auth";
 import { ApiRequestError } from "../api/http";
+import { useMe } from "../hooks/useMe";
 
 export default function Login() {
   const nav = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
+
+  const { data: me, isLoading } = useMe();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +36,14 @@ export default function Login() {
       nav(savedRedirect || stateFrom || "/collections", { replace: true });
     },
   });
+
+  if (isLoading && me === undefined) {
+    return null;
+  }
+
+  if (me) {
+    return <Navigate to="/search" replace />;
+  }
 
   const errorMsg =
     mutation.error instanceof ApiRequestError

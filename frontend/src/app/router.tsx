@@ -12,6 +12,7 @@ import CollectionDetail from "../pages/CollectionDetail";
 import Recommendations from "../pages/Recommendations";
 import MangaDetail from "../pages/MangaDetail";
 import MaintenancePage  from "../pages/Maintenance"
+import Account from "../pages/Account";
 
 export const router = createBrowserRouter([
   {
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
           { path: "collections", element: <Collections /> },
           { path: "collections/:id", element: <CollectionDetail /> },
           { path: "recommendations", element: <Recommendations /> },
+          { path: "/account", element: <Account /> }
         ],
       },
     ],

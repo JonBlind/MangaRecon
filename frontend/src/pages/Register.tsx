@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Navigate, Link } from "react-router-dom";
 import { register } from "../api/auth";
+import { useMe } from "../hooks/useMe";
 
 export default function Register() {
   const nav = useNavigate();
@@ -12,11 +13,20 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: me, isLoading } = useMe();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
+  if (isLoading && me === undefined) {
+    return null;
+  }
+
+  if (me) {
+    return <Navigate to="/search" replace />;
+  }
 
     try {
 
