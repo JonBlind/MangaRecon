@@ -15,11 +15,6 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null);
   const { data: me, isLoading } = useMe();
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-
   if (isLoading && me === undefined) {
     return null;
   }
@@ -28,19 +23,21 @@ export default function Register() {
     return <Navigate to="/search" replace />;
   }
 
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+
     try {
-
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        setSubmitting(false);
-        return;
-      }
-
       await register({ email, password, username, displayname });
       nav("/login");
-    } 
-
-    catch (err: any) {
+    } catch (err: any) {
       const raw = err?.message ?? "Registration failed.";
       const pretty =
         raw === "REGISTER_USER_ALREADY_EXISTS"
@@ -48,9 +45,7 @@ export default function Register() {
           : raw;
 
       setError(pretty);
-    }
-     
-    finally {
+    } finally {
       setSubmitting(false);
     }
   }
@@ -114,6 +109,7 @@ export default function Register() {
               required
             />
           </div>
+
           <div>
             <label className="block text-sm mb-1">Confirm password</label>
             <input

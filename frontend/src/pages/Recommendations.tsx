@@ -6,7 +6,7 @@ import MangaCard from "../components/MangaCard";
 
 function getStoredRecommendationSeedIds(): number[] {
   try {
-    const stored = sessionStorage.getItem("rec-seeds");
+    const stored = sessionStorage.getItem("recommendationSeedIds");
     if (!stored) return [];
 
     const parsed = JSON.parse(stored);
