@@ -14,6 +14,4 @@ def readyz(request: Request):
     ready = getattr(request.app.state, "rate_limit_storage_ready", False)
     if ready:
         return {"message": "MangaRecon API is ready."}
-    return JSONResponse(status_code=503, content=error("Service unavailable", detail="TEMPORARILY_UNAVAILABLE"), headers={"Retry-After": "15"})
-
-
+    return JSONResponse(status_code=503, content=error("Service unavailable.", detail="TEMPORARILY_UNAVAILABLE"), headers={"Retry-After": "15"})

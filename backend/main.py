@@ -4,7 +4,6 @@ FastAPI application entrypoint for MangaRecon.
 - Loads settings from environment (via pydantic-settings).
 - Registers CORS, exception handlers, and global rate limiter.
 - Wires up all routers (auth, collections, manga, ratings, recommendations, profiles, metadata).
-- Basic health check at GET /healthz.
 '''
 
 import os
