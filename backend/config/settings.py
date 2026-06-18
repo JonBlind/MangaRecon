@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV = os.getenv("MANGARECON_ENV", "prod").lower()
 
-if ENV in ("dev", "test"):
+if ENV == "test":
     load_dotenv(".env.test", override=True)
 else:
     load_dotenv(".env", override=False)
@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     Application runtime settings loaded from environment variables.
     '''
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

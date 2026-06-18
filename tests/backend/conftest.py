@@ -3,6 +3,7 @@ os.environ["MANGARECON_ENV"] = "test"
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import create_app
+from backend.dependencies import settings as db_settings
 
 @pytest.fixture
 def app():

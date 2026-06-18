@@ -7,9 +7,11 @@ user-write session for `fastapi-users` integration.
 '''
 
 from typing import AsyncGenerator, Optional
-from pydantic import Field, AliasChoices
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import NullPool
+from backend.config.settings import ENV
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.db.models # DO NOT REMOVE. This is to just ensure all models are loaded before used.
 
@@ -32,23 +34,26 @@ class Settings(BaseSettings):
         - Unknown environment variables are ignored (`extra="ignore"`).
     '''
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True,
+        case_sensitive=False,
         extra="ignore")
     
-    user_write: Optional[str] = Field(None, validation_alias=AliasChoices("UserWriterDB"))
-    user_read: Optional[str] = Field(None, validation_alias=AliasChoices("UserReaderDB"))
-    manga_write: Optional[str] = Field(None, validation_alias=AliasChoices("MangaWriterDB"))
-    manga_read: Optional[str] = Field(None, validation_alias=AliasChoices("MangaReaderDB"))
-
+    user_write: Optional[str] = Field(default=None, validation_alias="UserWriterDB")
+    user_read: Optional[str] = Field(default=None, validation_alias="UserReaderDB")
+    manga_write: Optional[str] = Field(default=None, validation_alias="MangaWriterDB")
+    manga_read: Optional[str] = Field(default=None, validation_alias="MangaReaderDB")
+    
 settings = Settings()
 
+engine_kwargs = {"pool_pre_ping": True}
+if ENV == "test":
+    engine_kwargs["poolclass"] = NullPool
+
 # Create async engines (if the corresponding DSN is not provided, the engine remains None).
-_engine_user_write = create_async_engine(settings.user_write, pool_pre_ping=True) if settings.user_write else None
-_engine_user_read = create_async_engine(settings.user_read, pool_pre_ping=True) if settings.user_read else None
-_engine_manga_write = create_async_engine(settings.manga_write, pool_pre_ping=True) if settings.manga_write else None
-_engine_manga_read = create_async_engine(settings.manga_read, pool_pre_ping=True) if settings.manga_read else None
+_engine_user_write = create_async_engine(settings.user_write, **engine_kwargs) if settings.user_write else None
+_engine_user_read = create_async_engine(settings.user_read, **engine_kwargs) if settings.user_read else None
+_engine_manga_write = create_async_engine(settings.manga_write, **engine_kwargs) if settings.manga_write else None
+_engine_manga_read = create_async_engine(settings.manga_read, **engine_kwargs) if settings.manga_read else None
 
 # Session factories (expire_on_commit=False ensures objects remain usable after commit).
 _Session_user_write = async_sessionmaker(_engine_user_write, class_=AsyncSession, expire_on_commit=False) if _engine_user_write else None

@@ -137,7 +137,7 @@ class ClientReadDatabase:
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.error(f"Failed to fetch user by email {email}: {str(e)}", exc_info=True)
-            return None
+            raise
 
     async def get_profile_by_identifier(self, identifier: str) -> Optional[User]:
         '''
@@ -156,7 +156,7 @@ class ClientReadDatabase:
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.error(f"Failed to fetch user by identifier {identifier}: {str(e)}", exc_info=True)
-            return None
+            raise
 
     # ====================
     # RATINGS (READ)
@@ -401,7 +401,13 @@ class ClientWriteDatabase(ClientReadDatabase):
         '''
         try:
             score_norm = self._normalize_score(score)
+
+            manga = await self.get(Manga, manga_id)
+            if not manga:
+                raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
+            
             existing = await self.get(Rating, (user_id, manga_id))
+
             if existing:
                 existing.personal_rating = score_norm
                 logger.info(f"Updated rating: user_id={user_id}, manga_id={manga_id}, score={score_norm}")
@@ -414,6 +420,7 @@ class ClientWriteDatabase(ClientReadDatabase):
             await self.commit()
             await self.refresh(rating)
             return rating
+        
         except SQLAlchemyError as e:
             await self.rollback()
             logger.error("Error saving rating", exc_info=True)
@@ -480,6 +487,14 @@ class ClientWriteDatabase(ClientReadDatabase):
 
             if not collection:
                 raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
+            
+            manga_result = await self.execute(
+                select(Manga).where(Manga.manga_id == manga_id)
+            )
+            manga = manga_result.scalar_one_or_none()
+
+            if not manga:
+                raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
 
             exists = await self.execute(
                 select(MangaCollection).where(
