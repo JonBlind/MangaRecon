@@ -40,9 +40,9 @@ def create_collection(client, name="Favorites", description="My favorite manga")
     assert response.status_code == 200
     return response.json()["data"]
 
-def create_test_manga():
+def create_test_manga(title=None):
     unique = uuid4().hex[:8]
-    title = f"Test Manga {unique}"
+    manga_title = title or f"Test Manga {unique}"
 
     sync_url = settings.user_write.replace(
         "postgresql+asyncpg://",
@@ -80,7 +80,7 @@ def create_test_manga():
                 RETURNING manga_id
             """),
             {
-                "title": title,
+                "title": manga_title,
                 "author_id": author_id,
                 "description": "Test manga description",
                 "external_average_rating": 4.5,
@@ -92,6 +92,6 @@ def create_test_manga():
 
     return {
         "manga_id": manga_id,
-        "title": title,
+        "title": manga_title,
         "author_id": author_id,
     }
