@@ -98,3 +98,47 @@ def test_logout_clears_auth_cookie(client):
 
     me_response = client.get("/users/me")
     assert me_response.status_code == 401
+
+def test_register_rejects_duplicate_email(client):
+    payload = unique_user_payload()
+
+    first_response = client.post("/auth/register", json=payload)
+    assert first_response.status_code == 201
+
+    second_payload = unique_user_payload()
+    second_payload["email"] = payload["email"]
+
+    second_response = client.post("/auth/register", json=second_payload)
+
+    assert second_response.status_code in {400, 409}
+
+
+def test_login_rejects_wrong_password(client):
+    payload = unique_user_payload()
+
+    register_response = client.post("/auth/register", json=payload)
+    assert register_response.status_code == 201
+
+    response = client.post(
+        "/auth/jwt/login",
+        data={
+            "username": payload["email"],
+            "password": "wrongpassword",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_login_rejects_unknown_email(client):
+    payload = unique_user_payload()
+
+    response = client.post(
+        "/auth/jwt/login",
+        data={
+            "username": payload["email"],
+            "password": payload["password"],
+        },
+    )
+
+    assert response.status_code == 401
