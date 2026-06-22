@@ -1,4 +1,4 @@
-from helpers import create_test_manga
+from tests.routes.helpers import create_test_manga
 from uuid import uuid4
 
 def test_get_manga_by_id(client):

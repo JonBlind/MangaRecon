@@ -1,4 +1,4 @@
-from helpers import register_and_login, create_collection, create_test_manga
+from tests.routes.helpers import register_and_login, create_collection, create_test_manga
 
 
 def add_manga_to_collection(client, collection_id: int, manga_id: int):

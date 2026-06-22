@@ -1,4 +1,4 @@
-from helpers import register_and_login, create_collection, create_test_manga
+from tests.routes.helpers import register_and_login, create_collection, create_test_manga
 
 def test_add_manga_to_collection_requires_auth(client):
     manga = create_test_manga()

@@ -1,4 +1,4 @@
-from tests.backend.routes.helpers import unique_user_payload
+from tests.routes.helpers import unique_user_payload
 
 def register_and_login(client):
     payload = unique_user_payload()

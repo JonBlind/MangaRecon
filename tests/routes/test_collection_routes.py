@@ -1,4 +1,4 @@
-from tests.backend.routes.helpers import register_and_login, create_collection
+from tests.routes.helpers import register_and_login, create_collection
 
 def test_create_collection_requires_auth(client):
     response = client.post(

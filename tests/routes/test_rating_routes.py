@@ -1,4 +1,4 @@
-from tests.backend.routes.helpers import register_and_login, create_test_manga
+from tests.routes.helpers import register_and_login, create_test_manga
 
 
 def test_rate_manga_requires_auth(client):
