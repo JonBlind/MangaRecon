@@ -219,6 +219,7 @@ export default function CollectionDetail() {
 
                       {!isConfirming ? (
                         <button
+                          aria-label="Remove from collection"
                           className="absolute right-2 top-2 z-10 rounded-md border border-neutral-700 bg-black/70 px-2 py-1 text-sm opacity-100 transition hover:bg-black/90 sm:opacity-0 sm:group-hover:opacity-100 disabled:opacity-50"
                           disabled={removeM.isPending}
                           onClick={(e) => {

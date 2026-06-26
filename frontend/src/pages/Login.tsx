@@ -67,9 +67,13 @@ export default function Login() {
             mutation.mutate();
           }}
         >
+          {/* EMAIL */}
           <div className="space-y-1">
-            <label className="text-sm font-medium">Email</label>
+            <label htmlFor="email" className="text-sm font-medium">
+              Email
+            </label>
             <input
+              id="email"
               className="w-full rounded-xl border px-3 py-2 outline-none focus:ring"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -77,9 +81,13 @@ export default function Login() {
             />
           </div>
 
+          {/* PASSWORD */}
           <div className="space-y-1">
-            <label className="text-sm font-medium">Password</label>
+            <label htmlFor="password" className="text-sm font-medium">
+              Password
+            </label>
             <input
+              id="password"
               className="w-full rounded-xl border px-3 py-2 outline-none focus:ring"
               type="password"
               value={password}

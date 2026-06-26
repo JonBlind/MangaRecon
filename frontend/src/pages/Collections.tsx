@@ -149,8 +149,14 @@ export default function Collections() {
         >
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm">Name</label>
+              <label
+                htmlFor="collectionName"
+                className="mb-1 block text-sm"
+              >
+                Name
+              </label>
               <input
+                id="collectionName"
                 className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2"
                 placeholder="e.g. Favorites, To Read, Psychological Thrillers…"
                 value={name}
@@ -164,8 +170,14 @@ export default function Collections() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm">Description (optional)</label>
+              <label
+                htmlFor="collectionDescription"
+                className="mb-1 block text-sm"
+              >
+                Description (optional)
+              </label>
               <input
+                id="collectionDescription"
                 className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2"
                 placeholder="Short note about this collection"
                 value={desc}
@@ -186,6 +198,7 @@ export default function Collections() {
             >
               {createM.isPending ? "Creating…" : "Create"}
             </button>
+
             <span className="text-sm opacity-70">
               Collections are private to your account.
             </span>

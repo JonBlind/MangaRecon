@@ -63,8 +63,11 @@ export default function Register() {
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div>
-            <label className="block text-sm mb-1">Email</label>
+            <label htmlFor="email" className="block text-sm mb-1">
+              Email
+            </label>
             <input
+              id="email"
               className="w-full rounded-md border px-3 py-2"
               type="email"
               autoComplete="email"
@@ -75,8 +78,11 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm mb-1">Username</label>
+            <label htmlFor="username" className="block text-sm mb-1">
+              Username
+            </label>
             <input
+              id="username"
               className="w-full rounded-md border px-3 py-2"
               type="text"
               autoComplete="username"
@@ -87,8 +93,11 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm mb-1">Display name</label>
+            <label htmlFor="displayname" className="block text-sm mb-1">
+              Display name
+            </label>
             <input
+              id="displayname"
               className="w-full rounded-md border px-3 py-2"
               type="text"
               value={displayname}
@@ -98,8 +107,11 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm mb-1">Password (Min. 8 Characters)</label>
+            <label htmlFor="password" className="block text-sm mb-1">
+              Password (Min. 8 Characters)
+            </label>
             <input
+              id="password"
               className="w-full rounded-md border px-3 py-2"
               type="password"
               minLength={8}
@@ -111,8 +123,11 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm mb-1">Confirm password</label>
+            <label htmlFor="confirmPassword" className="block text-sm mb-1">
+              Confirm password
+            </label>
             <input
+              id="confirmPassword"
               className="w-full rounded-md border px-3 py-2"
               type="password"
               autoComplete="new-password"
