@@ -63,8 +63,14 @@ export default function Account() {
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-sm mb-1">Display Name</label>
+          <label
+            htmlFor="displayName"
+            className="block text-sm mb-1"
+          >
+            Display Name
+          </label>
           <input
+            id="displayName"
             className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
