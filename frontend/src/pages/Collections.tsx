@@ -236,10 +236,10 @@ export default function Collections() {
 
               return (
                 <div
-                  key={c.collection_id}
                   className="group rounded-xl border border-neutral-800 bg-neutral-900 p-4 transition hover:border-neutral-600"
                   role="button"
                   tabIndex={0}
+                  aria-label={`Open collection ${c.collection_name}`}
                   onClick={() => {
                     if (!isConfirming) {
                       nav(`/collections/${c.collection_id}`);
@@ -247,6 +247,7 @@ export default function Collections() {
                   }}
                   onKeyDown={(e) => {
                     if (!isConfirming && (e.key === "Enter" || e.key === " ")) {
+                      e.preventDefault();
                       nav(`/collections/${c.collection_id}`);
                     }
                   }}

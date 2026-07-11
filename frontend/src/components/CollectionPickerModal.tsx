@@ -152,8 +152,11 @@ export default function CollectionPickerModal({
               <div className="text-sm opacity-80">No collections found. Create one instead.</div>
             ) : (
               <div>
-                <label className="mb-1 block text-sm">Collection</label>
+                <label htmlFor="collectionId" className="mb-1 block text-sm">
+                  Collection
+                </label>
                 <select
+                  id="collectionId"
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
                   value={selectedCollectionId}
                   onChange={(e) => {
@@ -177,8 +180,11 @@ export default function CollectionPickerModal({
           ) : (
             <>
               <div>
-                <label className="mb-1 block text-sm">Collection Name</label>
+                <label htmlFor="collectionName" className="mb-1 block text-sm">
+                  Collection Name
+                </label>
                 <input
+                  id="collectionName"
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
                   value={newCollectionName}
                   onChange={(e) => setNewCollectionName(e.target.value)}
@@ -188,8 +194,11 @@ export default function CollectionPickerModal({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm">Description</label>
+                <label htmlFor="collectionDescription" className="mb-1 block text-sm">
+                  Description
+                </label>
                 <textarea
+                  id="collectionDescription"
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
                   value={newCollectionDescription}
                   onChange={(e) => setNewCollectionDescription(e.target.value)}

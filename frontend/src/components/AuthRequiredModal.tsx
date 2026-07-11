@@ -21,10 +21,18 @@ export default function AuthRequiredModal({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-required-title"
         className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <h2
+          id="auth-required-title"
+          className="text-lg font-semibold"
+        >
+          {title}
+        </h2>
         <p className="mt-2 text-sm opacity-80">{message}</p>
 
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
