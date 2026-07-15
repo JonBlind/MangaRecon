@@ -109,7 +109,8 @@ async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientRe
             "tags": Counter(),
             "demographics": Counter(),
             "authors": set(),
-            "external_ratings": []
+            "external_ratings": [],
+            "years": []
         }
     
 

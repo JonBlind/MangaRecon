@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True,
+        case_sensitive=False,
         extra="ignore")
 
     auth_secret: str | None = Field(None, validation_alias=AliasChoices("AUTH_SECRET"))
