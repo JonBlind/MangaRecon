@@ -401,10 +401,6 @@ class ClientWriteDatabase(ClientReadDatabase):
         '''
         try:
             score_norm = self._normalize_score(score)
-
-            manga = await self.get(Manga, manga_id)
-            if not manga:
-                raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
             
             existing = await self.get(Rating, (user_id, manga_id))
 
@@ -480,40 +476,46 @@ class ClientWriteDatabase(ClientReadDatabase):
             result = await self.execute(
                 select(Collection).where(
                     Collection.collection_id == collection_id,
-                    Collection.user_id == user_id
+                    Collection.user_id == user_id,
                 )
             )
             collection = result.scalar_one_or_none()
 
-            if not collection:
+            if collection is None:
                 raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
-            
-            manga_result = await self.execute(
-                select(Manga).where(Manga.manga_id == manga_id)
-            )
-            manga = manga_result.scalar_one_or_none()
-
-            if not manga:
-                raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
 
             exists = await self.execute(
                 select(MangaCollection).where(
                     MangaCollection.collection_id == collection_id,
-                    MangaCollection.manga_id == manga_id
+                    MangaCollection.manga_id == manga_id,
                 )
             )
-            if exists.scalar_one_or_none():
-                raise ConflictError(code="COLLECTION_MANGA_CONFLICT",
-                                    message="Manga is already in this collection.",
-                                    detail={"collection_id": collection_id, "manga_id": manga_id})
 
-            link = MangaCollection(collection_id=collection_id, manga_id=manga_id)
+            if exists.scalar_one_or_none() is not None:
+                raise ConflictError(
+                    code="COLLECTION_MANGA_CONFLICT",
+                    message="Manga is already in this collection.",
+                    detail={
+                        "collection_id": collection_id,
+                        "manga_id": manga_id,
+                    },
+                )
+
+            link = MangaCollection(
+                collection_id=collection_id,
+                manga_id=manga_id,
+            )
+
             self.add(link)
             await self.commit()
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError as exc:
             await self.rollback()
-            logger.error(f"Error adding manga to collection: {e}", exc_info=True)
+            logger.error(
+                "Error adding manga to collection: %s",
+                exc,
+                exc_info=True,
+            )
             raise
 
     async def remove_manga_from_collection(self, user_id: uuid.UUID, collection_id: int, manga_id: int) -> None:

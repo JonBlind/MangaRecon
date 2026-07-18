@@ -282,6 +282,7 @@ def test_bulk_manga_request_rejects_more_than_one_hundred_ids():
     [
         "ALREADY_EXISTS",
         "COLLECTION_NOT_FOUND",
+        "MANGA_NOT_FOUND",
         "UNKNOWN",
     ],
 )
@@ -301,7 +302,7 @@ def test_bulk_manga_add_failure_rejects_unknown_reason():
     with pytest.raises(ValidationError):
         BulkMangaAddFailure(
             manga_id=25,
-            reason="MANGA_NOT_FOUND",
+            reason="INVALID_REASON",
         )
 
 

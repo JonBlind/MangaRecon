@@ -36,12 +36,17 @@ async def test_get_users_collection_forwards_parameters(
     user,
 ):
     db = MagicMock()
+
     service = AsyncMock(
         return_value={
             "total_results": 1,
             "page": 2,
             "size": 5,
-            "items": [{"collection_id": 10}],
+            "items": [
+                {
+                    "collection_id": 10,
+                }
+            ],
         }
     )
 
@@ -76,7 +81,11 @@ async def test_get_users_collection_forwards_parameters(
             "total_results": 1,
             "page": 2,
             "size": 5,
-            "items": [{"collection_id": 10}],
+            "items": [
+                {
+                    "collection_id": 10,
+                }
+            ],
         },
         "message": "Collections retrieved",
         "detail": None,
@@ -90,12 +99,16 @@ async def test_get_collection_by_id_forwards_parameters(
     user,
 ):
     db = MagicMock()
+
     collection = {
         "collection_id": 12,
         "collection_name": "Favorites",
     }
 
-    service = AsyncMock(return_value=collection)
+    service = AsyncMock(
+        return_value=collection
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "get_user_collection_by_id",
@@ -130,6 +143,7 @@ async def test_create_collection_forwards_payload(
     user,
 ):
     db = MagicMock()
+
     payload = CollectionCreate(
         collection_name="Favorites",
         description="Favorite manga",
@@ -140,7 +154,10 @@ async def test_create_collection_forwards_payload(
         "collection_name": "Favorites",
     }
 
-    service = AsyncMock(return_value=created)
+    service = AsyncMock(
+        return_value=created
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "create_user_collection",
@@ -175,6 +192,7 @@ async def test_update_collection_forwards_payload(
     user,
 ):
     db = MagicMock()
+
     payload = CollectionUpdate(
         collection_name="Updated",
     )
@@ -184,7 +202,10 @@ async def test_update_collection_forwards_payload(
         "collection_name": "Updated",
     }
 
-    service = AsyncMock(return_value=updated)
+    service = AsyncMock(
+        return_value=updated
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "update_user_collection",
@@ -221,9 +242,15 @@ async def test_delete_collection_forwards_parameters(
     user,
 ):
     db = MagicMock()
-    deleted = {"collection_id": 5}
 
-    service = AsyncMock(return_value=deleted)
+    deleted = {
+        "collection_id": 5,
+    }
+
+    service = AsyncMock(
+        return_value=deleted
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "delete_user_collection",
@@ -267,7 +294,10 @@ async def test_get_collection_manga_forwards_both_databases(
         "items": [],
     }
 
-    service = AsyncMock(return_value=page_data)
+    service = AsyncMock(
+        return_value=page_data
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "get_collection_manga_page",
@@ -309,7 +339,9 @@ async def test_bulk_add_forwards_all_manga_ids(
     fake_request,
     user,
 ):
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
+
     payload = BulkMangaInCollectionRequest(
         manga_ids=[1, 2, 3],
     )
@@ -322,7 +354,10 @@ async def test_bulk_add_forwards_all_manga_ids(
         "failed": [],
     }
 
-    service = AsyncMock(return_value=output)
+    service = AsyncMock(
+        return_value=output
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "add_manga_bulk_to_user_collection",
@@ -335,7 +370,8 @@ async def test_bulk_add_forwards_all_manga_ids(
         request=fake_request,
         collection_id=7,
         data=payload,
-        db=db,
+        user_db=user_db,
+        manga_db=manga_db,
         user=user,
     )
 
@@ -343,7 +379,8 @@ async def test_bulk_add_forwards_all_manga_ids(
         user_id=user.id,
         collection_id=7,
         manga_ids=[1, 2, 3],
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result["data"] == output
@@ -358,7 +395,9 @@ async def test_add_single_manga_forwards_id(
     fake_request,
     user,
 ):
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
+
     payload = MangaInCollectionRequest(
         manga_id=25,
     )
@@ -368,7 +407,10 @@ async def test_add_single_manga_forwards_id(
         "manga_id": 25,
     }
 
-    service = AsyncMock(return_value=output)
+    service = AsyncMock(
+        return_value=output
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "add_manga_to_user_collection",
@@ -381,7 +423,8 @@ async def test_add_single_manga_forwards_id(
         request=fake_request,
         collection_id=7,
         data=payload,
-        db=db,
+        user_db=user_db,
+        manga_db=manga_db,
         user=user,
     )
 
@@ -389,7 +432,8 @@ async def test_add_single_manga_forwards_id(
         user_id=user.id,
         collection_id=7,
         manga_id=25,
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result["data"] == output
@@ -405,6 +449,7 @@ async def test_remove_single_manga_forwards_id(
     user,
 ):
     db = MagicMock()
+
     payload = MangaInCollectionRequest(
         manga_id=25,
     )
@@ -414,7 +459,10 @@ async def test_remove_single_manga_forwards_id(
         "manga_id": 25,
     }
 
-    service = AsyncMock(return_value=output)
+    service = AsyncMock(
+        return_value=output
+    )
+
     monkeypatch.setattr(
         collection_routes,
         "remove_manga_from_user_collection",
@@ -474,7 +522,7 @@ async def test_remove_single_manga_forwards_id(
             "create_user_collection",
             {
                 "collection_data": CollectionCreate(
-                    collection_name="Favorites"
+                    collection_name="Favorites",
                 ),
                 "db": MagicMock(),
             },
@@ -485,7 +533,7 @@ async def test_remove_single_manga_forwards_id(
             {
                 "collection_id": 5,
                 "collection_update": CollectionUpdate(
-                    collection_name="Updated"
+                    collection_name="Updated",
                 ),
                 "db": MagicMock(),
             },
@@ -516,9 +564,10 @@ async def test_remove_single_manga_forwards_id(
             {
                 "collection_id": 5,
                 "data": BulkMangaInCollectionRequest(
-                    manga_ids=[1, 2]
+                    manga_ids=[1, 2],
                 ),
-                "db": MagicMock(),
+                "user_db": MagicMock(),
+                "manga_db": MagicMock(),
             },
         ),
         (
@@ -527,9 +576,10 @@ async def test_remove_single_manga_forwards_id(
             {
                 "collection_id": 5,
                 "data": MangaInCollectionRequest(
-                    manga_id=10
+                    manga_id=10,
                 ),
-                "db": MagicMock(),
+                "user_db": MagicMock(),
+                "manga_db": MagicMock(),
             },
         ),
         (
@@ -538,7 +588,7 @@ async def test_remove_single_manga_forwards_id(
             {
                 "collection_id": 5,
                 "data": MangaInCollectionRequest(
-                    manga_id=10
+                    manga_id=10,
                 ),
                 "db": MagicMock(),
             },
@@ -562,11 +612,16 @@ async def test_collection_routes_reraise_domain_errors(
     monkeypatch.setattr(
         collection_routes,
         service_name,
-        AsyncMock(side_effect=domain_error),
+        AsyncMock(
+            side_effect=domain_error
+        ),
     )
 
     route = handler(
-        getattr(collection_routes, route_name)
+        getattr(
+            collection_routes,
+            route_name,
+        )
     )
 
     with pytest.raises(NotFoundError) as exc_info:
@@ -609,7 +664,7 @@ async def test_collection_routes_reraise_domain_errors(
             "create_user_collection",
             {
                 "collection_data": CollectionCreate(
-                    collection_name="Favorites"
+                    collection_name="Favorites",
                 ),
                 "db": MagicMock(),
             },
@@ -620,7 +675,7 @@ async def test_collection_routes_reraise_domain_errors(
             {
                 "collection_id": 5,
                 "collection_update": CollectionUpdate(
-                    collection_name="Updated"
+                    collection_name="Updated",
                 ),
                 "db": MagicMock(),
             },
@@ -651,9 +706,10 @@ async def test_collection_routes_reraise_domain_errors(
             {
                 "collection_id": 5,
                 "data": BulkMangaInCollectionRequest(
-                    manga_ids=[1, 2]
+                    manga_ids=[1, 2],
                 ),
-                "db": MagicMock(),
+                "user_db": MagicMock(),
+                "manga_db": MagicMock(),
             },
         ),
         (
@@ -662,9 +718,10 @@ async def test_collection_routes_reraise_domain_errors(
             {
                 "collection_id": 5,
                 "data": MangaInCollectionRequest(
-                    manga_id=10
+                    manga_id=10,
                 ),
-                "db": MagicMock(),
+                "user_db": MagicMock(),
+                "manga_db": MagicMock(),
             },
         ),
         (
@@ -673,7 +730,7 @@ async def test_collection_routes_reraise_domain_errors(
             {
                 "collection_id": 5,
                 "data": MangaInCollectionRequest(
-                    manga_id=10
+                    manga_id=10,
                 ),
                 "db": MagicMock(),
             },
@@ -689,13 +746,18 @@ async def test_collection_routes_log_and_reraise_unexpected_errors(
     service_name,
     extra_kwargs,
 ):
-    failure = RuntimeError("service failed")
+    failure = RuntimeError(
+        "service failed"
+    )
+
     log_error = MagicMock()
 
     monkeypatch.setattr(
         collection_routes,
         service_name,
-        AsyncMock(side_effect=failure),
+        AsyncMock(
+            side_effect=failure
+        ),
     )
     monkeypatch.setattr(
         collection_routes.logger,
@@ -704,7 +766,10 @@ async def test_collection_routes_log_and_reraise_unexpected_errors(
     )
 
     route = handler(
-        getattr(collection_routes, route_name)
+        getattr(
+            collection_routes,
+            route_name,
+        )
     )
 
     with pytest.raises(

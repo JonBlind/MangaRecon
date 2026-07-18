@@ -156,14 +156,10 @@ async def test_rate_manga_updates_existing_rating(
     session,
 ):
     user_id = uuid.uuid4()
-    manga = MagicMock()
     existing_rating = MagicMock()
     existing_rating.personal_rating = 1.0
 
-    session.get.side_effect = [
-        manga,
-        existing_rating,
-    ]
+    session.get.return_value = existing_rating
 
     log_info = MagicMock()
     monkeypatch.setattr(
@@ -183,11 +179,7 @@ async def test_rate_manga_updates_existing_rating(
     assert result is existing_rating
     assert existing_rating.personal_rating == 8.0
 
-    assert session.get.await_args_list[0].args == (
-        client_db.Manga,
-        25,
-    )
-    assert session.get.await_args_list[1].args == (
+    session.get.assert_awaited_once_with(
         client_db.Rating,
         (user_id, 25),
     )
@@ -208,13 +200,9 @@ async def test_rate_manga_creates_new_rating(
     session,
 ):
     user_id = uuid.uuid4()
-    manga = MagicMock()
     new_rating = MagicMock()
 
-    session.get.side_effect = [
-        manga,
-        None,
-    ]
+    session.get.return_value = None
 
     rating_constructor = MagicMock(
         return_value=new_rating
@@ -235,6 +223,11 @@ async def test_rate_manga_creates_new_rating(
 
     assert result is new_rating
 
+    session.get.assert_awaited_once_with(
+        rating_constructor,
+        (user_id, 25),
+    )
+
     rating_constructor.assert_called_once_with(
         user_id=user_id,
         manga_id=25,
@@ -246,32 +239,7 @@ async def test_rate_manga_creates_new_rating(
     session.refresh.assert_awaited_once_with(
         new_rating
     )
-
-
-@pytest.mark.asyncio
-async def test_rate_manga_raises_when_manga_does_not_exist(
-    session,
-):
-    session.get.return_value = None
-
-    db = ClientWriteDatabase(session)
-
-    with pytest.raises(NotFoundError) as exc_info:
-        await db.rate_manga(
-            uuid.uuid4(),
-            999,
-            5.0,
-        )
-
-    error = exc_info.value
-
-    assert error.code == "MANGA_NOT_FOUND"
-    assert error.message == "Manga not found."
-
-    session.commit.assert_not_awaited()
-    session.refresh.assert_not_awaited()
     session.rollback.assert_not_awaited()
-
 
 @pytest.mark.asyncio
 async def test_rate_manga_rolls_back_on_commit_error(

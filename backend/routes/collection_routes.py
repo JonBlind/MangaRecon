@@ -288,7 +288,8 @@ async def add_manga_bulk_to_collection(
     request: Request,
     collection_id: int,
     data: BulkMangaInCollectionRequest,
-    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user_db: ClientWriteDatabase = Depends(get_user_write_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
     user: User = Depends(current_user),
 ):
     '''
@@ -299,6 +300,7 @@ async def add_manga_bulk_to_collection(
         collection_id (int): Collection identifier to add to.
         data (BulkMangaInCollectionRequest): Payload containing manga IDs to add.
         user_db (ClientDatabase): User-domain write database client.
+        manga_db (ClientReadDatabase): Manga-domain read database client.
         user (User): Currently authenticated, active, verified user.
 
     Returns:
@@ -309,7 +311,8 @@ async def add_manga_bulk_to_collection(
             user_id=user.id,
             collection_id=collection_id,
             manga_ids=data.manga_ids,
-            user_db=db,
+            user_db=user_db,
+            manga_db=manga_db
         )
         return success("Manga bulk add completed", data=out)
 
@@ -332,7 +335,8 @@ async def add_manga_to_collection(
     request: Request,
     collection_id: int,
     data: MangaInCollectionRequest,
-    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user_db: ClientWriteDatabase = Depends(get_user_write_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
     user: User = Depends(current_user),
 ):
     '''
@@ -353,7 +357,8 @@ async def add_manga_to_collection(
             user_id=user.id,
             collection_id=collection_id,
             manga_id=data.manga_id,
-            user_db=db,
+            user_db=user_db,
+            manga_db=manga_db,
         )
         return success("Manga added to collection", data=out)
 

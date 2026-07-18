@@ -6,7 +6,10 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from backend.db.models.collection import Collection
-from backend.schemas.collection import CollectionCreate, CollectionUpdate
+from backend.schemas.collection import (
+    CollectionCreate,
+    CollectionUpdate,
+)
 from backend.services import collection_service
 from backend.utils.domain_exceptions import (
     ConflictError,
@@ -50,7 +53,12 @@ def make_collection(
         user_id=user_id or uuid.uuid4(),
         collection_name=collection_name,
         description=description,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(
+            2026,
+            1,
+            1,
+            tzinfo=timezone.utc,
+        ),
     )
 
 
@@ -104,8 +112,14 @@ async def test_list_user_collections_page_returns_paginated_items():
     assert result["total_results"] == 2
     assert result["page"] == 1
     assert result["size"] == 10
-    assert [item.collection_id for item in result["items"]] == [1, 2]
-    assert [item.collection_name for item in result["items"]] == [
+    assert [
+        item.collection_id
+        for item in result["items"]
+    ] == [1, 2]
+    assert [
+        item.collection_name
+        for item in result["items"]
+    ] == [
         "First",
         "Second",
     ]
@@ -141,11 +155,15 @@ async def test_list_user_collections_page_supports_descending_order():
 @pytest.mark.asyncio
 async def test_get_user_collection_by_id_returns_collection():
     user_id = uuid.uuid4()
-    collection = make_collection(user_id=user_id)
+    collection = make_collection(
+        user_id=user_id
+    )
 
     db = MagicMock()
     db.execute = AsyncMock(
-        return_value=FakeResult(scalar_value=collection)
+        return_value=FakeResult(
+            scalar_value=collection
+        )
     )
 
     result = await collection_service.get_user_collection_by_id(
@@ -163,7 +181,9 @@ async def test_get_user_collection_by_id_returns_collection():
 async def test_get_user_collection_by_id_raises_when_missing():
     db = MagicMock()
     db.execute = AsyncMock(
-        return_value=FakeResult(scalar_value=None)
+        return_value=FakeResult(
+            scalar_value=None
+        )
     )
 
     with pytest.raises(NotFoundError) as exc_info:
@@ -173,8 +193,14 @@ async def test_get_user_collection_by_id_raises_when_missing():
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NOT_FOUND"
-    assert exc_info.value.message == "Collection not found."
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NOT_FOUND"
+    )
+    assert (
+        exc_info.value.message
+        == "Collection not found."
+    )
 
 
 @pytest.mark.asyncio
@@ -209,11 +235,19 @@ async def test_create_user_collection_commits_and_returns_collection():
     added_collection = db.add.call_args.args[0]
 
     assert added_collection.user_id == user_id
-    assert added_collection.collection_name == "Completed"
-    assert added_collection.description == "Finished manga"
+    assert (
+        added_collection.collection_name
+        == "Completed"
+    )
+    assert (
+        added_collection.description
+        == "Finished manga"
+    )
 
     db.commit.assert_awaited_once()
-    db.refresh.assert_awaited_once_with(added_collection)
+    db.refresh.assert_awaited_once_with(
+        added_collection
+    )
     db.rollback.assert_not_awaited()
 
     assert result.collection_id == 12
@@ -239,7 +273,10 @@ async def test_create_user_collection_converts_integrity_error_to_conflict():
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NAME_CONFLICT"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NAME_CONFLICT"
+    )
     assert exc_info.value.status_code == 409
     db.rollback.assert_awaited_once()
 
@@ -247,9 +284,14 @@ async def test_create_user_collection_converts_integrity_error_to_conflict():
 @pytest.mark.asyncio
 async def test_create_user_collection_rolls_back_unexpected_error():
     db = make_write_db()
-    db.commit.side_effect = RuntimeError("database unavailable")
+    db.commit.side_effect = RuntimeError(
+        "database unavailable"
+    )
 
-    with pytest.raises(RuntimeError, match="database unavailable"):
+    with pytest.raises(
+        RuntimeError,
+        match="database unavailable",
+    ):
         await collection_service.create_user_collection(
             user_id=uuid.uuid4(),
             payload=CollectionCreate(
@@ -275,8 +317,12 @@ async def test_update_user_collection_updates_fields_and_invalidates(
 
     db = make_write_db()
     db.execute.side_effect = [
-        FakeResult(scalar_value=collection),
-        FakeResult(scalar_value=None),
+        FakeResult(
+            scalar_value=collection
+        ),
+        FakeResult(
+            scalar_value=None
+        ),
     ]
 
     invalidate = AsyncMock()
@@ -296,18 +342,32 @@ async def test_update_user_collection_updates_fields_and_invalidates(
         user_db=db,
     )
 
-    assert collection.collection_name == "New Name"
-    assert collection.description == "New description"
+    assert (
+        collection.collection_name
+        == "New Name"
+    )
+    assert (
+        collection.description
+        == "New description"
+    )
 
     assert result.collection_name == "New Name"
-    assert result.description == "New description"
+    assert (
+        result.description
+        == "New description"
+    )
 
     assert db.execute.await_count == 2
     db.commit.assert_awaited_once()
-    db.refresh.assert_awaited_once_with(collection)
+    db.refresh.assert_awaited_once_with(
+        collection
+    )
     db.rollback.assert_not_awaited()
 
-    invalidate.assert_awaited_once_with(user_id, 1)
+    invalidate.assert_awaited_once_with(
+        user_id,
+        1,
+    )
 
 
 @pytest.mark.asyncio
@@ -322,7 +382,9 @@ async def test_update_user_collection_allows_description_only_update(
     )
 
     db = make_write_db()
-    db.execute.return_value = FakeResult(scalar_value=collection)
+    db.execute.return_value = FakeResult(
+        scalar_value=collection
+    )
 
     invalidate = AsyncMock()
     monkeypatch.setattr(
@@ -334,33 +396,47 @@ async def test_update_user_collection_allows_description_only_update(
     result = await collection_service.update_user_collection(
         user_id=user_id,
         collection_id=1,
-        payload=CollectionUpdate(description="Updated"),
+        payload=CollectionUpdate(
+            description="Updated"
+        ),
         user_db=db,
     )
 
-    assert collection.collection_name == "Unchanged"
+    assert (
+        collection.collection_name
+        == "Unchanged"
+    )
     assert collection.description == "Updated"
     assert result.description == "Updated"
 
-    # No duplicate-name query is needed.
     db.execute.assert_awaited_once()
-    invalidate.assert_awaited_once_with(user_id, 1)
+    invalidate.assert_awaited_once_with(
+        user_id,
+        1,
+    )
 
 
 @pytest.mark.asyncio
 async def test_update_user_collection_raises_when_collection_missing():
     db = make_write_db()
-    db.execute.return_value = FakeResult(scalar_value=None)
+    db.execute.return_value = FakeResult(
+        scalar_value=None
+    )
 
     with pytest.raises(NotFoundError) as exc_info:
         await collection_service.update_user_collection(
             user_id=uuid.uuid4(),
             collection_id=999,
-            payload=CollectionUpdate(description="Updated"),
+            payload=CollectionUpdate(
+                description="Updated"
+            ),
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NOT_FOUND"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NOT_FOUND"
+    )
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()
 
@@ -375,8 +451,12 @@ async def test_update_user_collection_rejects_duplicate_name():
 
     db = make_write_db()
     db.execute.side_effect = [
-        FakeResult(scalar_value=collection),
-        FakeResult(scalar_value=88),
+        FakeResult(
+            scalar_value=collection
+        ),
+        FakeResult(
+            scalar_value=88
+        ),
     ]
 
     with pytest.raises(ConflictError) as exc_info:
@@ -389,7 +469,10 @@ async def test_update_user_collection_rejects_duplicate_name():
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NAME_CONFLICT"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NAME_CONFLICT"
+    )
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()
 
@@ -399,12 +482,18 @@ async def test_update_user_collection_converts_integrity_error_to_conflict(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    collection = make_collection(user_id=user_id)
+    collection = make_collection(
+        user_id=user_id
+    )
 
     db = make_write_db()
     db.execute.side_effect = [
-        FakeResult(scalar_value=collection),
-        FakeResult(scalar_value=None),
+        FakeResult(
+            scalar_value=collection
+        ),
+        FakeResult(
+            scalar_value=None
+        ),
     ]
     db.commit.side_effect = IntegrityError(
         "UPDATE",
@@ -429,7 +518,10 @@ async def test_update_user_collection_converts_integrity_error_to_conflict(
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NAME_CONFLICT"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NAME_CONFLICT"
+    )
     db.rollback.assert_awaited_once()
     invalidate.assert_not_awaited()
 
@@ -439,10 +531,14 @@ async def test_delete_user_collection_deletes_and_invalidates(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    collection = make_collection(user_id=user_id)
+    collection = make_collection(
+        user_id=user_id
+    )
 
     db = make_write_db()
-    db.execute.return_value = FakeResult(scalar_value=collection)
+    db.execute.return_value = FakeResult(
+        scalar_value=collection
+    )
 
     invalidate = AsyncMock()
     monkeypatch.setattr(
@@ -457,17 +553,26 @@ async def test_delete_user_collection_deletes_and_invalidates(
         user_db=db,
     )
 
-    assert result == {"collection_id": 1}
-    db.delete.assert_awaited_once_with(collection)
+    assert result == {
+        "collection_id": 1,
+    }
+    db.delete.assert_awaited_once_with(
+        collection
+    )
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
-    invalidate.assert_awaited_once_with(user_id, 1)
+    invalidate.assert_awaited_once_with(
+        user_id,
+        1,
+    )
 
 
 @pytest.mark.asyncio
 async def test_delete_user_collection_raises_when_missing():
     db = make_write_db()
-    db.execute.return_value = FakeResult(scalar_value=None)
+    db.execute.return_value = FakeResult(
+        scalar_value=None
+    )
 
     with pytest.raises(NotFoundError) as exc_info:
         await collection_service.delete_user_collection(
@@ -476,7 +581,10 @@ async def test_delete_user_collection_raises_when_missing():
             user_db=db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NOT_FOUND"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NOT_FOUND"
+    )
     db.rollback.assert_awaited_once()
     db.delete.assert_not_awaited()
     db.commit.assert_not_awaited()
@@ -487,10 +595,17 @@ async def test_delete_user_collection_rolls_back_unexpected_error():
     collection = make_collection()
 
     db = make_write_db()
-    db.execute.return_value = FakeResult(scalar_value=collection)
-    db.delete.side_effect = RuntimeError("delete failed")
+    db.execute.return_value = FakeResult(
+        scalar_value=collection
+    )
+    db.delete.side_effect = RuntimeError(
+        "delete failed"
+    )
 
-    with pytest.raises(RuntimeError, match="delete failed"):
+    with pytest.raises(
+        RuntimeError,
+        match="delete failed",
+    ):
         await collection_service.delete_user_collection(
             user_id=collection.user_id,
             collection_id=1,
@@ -505,7 +620,9 @@ async def test_delete_user_collection_rolls_back_unexpected_error():
 async def test_get_collection_manga_page_raises_when_not_owned(
     monkeypatch,
 ):
-    get_owned = AsyncMock(return_value=None)
+    get_owned = AsyncMock(
+        return_value=None
+    )
     monkeypatch.setattr(
         collection_service,
         "get_owned_collection_id",
@@ -523,7 +640,10 @@ async def test_get_collection_manga_page_raises_when_not_owned(
             manga_db=MagicMock(),
         )
 
-    assert exc_info.value.code == "COLLECTION_NOT_FOUND"
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NOT_FOUND"
+    )
 
 
 @pytest.mark.asyncio
@@ -593,7 +713,9 @@ async def test_get_collection_manga_page_preserves_membership_order(
 
     get_owned = AsyncMock(return_value=4)
     count_manga = AsyncMock(return_value=3)
-    page_ids = AsyncMock(return_value=[30, 10, 20])
+    page_ids = AsyncMock(
+        return_value=[30, 10, 20]
+    )
 
     base_by_id = {
         10: {
@@ -619,7 +741,9 @@ async def test_get_collection_manga_page_preserves_membership_order(
         },
     }
 
-    fetch_base = AsyncMock(return_value=base_by_id)
+    fetch_base = AsyncMock(
+        return_value=base_by_id
+    )
     attach_genres = AsyncMock()
 
     monkeypatch.setattr(
@@ -661,7 +785,10 @@ async def test_get_collection_manga_page_preserves_membership_order(
     assert result["total_results"] == 3
     assert result["page"] == 2
     assert result["size"] == 3
-    assert [item.manga_id for item in result["items"]] == [
+    assert [
+        item.manga_id
+        for item in result["items"]
+    ] == [
         30,
         10,
         20,
@@ -702,7 +829,9 @@ async def test_get_collection_manga_page_skips_missing_manga_rows(
     monkeypatch.setattr(
         collection_service,
         "page_collection_manga_ids",
-        AsyncMock(return_value=[10, 20]),
+        AsyncMock(
+            return_value=[10, 20]
+        ),
     )
     monkeypatch.setattr(
         collection_service,
@@ -736,7 +865,10 @@ async def test_get_collection_manga_page_skips_missing_manga_rows(
     )
 
     assert result["total_results"] == 2
-    assert [item.manga_id for item in result["items"]] == [20]
+    assert [
+        item.manga_id
+        for item in result["items"]
+    ] == [20]
 
 
 @pytest.mark.asyncio
@@ -744,9 +876,19 @@ async def test_add_manga_to_collection_adds_and_invalidates(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = make_write_db()
+    user_db = make_write_db()
+    manga_db = MagicMock()
 
+    manga_exists_mock = AsyncMock(
+        return_value=True
+    )
     invalidate = AsyncMock()
+
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        manga_exists_mock,
+    )
     monkeypatch.setattr(
         collection_service,
         "invalidate_collection_recommendations",
@@ -755,46 +897,116 @@ async def test_add_manga_to_collection_adds_and_invalidates(
 
     result = await collection_service.add_manga_to_user_collection(
         user_id=user_id,
-        collection_id=5,
-        manga_id=22,
-        user_db=db,
+        collection_id=10,
+        manga_id=25,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result == {
-        "collection_id": 5,
-        "manga_id": 22,
+        "collection_id": 10,
+        "manga_id": 25,
     }
 
-    db.add_manga_to_collection.assert_awaited_once_with(
-        user_id,
-        5,
-        22,
+    manga_exists_mock.assert_awaited_once_with(
+        manga_db,
+        manga_id=25,
     )
-    invalidate.assert_awaited_once_with(user_id, 5)
+    user_db.add_manga_to_collection.assert_awaited_once_with(
+        user_id,
+        10,
+        25,
+    )
+    invalidate.assert_awaited_once_with(
+        user_id,
+        10,
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_manga_rejects_missing_manga(
+    monkeypatch,
+):
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
+    manga_exists_mock = AsyncMock(
+        return_value=False
+    )
+    invalidate = AsyncMock()
+
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        manga_exists_mock,
+    )
+    monkeypatch.setattr(
+        collection_service,
+        "invalidate_collection_recommendations",
+        invalidate,
+    )
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await collection_service.add_manga_to_user_collection(
+            user_id=uuid.uuid4(),
+            collection_id=10,
+            manga_id=999,
+            user_db=user_db,
+            manga_db=manga_db,
+        )
+
+    assert (
+        exc_info.value.code
+        == "MANGA_NOT_FOUND"
+    )
+    assert (
+        exc_info.value.message
+        == "Manga not found."
+    )
+
+    user_db.add_manga_to_collection.assert_not_awaited()
+    invalidate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_bulk_add_raises_when_collection_not_owned(
     monkeypatch,
 ):
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
+    get_owned = AsyncMock(
+        return_value=None
+    )
+    exists = AsyncMock()
+
     monkeypatch.setattr(
         collection_service,
         "get_owned_collection_id",
-        AsyncMock(return_value=None),
+        get_owned,
     )
-
-    db = make_write_db()
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        exists,
+    )
 
     with pytest.raises(NotFoundError) as exc_info:
         await collection_service.add_manga_bulk_to_user_collection(
             user_id=uuid.uuid4(),
             collection_id=9,
             manga_ids=[1, 2],
-            user_db=db,
+            user_db=user_db,
+            manga_db=manga_db,
         )
 
-    assert exc_info.value.code == "COLLECTION_NOT_FOUND"
-    db.add_manga_to_collection.assert_not_awaited()
+    assert (
+        exc_info.value.code
+        == "COLLECTION_NOT_FOUND"
+    )
+
+    exists.assert_not_awaited()
+    user_db.add_manga_to_collection.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -802,7 +1014,8 @@ async def test_bulk_add_records_successes_and_failures(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = make_write_db()
+    user_db = make_write_db()
+    manga_db = MagicMock()
 
     monkeypatch.setattr(
         collection_service,
@@ -810,7 +1023,23 @@ async def test_bulk_add_records_successes_and_failures(
         AsyncMock(return_value=4),
     )
 
-    db.add_manga_to_collection.side_effect = [
+    manga_exists_mock = AsyncMock(
+        side_effect=[
+            True,
+            True,
+            True,
+            True,
+            False,
+            True,
+        ]
+    )
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        manga_exists_mock,
+    )
+
+    user_db.add_manga_to_collection.side_effect = [
         None,
         ConflictError(
             code="MANGA_ALREADY_IN_COLLECTION",
@@ -838,14 +1067,25 @@ async def test_bulk_add_records_successes_and_failures(
     result = await collection_service.add_manga_bulk_to_user_collection(
         user_id=user_id,
         collection_id=4,
-        manga_ids=[10, 20, 30, 40, 50],
-        user_db=db,
+        manga_ids=[
+            10,
+            20,
+            30,
+            40,
+            45,
+            50,
+        ],
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result.collection_id == 4
     assert result.added_count == 2
-    assert result.failed_count == 3
-    assert result.added_ids == [10, 50]
+    assert result.failed_count == 4
+    assert result.added_ids == [
+        10,
+        50,
+    ]
 
     assert [
         failure.model_dump()
@@ -863,17 +1103,39 @@ async def test_bulk_add_records_successes_and_failures(
             "manga_id": 40,
             "reason": "UNKNOWN",
         },
+        {
+            "manga_id": 45,
+            "reason": "MANGA_NOT_FOUND",
+        },
     ]
 
-    assert db.add_manga_to_collection.await_count == 5
-    invalidate.assert_awaited_once_with(user_id, 4)
+    assert (
+        manga_exists_mock.await_count
+        == 6
+    )
+    assert (
+        user_db.add_manga_to_collection.await_count
+        == 5
+    )
+
+    user_db.add_manga_to_collection.assert_any_await(
+        user_id,
+        10 and 4,
+        10,
+    )
+
+    invalidate.assert_awaited_once_with(
+        user_id,
+        4,
+    )
 
 
 @pytest.mark.asyncio
-async def test_bulk_add_does_not_invalidate_when_nothing_added(
+async def test_bulk_add_does_not_invalidate_when_all_manga_missing(
     monkeypatch,
 ):
-    db = make_write_db()
+    user_db = make_write_db()
+    manga_db = MagicMock()
 
     monkeypatch.setattr(
         collection_service,
@@ -881,7 +1143,65 @@ async def test_bulk_add_does_not_invalidate_when_nothing_added(
         AsyncMock(return_value=4),
     )
 
-    db.add_manga_to_collection.side_effect = [
+    manga_exists_mock = AsyncMock(
+        return_value=False
+    )
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        manga_exists_mock,
+    )
+
+    invalidate = AsyncMock()
+    monkeypatch.setattr(
+        collection_service,
+        "invalidate_collection_recommendations",
+        invalidate,
+    )
+
+    result = await collection_service.add_manga_bulk_to_user_collection(
+        user_id=uuid.uuid4(),
+        collection_id=4,
+        manga_ids=[10, 20],
+        user_db=user_db,
+        manga_db=manga_db,
+    )
+
+    assert result.added_count == 0
+    assert result.failed_count == 2
+    assert result.added_ids == []
+
+    assert [
+        failure.reason
+        for failure in result.failed
+    ] == [
+        "MANGA_NOT_FOUND",
+        "MANGA_NOT_FOUND",
+    ]
+
+    user_db.add_manga_to_collection.assert_not_awaited()
+    invalidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bulk_add_does_not_invalidate_when_all_conflicts(
+    monkeypatch,
+):
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
+    monkeypatch.setattr(
+        collection_service,
+        "get_owned_collection_id",
+        AsyncMock(return_value=4),
+    )
+    monkeypatch.setattr(
+        collection_service,
+        "manga_exists",
+        AsyncMock(return_value=True),
+    )
+
+    user_db.add_manga_to_collection.side_effect = [
         ConflictError(
             code="MANGA_ALREADY_IN_COLLECTION",
             message="Already exists.",
@@ -903,12 +1223,22 @@ async def test_bulk_add_does_not_invalidate_when_nothing_added(
         user_id=uuid.uuid4(),
         collection_id=4,
         manga_ids=[10, 20],
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result.added_count == 0
     assert result.failed_count == 2
     assert result.added_ids == []
+
+    assert [
+        failure.reason
+        for failure in result.failed
+    ] == [
+        "ALREADY_EXISTS",
+        "ALREADY_EXISTS",
+    ]
+
     invalidate.assert_not_awaited()
 
 
@@ -943,4 +1273,7 @@ async def test_remove_manga_from_collection_removes_and_invalidates(
         7,
         99,
     )
-    invalidate.assert_awaited_once_with(user_id, 7)
+    invalidate.assert_awaited_once_with(
+        user_id,
+        7,
+    )

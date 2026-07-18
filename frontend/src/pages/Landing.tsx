@@ -74,7 +74,7 @@ export default function Landing() {
         </div>
 
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-          <h2 className="font-semibold">Recommend</h2>
+          <h2 className="font-semibold">Get Recommendations</h2>
           <p className="mt-2 text-sm opacity-75">
             Generate recommendations from collections or selected manga.
           </p>

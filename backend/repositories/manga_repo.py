@@ -180,7 +180,6 @@ async def fetch_manga_list_base(
 
     return base_by_id
 
-
 async def attach_genres_to_base(
     db: ClientReadDatabase,
     *,
@@ -212,3 +211,14 @@ async def attach_genres_to_base(
             base_by_id[mid]["genres"].append(
                 {"genre_id": int(g["genre_id"]), "genre_name": g["genre_name"]}
             )
+
+async def manga_exists(
+    manga_db: ClientReadDatabase,
+    *,
+    manga_id: int,
+) -> bool:
+    stmt = select(Manga.manga_id).where(
+        Manga.manga_id == manga_id
+    )
+    result = await manga_db.execute(stmt)
+    return result.scalar_one_or_none() is not None

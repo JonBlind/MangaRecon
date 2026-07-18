@@ -3,7 +3,7 @@ from typing import Optional
 import logging
 
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
-from backend.dependencies import get_user_read_db, get_user_write_db
+from backend.dependencies import get_user_read_db, get_user_write_db, get_manga_read_db
 from backend.auth.dependencies import current_active_user as current_user
 from backend.schemas.rating import RatingCreate
 from backend.db.models.user import User
@@ -28,7 +28,8 @@ router = APIRouter(prefix="/ratings", tags=["Ratings"])
 async def rate_manga(
     request: Request,
     rating_data: RatingCreate,
-    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user_db: ClientWriteDatabase = Depends(get_user_write_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
     user: User = Depends(current_user),
 ):
     """
@@ -37,7 +38,8 @@ async def rate_manga(
     Args:
         request (Request): FastAPI request (required by rate limiting).
         rating_data (RatingCreate): Payload containing manga_id and personal_rating.
-        db (ClientWriteDatabase): User-domain write database client.
+        user_db (ClientWriteDatabase): User-domain write database client.
+        manga_db (ClientReadDatabase): Manga-domain read database client.
         user (User): Currently authenticated, active, verified user.
 
     Returns:
@@ -49,7 +51,7 @@ async def rate_manga(
         rating_data.manga_id,
         rating_data.personal_rating,
     )
-    validated = await create_or_update_rating(user_id=user.id, payload=rating_data, user_db=db)
+    validated = await create_or_update_rating(user_id=user.id, payload=rating_data, user_db=user_db, manga_db=manga_db)
     return success("Rating successfully submitted", data=validated)
 
 
@@ -58,7 +60,7 @@ async def rate_manga(
 async def update_rating(
     request: Request,
     rating_data: RatingCreate,
-    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user_db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user),
 ):
     """
@@ -67,7 +69,7 @@ async def update_rating(
     Args:
         request (Request): FastAPI request (required by rate limiting).
         rating_data (RatingCreate): Payload containing manga_id and personal_rating.
-        db (ClientWriteDatabase): User-domain write database client.
+        user_db (ClientWriteDatabase): User-domain write database client.
         user (User): Currently authenticated, active, verified user.
 
     Returns:
@@ -79,7 +81,7 @@ async def update_rating(
         rating_data.manga_id,
         rating_data.personal_rating,
     )
-    validated = await update_existing_rating(user_id=user.id, payload=rating_data, user_db=db)
+    validated = await update_existing_rating(user_id=user.id, payload=rating_data, user_db=user_db)
     return success("Rating updated successfully", data=validated)
 
 

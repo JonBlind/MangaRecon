@@ -46,7 +46,7 @@ def create_test_manga(title=None):
 
     sync_url = settings.user_write.replace(
         "postgresql+asyncpg://",
-        "postgresql://",
+        "postgresql+psycopg://"
     )
 
     engine = create_engine(sync_url)

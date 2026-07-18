@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.cache.invalidation import invalidate_user_recommendations
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
+from backend.repositories.manga_repo import manga_exists
 from backend.repositories.rating_repo import (
     fetch_user_rating,
     count_user_ratings,
@@ -21,19 +22,23 @@ async def create_or_update_rating(
     user_id,
     payload: RatingCreate,
     user_db: ClientWriteDatabase,
+    manga_db: ClientReadDatabase
 ) -> RatingRead:
     """
     Create or update a user's rating for a manga.
     """
     try:
-        result = await upsert_user_rating(
+        if not await manga_exists(manga_db, manga_id=payload.manga_id):
+            raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
+
+        rating = await upsert_user_rating(
             user_db,
             user_id=user_id,
             manga_id=payload.manga_id,
             score=float(payload.personal_rating),
         )
         await invalidate_user_recommendations(user_db, user_id)
-        return RatingRead.model_validate(result)
+        return RatingRead.model_validate(rating)
 
     except IntegrityError:
         await user_db.rollback()

@@ -13,7 +13,7 @@ from backend.repositories.collections_repo import (
     get_owned_collection_id,
     page_collection_manga_ids,
 )
-from backend.repositories.manga_repo import attach_genres_to_base, fetch_manga_list_base
+from backend.repositories.manga_repo import attach_genres_to_base, fetch_manga_list_base, manga_exists
 from backend.schemas.collection import (
     CollectionCreate,
     CollectionRead,
@@ -237,10 +237,15 @@ async def add_manga_to_user_collection(
     collection_id: int,
     manga_id: int,
     user_db: ClientWriteDatabase,
+    manga_db: ClientReadDatabase,
 ) -> dict:
     """
     Add a manga to a user's collection.
     """
+    exists = await manga_exists(manga_db, manga_id=manga_id)
+    if not exists:
+        raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
+
     await user_db.add_manga_to_collection(user_id, collection_id, manga_id)
     await invalidate_collection_recommendations(user_id, collection_id)
     return {"collection_id": collection_id, "manga_id": manga_id}
@@ -252,6 +257,7 @@ async def add_manga_bulk_to_user_collection(
     collection_id: int,
     manga_ids: list[int],
     user_db: ClientWriteDatabase,
+    manga_db: ClientReadDatabase,
 ) -> BulkMangaInCollectionResponse:
     """
     Add multiple manga to a user's collection.
@@ -265,6 +271,16 @@ async def add_manga_bulk_to_user_collection(
 
     for manga_id in manga_ids:
         try:
+            exists = await manga_exists(manga_db, manga_id=manga_id)
+            if not exists:
+                failed.append(
+                    BulkMangaAddFailure(
+                        manga_id=manga_id,
+                        reason="MANGA_NOT_FOUND"
+                    )
+                )
+                continue
+
             await user_db.add_manga_to_collection(user_id, collection_id, manga_id)
             added_ids.append(manga_id)
 
@@ -276,11 +292,11 @@ async def add_manga_bulk_to_user_collection(
                 )
             )
 
-        except NotFoundError:
+        except NotFoundError as exc:
             failed.append(
                 BulkMangaAddFailure(
                     manga_id=manga_id,
-                    reason="COLLECTION_NOT_FOUND",
+                    reason="COLLECTION_NOT_FOUND" if exc.code == "COLLECTION_NOT_FOUND" else "UNKNOWN",
                 )
             )
 

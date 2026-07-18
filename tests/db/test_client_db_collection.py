@@ -196,11 +196,9 @@ async def test_add_manga_to_collection_adds_link_and_commits(
 ):
     user_id = uuid.uuid4()
     collection = MagicMock()
-    manga = MagicMock()
 
     session.execute.side_effect = [
         scalar_result(collection),
-        scalar_result(manga),
         scalar_result(None),
     ]
 
@@ -250,31 +248,6 @@ async def test_add_manga_to_collection_raises_when_collection_missing(
     session.commit.assert_not_awaited()
     session.rollback.assert_not_awaited()
 
-
-@pytest.mark.asyncio
-async def test_add_manga_to_collection_raises_when_manga_missing(
-    session,
-):
-    session.execute.side_effect = [
-        scalar_result(MagicMock()),
-        scalar_result(None),
-    ]
-
-    db = ClientWriteDatabase(session)
-
-    with pytest.raises(NotFoundError) as exc_info:
-        await db.add_manga_to_collection(
-            uuid.uuid4(),
-            10,
-            25,
-        )
-
-    assert exc_info.value.code == "MANGA_NOT_FOUND"
-
-    session.commit.assert_not_awaited()
-    session.rollback.assert_not_awaited()
-
-
 @pytest.mark.asyncio
 async def test_add_manga_to_collection_raises_when_link_already_exists(
     session,
@@ -312,7 +285,6 @@ async def test_add_manga_to_collection_rolls_back_on_commit_error(
     session,
 ):
     session.execute.side_effect = [
-        scalar_result(MagicMock()),
         scalar_result(MagicMock()),
         scalar_result(None),
     ]

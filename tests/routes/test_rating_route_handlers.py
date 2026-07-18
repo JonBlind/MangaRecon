@@ -32,17 +32,20 @@ def payload():
         "route_name",
         "service_name",
         "expected_message",
+        "needs_manga_db",
     ),
     [
         (
             "rate_manga",
             "create_or_update_rating",
             "Rating successfully submitted",
+            True,
         ),
         (
             "update_rating",
             "update_existing_rating",
             "Rating updated successfully",
+            False,
         ),
     ],
 )
@@ -54,8 +57,11 @@ async def test_rating_write_routes_forward_payload(
     route_name,
     service_name,
     expected_message,
+    needs_manga_db,
 ):
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
+
     validated = {
         "manga_id": 25,
         "personal_rating": 8.5,
@@ -68,19 +74,31 @@ async def test_rating_write_routes_forward_payload(
         service,
     )
 
+    route_kwargs = {
+        "request": MagicMock(),
+        "rating_data": payload,
+        "user_db": user_db,
+        "user": user,
+    }
+
+    if needs_manga_db:
+        route_kwargs["manga_db"] = manga_db
+
     result = await handler(
         getattr(rating_routes, route_name)
-    )(
-        request=MagicMock(),
-        rating_data=payload,
-        db=db,
-        user=user,
-    )
+    )(**route_kwargs)
+
+    expected_service_kwargs = {
+        "user_id": user.id,
+        "payload": payload,
+        "user_db": user_db,
+    }
+
+    if needs_manga_db:
+        expected_service_kwargs["manga_db"] = manga_db
 
     service.assert_awaited_once_with(
-        user_id=user.id,
-        payload=payload,
-        user_db=db,
+        **expected_service_kwargs
     )
 
     assert result["data"] == validated
@@ -237,7 +255,8 @@ async def test_get_user_ratings_uses_page_service_without_id(
             lambda user, payload: {
                 "request": MagicMock(),
                 "rating_data": payload,
-                "db": MagicMock(),
+                "user_db": MagicMock(),
+                "manga_db": MagicMock(),
                 "user": user,
             },
         ),
@@ -247,7 +266,7 @@ async def test_get_user_ratings_uses_page_service_without_id(
             lambda user, payload: {
                 "request": MagicMock(),
                 "rating_data": payload,
-                "db": MagicMock(),
+                "user_db": MagicMock(),
                 "user": user,
             },
         ),

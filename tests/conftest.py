@@ -34,7 +34,7 @@ def clean_test_db():
 
     sync_url = db_settings.user_write.replace(
         "postgresql+asyncpg://",
-        "postgresql://",
+        "postgresql+psycopg://",
     )
 
     engine = create_engine(sync_url)

@@ -39,6 +39,7 @@ export type ListCollectionMangaParams = {
 export type BulkAddFailureReason =
   | "ALREADY_EXISTS"
   | "COLLECTION_NOT_FOUND"
+  | "MANGA_NOT_FOUND"
   | "UNKNOWN";
 
 export type BulkAddFailure = {

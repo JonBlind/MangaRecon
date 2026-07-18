@@ -37,15 +37,23 @@ async def test_create_or_update_rating_returns_validated_rating(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = make_write_db()
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
     stored_rating = make_rating(
         manga_id=15,
         personal_rating=8.5,
     )
 
+    manga_exists = AsyncMock(return_value=True)
     upsert = AsyncMock(return_value=stored_rating)
     invalidate = AsyncMock()
 
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "upsert_user_rating",
@@ -63,21 +71,32 @@ async def test_create_or_update_rating_returns_validated_rating(
             manga_id=15,
             personal_rating=Decimal("8.5"),
         ),
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result.manga_id == 15
     assert result.personal_rating == 8.5
     assert result.created_at == stored_rating.created_at
 
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=15,
+    )
+
     upsert.assert_awaited_once_with(
-        db,
+        user_db,
         user_id=user_id,
         manga_id=15,
         score=8.5,
     )
-    invalidate.assert_awaited_once_with(db, user_id)
-    db.rollback.assert_not_awaited()
+
+    invalidate.assert_awaited_once_with(
+        user_db,
+        user_id,
+    )
+
+    user_db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -85,7 +104,10 @@ async def test_create_or_update_rating_converts_integrity_error(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = make_write_db()
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
+    manga_exists = AsyncMock(return_value=True)
 
     upsert = AsyncMock(
         side_effect=IntegrityError(
@@ -94,8 +116,14 @@ async def test_create_or_update_rating_converts_integrity_error(
             Exception("foreign key violation"),
         )
     )
+
     invalidate = AsyncMock()
 
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "upsert_user_rating",
@@ -114,7 +142,8 @@ async def test_create_or_update_rating_converts_integrity_error(
                 manga_id=999,
                 personal_rating=Decimal("7.0"),
             ),
-            user_db=db,
+            user_db=user_db,
+            manga_db=manga_db,
         )
 
     error = exc_info.value
@@ -123,9 +152,62 @@ async def test_create_or_update_rating_converts_integrity_error(
     assert error.code == "MANGA_NOT_FOUND"
     assert error.message == "Manga not found."
 
-    db.rollback.assert_awaited_once()
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=999,
+    )
+
+    user_db.rollback.assert_awaited_once()
     invalidate.assert_not_awaited()
 
+@pytest.mark.asyncio
+async def test_create_or_update_rating_rejects_missing_manga(
+    monkeypatch,
+):
+    user_id = uuid.uuid4()
+    user_db = make_write_db()
+    manga_db = MagicMock()
+
+    manga_exists = AsyncMock(return_value=False)
+    upsert = AsyncMock()
+    invalidate = AsyncMock()
+
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
+    monkeypatch.setattr(
+        rating_service,
+        "upsert_user_rating",
+        upsert,
+    )
+    monkeypatch.setattr(
+        rating_service,
+        "invalidate_user_recommendations",
+        invalidate,
+    )
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await rating_service.create_or_update_rating(
+            user_id=user_id,
+            payload=RatingCreate(
+                manga_id=999,
+                personal_rating=Decimal("7.0"),
+            ),
+            user_db=user_db,
+            manga_db=manga_db,
+        )
+
+    assert exc_info.value.code == "MANGA_NOT_FOUND"
+
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=999,
+    )
+
+    upsert.assert_not_awaited()
+    invalidate.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_update_existing_rating_raises_when_rating_missing(

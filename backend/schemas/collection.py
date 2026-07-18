@@ -57,7 +57,7 @@ class BulkMangaInCollectionRequest(BaseModel):
 
 class BulkMangaAddFailure(BaseModel):
     manga_id: int
-    reason: Literal["ALREADY_EXISTS", "COLLECTION_NOT_FOUND", "UNKNOWN"]
+    reason: Literal["ALREADY_EXISTS", "COLLECTION_NOT_FOUND", "MANGA_NOT_FOUND", "UNKNOWN"]
 
 
 class BulkMangaInCollectionResponse(BaseModel):
