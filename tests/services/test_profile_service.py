@@ -224,9 +224,20 @@ async def test_update_my_profile_returns_none_without_displayname(
 
 
 @pytest.mark.asyncio
-async def test_change_password_updates_hash_and_commits():
-    user = make_user(hashed_password="old-hash")
+async def test_change_password_updates_hash_and_commits(monkeypatch):
+    authenticated_user = make_user(hashed_password="detached-old-hash")
+    db_user = make_user(
+        user_id=authenticated_user.id,
+        hashed_password="old-hash",
+    )
     db = make_write_db()
+
+    fetch_user = AsyncMock(return_value=db_user)
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        fetch_user,
+    )
 
     password_helper = MagicMock()
     password_helper.verify_and_update.return_value = (
@@ -244,10 +255,15 @@ async def test_change_password_updates_hash_and_commits():
     )
 
     result = await profile_service.change_my_password(
-        user=user,
+        user=authenticated_user,
         payload=payload,
         user_db=db,
         user_manager=user_manager,
+    )
+
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=authenticated_user.id,
     )
 
     password_helper.verify_and_update.assert_called_once_with(
@@ -256,17 +272,31 @@ async def test_change_password_updates_hash_and_commits():
     )
     password_helper.hash.assert_called_once_with("new-password")
 
-    assert user.hashed_password == "new-hash"
-    assert result.id == user.id
+    assert db_user.hashed_password == "new-hash"
+    assert authenticated_user.hashed_password == "detached-old-hash"
+    assert result.id == authenticated_user.id
 
     db.commit.assert_awaited_once()
-    db.refresh.assert_awaited_once_with(user)
+    db.refresh.assert_awaited_once_with(db_user)
 
 
 @pytest.mark.asyncio
-async def test_change_password_rejects_unverified_password():
-    user = make_user()
+async def test_change_password_rejects_unverified_password(
+    monkeypatch,
+):
+    authenticated_user = make_user()
+    db_user = make_user(
+        user_id=authenticated_user.id,
+        hashed_password="old-hash",
+    )
     db = make_write_db()
+
+    fetch_user = AsyncMock(return_value=db_user)
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        fetch_user,
+    )
 
     password_helper = MagicMock()
     password_helper.verify_and_update.return_value = (
@@ -279,7 +309,7 @@ async def test_change_password_rejects_unverified_password():
 
     with pytest.raises(BadRequestError) as exc_info:
         await profile_service.change_my_password(
-            user=user,
+            user=authenticated_user,
             payload=ChangePassword(
                 current_password="wrong-password",
                 new_password="new-password",
@@ -294,25 +324,50 @@ async def test_change_password_rejects_unverified_password():
     assert error.code == "CURRENT_PASSWORD_INCORRECT"
     assert error.message == "Current password is incorrect."
 
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=authenticated_user.id,
+    )
+
+    password_helper.verify_and_update.assert_called_once_with(
+        "wrong-password",
+        "old-hash",
+    )
     password_helper.hash.assert_not_called()
+
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_change_password_converts_unknown_hash_error():
-    user = make_user()
+async def test_change_password_converts_unknown_hash_error(
+    monkeypatch,
+):
+    authenticated_user = make_user()
+    db_user = make_user(
+        user_id=authenticated_user.id,
+        hashed_password="old-hash",
+    )
     db = make_write_db()
 
+    fetch_user = AsyncMock(return_value=db_user)
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        fetch_user,
+    )
+
     password_helper = MagicMock()
-    password_helper.verify_and_update.side_effect = UnknownHashError(user.hashed_password)
+    password_helper.verify_and_update.side_effect = UnknownHashError(
+        db_user.hashed_password
+    )
 
     user_manager = MagicMock()
     user_manager.password_helper = password_helper
 
     with pytest.raises(BadRequestError) as exc_info:
         await profile_service.change_my_password(
-            user=user,
+            user=authenticated_user,
             payload=ChangePassword(
                 current_password="old-password",
                 new_password="new-password",
@@ -327,6 +382,58 @@ async def test_change_password_converts_unknown_hash_error():
     assert error.code == "CURRENT_PASSWORD_INCORRECT"
     assert error.message == "Current password is incorrect."
 
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=authenticated_user.id,
+    )
+
+    password_helper.verify_and_update.assert_called_once_with(
+        "old-password",
+        "old-hash",
+    )
     password_helper.hash.assert_not_called()
+
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_change_password_raises_when_profile_missing(
+    monkeypatch,
+):
+    authenticated_user = make_user()
+    db = make_write_db()
+
+    fetch_user = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        fetch_user,
+    )
+
+    user_manager = MagicMock()
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await profile_service.change_my_password(
+            user=authenticated_user,
+            payload=ChangePassword(
+                current_password="old-password",
+                new_password="new-password",
+            ),
+            user_db=db,
+            user_manager=user_manager,
+        )
+
+    error = exc_info.value
+
+    assert error.status_code == 404
+    assert error.code == "PROFILE_NOT_FOUND"
+    assert error.message == "Profile not found."
+
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=authenticated_user.id,
+    )
+
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()

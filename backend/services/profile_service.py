@@ -57,20 +57,41 @@ async def change_my_password(
     """
     Change the authenticated user's password after verifying the current password.
     """
+    db_user = await fetch_user_by_id(
+        user_db,
+        user_id=user.id,
+    )
+
+    if not db_user:
+        raise NotFoundError(
+            code="PROFILE_NOT_FOUND",
+            message="Profile not found.",
+        )
+
     try:
-        verified, _updated_hash = user_manager.password_helper.verify_and_update(
-            payload.current_password,
-            user.hashed_password,
+        verified, _updated_hash = (
+            user_manager.password_helper.verify_and_update(
+                payload.current_password,
+                db_user.hashed_password,
+            )
         )
     except UnknownHashError:
-        raise BadRequestError(code="CURRENT_PASSWORD_INCORRECT", message="Current password is incorrect.")
+        raise BadRequestError(
+            code="CURRENT_PASSWORD_INCORRECT",
+            message="Current password is incorrect.",
+        )
 
     if not verified:
-        raise BadRequestError(code="CURRENT_PASSWORD_INCORRECT", message="Current password is incorrect.")
+        raise BadRequestError(
+            code="CURRENT_PASSWORD_INCORRECT",
+            message="Current password is incorrect.",
+        )
 
-    user.hashed_password = user_manager.password_helper.hash(payload.new_password)
+    db_user.hashed_password = user_manager.password_helper.hash(
+        payload.new_password
+    )
 
     await user_db.commit()
-    await user_db.refresh(user)
+    await user_db.refresh(db_user)
 
-    return UserRead.model_validate(user)
+    return UserRead.model_validate(db_user)
