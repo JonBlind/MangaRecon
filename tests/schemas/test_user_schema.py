@@ -8,7 +8,7 @@ from backend.schemas.user import (
     ChangePassword,
     UserCreate,
     UserRead,
-    UserUpdate,
+    ProfileUpdate,
 )
 
 
@@ -108,14 +108,14 @@ def test_user_create_rejects_invalid_email(
         )
 
 
-def test_user_update_accepts_empty_payload():
-    payload = UserUpdate()
+def test_profile_update_accepts_empty_payload():
+    payload = ProfileUpdate()
 
     assert payload.model_dump(exclude_unset=True) == {}
 
 
-def test_user_update_accepts_displayname():
-    payload = UserUpdate(
+def test_profile_update_accepts_displayname():
+    payload = ProfileUpdate(
         displayname="Updated Reader",
     )
 
@@ -125,8 +125,8 @@ def test_user_update_accepts_displayname():
     }
 
 
-def test_user_update_accepts_username():
-    payload = UserUpdate(
+def test_profile_update_accepts_username():
+    payload = ProfileUpdate(
         username="updated-reader",
     )
 
@@ -136,52 +136,39 @@ def test_user_update_accepts_username():
     }
 
 
-def test_user_update_accepts_inherited_email_and_password_fields():
-    payload = UserUpdate(
-        email="updated@example.com",
-        password="new-password",
-    )
-
-    dumped = payload.model_dump(
-        exclude_unset=True
-    )
-
-    assert dumped["email"] == "updated@example.com"
-    assert dumped["password"] == "new-password"
-
-
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("username", "abc"),
+        ("username", "a" * 65),
         ("displayname", "abc"),
         ("displayname", "a" * 65),
     ],
 )
-def test_user_update_rejects_invalid_profile_field_lengths(
+def test_profile_update_rejects_invalid_profile_field_lengths(
     field,
     value,
 ):
     with pytest.raises(ValidationError):
-        UserUpdate(
-            **{
-                field: value,
-            }
-        )
+        ProfileUpdate(**{field: value})
 
 
-def test_user_update_allows_explicit_null_profile_fields():
-    payload = UserUpdate(
-        username=None,
-        displayname=None,
-    )
-
-    assert payload.model_dump(
-        exclude_unset=True
-    ) == {
-        "username": None,
-        "displayname": None,
-    }
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"username": None},
+        {"displayname": None},
+        {
+            "username": None,
+            "displayname": None,
+        },
+    ],
+)
+def test_profile_update_rejects_explicit_null_fields(
+    payload,
+):
+    with pytest.raises(ValidationError):
+        ProfileUpdate(**payload)
 
 
 def test_user_read_accepts_complete_payload():
@@ -322,4 +309,58 @@ def test_change_password_requires_both_fields():
     with pytest.raises(ValidationError):
         ChangePassword(
             new_password="new-password",
+        )
+
+def test_profile_update_accepts_profile_fields():
+    payload = ProfileUpdate(
+        username="updated_user",
+        displayname="Updated User",
+    )
+
+    assert payload.username == "updated_user"
+    assert payload.displayname == "Updated User"
+
+
+def test_profile_update_strips_whitespace():
+    payload = ProfileUpdate(
+        username="  updated_user  ",
+        displayname="  Updated User  ",
+    )
+
+    assert payload.username == "updated_user"
+    assert payload.displayname == "Updated User"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"email": "changed@example.com"},
+        {"password": "NewPassword123!"},
+        {"is_verified": True},
+        {"unknown": "value"},
+    ],
+)
+def test_profile_update_rejects_non_profile_fields(payload):
+    with pytest.raises(ValidationError):
+        ProfileUpdate(**payload)
+
+def test_user_create_strips_profile_field_whitespace():
+    payload = UserCreate(
+        email="reader@example.com",
+        password="password123",
+        username="  reader  ",
+        displayname="  Manga Reader  ",
+    )
+
+    assert payload.username == "reader"
+    assert payload.displayname == "Manga Reader"
+
+
+def test_user_create_rejects_username_over_maximum_length():
+    with pytest.raises(ValidationError):
+        UserCreate(
+            **{
+                **valid_user_create_data(),
+                "username": "a" * 65,
+            }
         )

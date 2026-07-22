@@ -9,7 +9,7 @@ import pytest
 from backend.routes import profile_routes
 from backend.schemas.user import (
     ChangePassword,
-    UserUpdate,
+    ProfileUpdate,
 )
 from backend.utils.domain_exceptions import (
     BadRequestError,
@@ -78,7 +78,7 @@ async def test_update_my_profile_returns_updated_profile(
     user,
 ):
     db = MagicMock()
-    payload = UserUpdate(
+    payload = ProfileUpdate(
         displayname="Updated Reader",
     )
 
@@ -121,7 +121,7 @@ async def test_update_my_profile_returns_current_user_when_no_changes(
     user,
 ):
     db = MagicMock()
-    payload = UserUpdate()
+    payload = ProfileUpdate()
 
     monkeypatch.setattr(
         profile_routes,
@@ -213,7 +213,7 @@ async def test_change_password_forwards_dependencies(
             "svc_update_my_profile",
             lambda user: {
                 "request": MagicMock(),
-                "payload": UserUpdate(
+                "payload": ProfileUpdate(
                     displayname="Updated"
                 ),
                 "db": MagicMock(),
@@ -284,7 +284,7 @@ async def test_profile_routes_reraise_domain_errors(
             "svc_update_my_profile",
             lambda user: {
                 "request": MagicMock(),
-                "payload": UserUpdate(
+                "payload": ProfileUpdate(
                     displayname="Updated"
                 ),
                 "db": MagicMock(),

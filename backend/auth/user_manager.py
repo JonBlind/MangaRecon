@@ -7,26 +7,19 @@ User manager and DB providers for FastAPI Users.
 '''
 
 import uuid
-from typing import AsyncGenerator, Optional
-from fastapi import Depends, Request
+from typing import AsyncGenerator
+from fastapi import Depends
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from fastapi_users import BaseUserManager, UUIDIDMixin
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models.user import User
-from backend.schemas.user import UserCreate
 from backend.dependencies import get_async_user_write_session
+from backend.auth.config import settings
 
 import logging
-from dotenv import load_dotenv
-import os
 
 logger = logging.getLogger(__name__)
-SECRET = os.getenv("AUTH_SECRET")
-
-if not SECRET:
-    raise RuntimeError("AUTH_SECRET could not be found in environment variable")
-
 
 async def get_user_db(session: AsyncSession = Depends(get_async_user_write_session)) -> AsyncGenerator:
     '''
@@ -57,8 +50,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
           and password hashing before delegating to the base implementation.
     '''
     user_db_model = User
-    reset_password_token_secret = SECRET
-    verification_token_secret = SECRET
+    reset_password_token_secret = settings.auth_secret
+    verification_token_secret = settings.auth_secret
     reset_password_token_lifetime_seconds = 7200      # 2 hours
     verification_token_lifetime_seconds = 259200   # 3 days
 
@@ -74,7 +67,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         Returns:
             None
         '''
-        logger.info(f"User {user.id} has registred.")
+        logger.info("User %s registered.", user.id)
     
     # What to do after a user "forgets password"
     async def on_after_forgot_password(self, user, token, request = None):
@@ -89,7 +82,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         Returns:
             None
         '''
-        logger.info(f"User {user.id} requested a password reset. Token: {token}")
+        logger.info("Password reset requested for user %s.", user.id)
 
     # What to do after a user requests or needs a verification email.
     async def on_after_request_verify(self, user, token, request = None):
@@ -104,39 +97,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         Returns:
             None
         '''
-        logger.info(f"Verification Email Sent for user {user.id}. Token: {token}")
-
-    async def update(self, user: User, update_dict: dict, safe: bool = False, request: Optional[Request] = None) -> User:
-        '''
-        Update user fields with custom handling for display name, email, and password.
-
-        - Logs a message when display name changes.
-        - Marks the user as unverified if email changes.
-        - Hashes plaintext `password` into `hashed_password` (and logs the event).
-
-        Args:
-            user (User): The user to update.
-            update_dict (dict): Fields to update (may include 'displayname', 'email', 'password').
-            safe (bool): If True, restricts updates to "safe" fields per FastAPI Users.
-            request (Request | None): Current request (if available).
-
-        Returns:
-            User: The updated user.
-        '''
-        
-        if "displayname" in update_dict:
-            logger.info(f"User {user.id} changed their displayname to: {update_dict['displayname']}")
-
-        if "email" in update_dict:
-            logger.info(f"User {user.id} is changing their eail to {update_dict['email']}")
-            user.is_verified = False
-
-        if "password" in update_dict:
-            raw_password = update_dict.pop("password")
-            update_dict["hashed_password"] = self.password_helper.hash(raw_password)
-            logger.info(f"User {user.id} updated their password.")
-        
-        return await super().update(user, update_dict, safe=safe, request=request)
+        logger.info("Email verification requested for user %s.", user.id)
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):

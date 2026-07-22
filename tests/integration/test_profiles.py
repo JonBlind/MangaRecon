@@ -22,21 +22,46 @@ def test_get_and_update_profile_persist_across_requests(client: TestClient) -> N
     assert reread["displayname"] == "Updated Display"
 
 
-def test_username_only_patch_currently_applies_no_change(client: TestClient) -> None:
+def test_username_update_persists_across_requests(client: TestClient) -> None:
     user = register_and_login(client, suffix="usernamepatch")
 
+    assert user.username != "new_username"
+
     body = assert_success(
-        client.patch("/profiles/me", json={"username": "new_username"})
+        client.patch(
+            "/profiles/me",
+            json={"username": "new_username"},
+        )
     )
-    assert body["message"] == "No changes applied"
-    assert body["data"]["username"] == user.username
+
+    assert body["message"] == "Profile updated successfully"
+    assert body["data"]["username"] == "new_username"
+
+    reread = assert_success(
+        client.get("/profiles/me")
+    )["data"]
+
+    assert reread["username"] == "new_username"
 
 
 def test_profile_rejects_email_change(client: TestClient) -> None:
     register_and_login(client, suffix="emailpatch")
 
     response = client.patch("/profiles/me", json={"email": "changed@example.com"})
-    assert_error(response, status_code=403, detail="PROFILE_FIELD_FORBIDDEN")
+
+    assert response.status_code == 422
+
+    body = response.json()
+
+    assert body["status"] == "error"
+    assert body["data"] == {}
+    assert body["message"] == "Validation error"
+
+    assert any(
+        error.get("type") == "extra_forbidden"
+        and error.get("loc") == ["body", "email"]
+        for error in body["detail"]
+    )
 
 
 def test_change_password_invalidates_old_password_and_accepts_new_one(client: TestClient) -> None:
@@ -84,3 +109,25 @@ def test_change_password_rejects_wrong_current_password(client: TestClient) -> N
         },
     )
     assert_error(response, status_code=400, detail="CURRENT_PASSWORD_INCORRECT")
+
+def test_profile_rejects_password_change(client: TestClient) -> None:
+    register_and_login(client, suffix="passwordpatch")
+
+    response = client.patch(
+        "/profiles/me",
+        json={"password": "AnotherValidPass123!"},
+    )
+
+    assert response.status_code == 422
+
+    body = response.json()
+
+    assert body["status"] == "error"
+    assert body["data"] == {}
+    assert body["message"] == "Validation error"
+
+    assert any(
+        error.get("type") == "extra_forbidden"
+        and error.get("loc") == ["body", "password"]
+        for error in body["detail"]
+    )

@@ -3,7 +3,7 @@ from backend.db.client_db import ClientWriteDatabase, ClientReadDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_user as current_user
-from backend.schemas.user import UserRead, UserUpdate, ChangePassword
+from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword
 from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success
 from backend.utils.rate_limit import limiter
@@ -55,7 +55,7 @@ async def get_my_profile(
 @limiter.limit("10/minute")
 async def update_my_profile(
     request: Request,
-    payload: UserUpdate,
+    payload: ProfileUpdate,
     db: ClientWriteDatabase = Depends(get_user_write_db),
     user: User = Depends(current_user),
 ):
@@ -64,7 +64,7 @@ async def update_my_profile(
 
     Args:
         request (Request): FastAPI request (required by rate limiting).
-        payload (UserUpdate): Patch payload for profile updates.
+        payload (ProfileUpdate): Patch payload for profile updates.
         db (ClientDatabase): User-domain database client.
         user (User): Currently authenticated, active, verified user.
 

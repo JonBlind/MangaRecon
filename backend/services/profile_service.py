@@ -5,7 +5,7 @@ from pwdlib.exceptions import UnknownHashError
 from backend.auth.user_manager import UserManager
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.repositories.profile_repo import fetch_user_by_id
-from backend.schemas.user import UserRead, UserUpdate, ChangePassword
+from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword
 from backend.utils.domain_exceptions import BadRequestError, NotFoundError, ForbiddenError
 
 async def get_my_profile(*, user_id, user_db: ClientReadDatabase) -> UserRead:
@@ -19,32 +19,42 @@ async def get_my_profile(*, user_id, user_db: ClientReadDatabase) -> UserRead:
     return UserRead.model_validate(me)
 
 
-async def update_my_profile(*, user_id, payload: UserUpdate, user_db: ClientWriteDatabase) -> UserRead | None:
+async def update_my_profile(
+    *,
+    user_id,
+    payload: ProfileUpdate,
+    user_db: ClientWriteDatabase,
+) -> UserRead | None:
     """
-    Update the authenticated user's profile fields.
-    Only displayname is supported here.
+    Update the authenticated user's editable profile fields.
+
     Returns:
-        UserRead if updated, None if no changes applied.
+        UserRead if at least one field was updated.
+        None if no supported changes were supplied.
     """
-    me = await fetch_user_by_id(user_db, user_id=user_id)
-    if not me:
+    user = await fetch_user_by_id(user_db, user_id=user_id)
+
+    if user is None:
         raise NotFoundError(code="PROFILE_NOT_FOUND", message="Profile not found.")
 
-    incoming = payload.model_dump(exclude_unset=True)
+    updates = payload.model_dump(exclude_unset=True)
 
-    # Reject unsupported fields (email/password changes handled in the future)
-    if any(k in incoming for k in ("email", "password")):
-        raise ForbiddenError(code="PROFILE_FIELD_FORBIDDEN", message="Not allowed.")
+    changed = False
 
-    if "displayname" not in incoming:
+    for field, value in updates.items():
+        if getattr(user, field) == value:
+            continue
+
+        setattr(user, field, value)
+        changed = True
+
+    if not changed:
         return None
 
-    setattr(me, "displayname", incoming["displayname"])
-
     await user_db.commit()
-    await user_db.refresh(me)
+    await user_db.refresh(user)
 
-    return UserRead.model_validate(me)
+    return UserRead.model_validate(user)
 
 
 async def change_my_password(

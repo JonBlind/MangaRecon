@@ -6,11 +6,10 @@ import pytest
 from pwdlib.exceptions import UnknownHashError
 
 from backend.db.models.user import User
-from backend.schemas.user import ChangePassword, UserUpdate
+from backend.schemas.user import ChangePassword, ProfileUpdate
 from backend.services import profile_service
 from backend.utils.domain_exceptions import (
     BadRequestError,
-    ForbiddenError,
     NotFoundError,
 )
 
@@ -32,7 +31,12 @@ def make_user(
         is_active=True,
         is_superuser=False,
         is_verified=False,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(
+            2026,
+            1,
+            1,
+            tzinfo=timezone.utc,
+        ),
         last_login=None,
     )
 
@@ -45,7 +49,9 @@ def make_write_db():
 
 
 @pytest.mark.asyncio
-async def test_get_my_profile_returns_validated_user(monkeypatch):
+async def test_get_my_profile_returns_validated_user(
+    monkeypatch,
+):
     user = make_user()
 
     fetch_user = AsyncMock(return_value=user)
@@ -74,8 +80,11 @@ async def test_get_my_profile_returns_validated_user(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_my_profile_raises_when_profile_missing(monkeypatch):
+async def test_get_my_profile_raises_when_profile_missing(
+    monkeypatch,
+):
     fetch_user = AsyncMock(return_value=None)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -96,11 +105,14 @@ async def test_get_my_profile_raises_when_profile_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_my_profile_updates_displayname(monkeypatch):
+async def test_update_my_profile_updates_displayname(
+    monkeypatch,
+):
     user = make_user(displayname="Old Name")
     db = make_write_db()
 
     fetch_user = AsyncMock(return_value=user)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -109,7 +121,9 @@ async def test_update_my_profile_updates_displayname(monkeypatch):
 
     result = await profile_service.update_my_profile(
         user_id=user.id,
-        payload=UserUpdate(displayname="Updated Name"),
+        payload=ProfileUpdate(
+            displayname="Updated Name",
+        ),
         user_db=db,
     )
 
@@ -117,8 +131,142 @@ async def test_update_my_profile_updates_displayname(monkeypatch):
     assert result is not None
     assert result.displayname == "Updated Name"
 
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=user.id,
+    )
     db.commit.assert_awaited_once()
     db.refresh.assert_awaited_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_updates_username(
+    monkeypatch,
+):
+    user = make_user(username="testuser")
+    db = make_write_db()
+
+    fetch_user = AsyncMock(return_value=user)
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        fetch_user,
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="newusername",
+        ),
+        user_db=db,
+    )
+
+    assert user.username == "newusername"
+    assert result is not None
+    assert result.username == "newusername"
+
+    fetch_user.assert_awaited_once_with(
+        db,
+        user_id=user.id,
+    )
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_updates_both_fields(
+    monkeypatch,
+):
+    user = make_user(
+        username="testuser",
+        displayname="Test User",
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="newusername",
+            displayname="Updated Name",
+        ),
+        user_db=db,
+    )
+
+    assert user.username == "newusername"
+    assert user.displayname == "Updated Name"
+
+    assert result is not None
+    assert result.username == "newusername"
+    assert result.displayname == "Updated Name"
+
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_returns_none_for_empty_payload(
+    monkeypatch,
+):
+    user = make_user()
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(),
+        user_db=db,
+    )
+
+    assert result is None
+
+    assert user.username == "testuser"
+    assert user.displayname == "Test User"
+
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_returns_none_when_values_unchanged(
+    monkeypatch,
+):
+    user = make_user(
+        username="testuser",
+        displayname="Test User",
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="testuser",
+            displayname="Test User",
+        ),
+        user_db=db,
+    )
+
+    assert result is None
+
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -126,6 +274,7 @@ async def test_update_my_profile_raises_when_profile_missing(
     monkeypatch,
 ):
     fetch_user = AsyncMock(return_value=None)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -137,95 +286,29 @@ async def test_update_my_profile_raises_when_profile_missing(
     with pytest.raises(NotFoundError) as exc_info:
         await profile_service.update_my_profile(
             user_id=uuid.uuid4(),
-            payload=UserUpdate(displayname="Updated Name"),
-            user_db=db,
-        )
-
-    assert exc_info.value.code == "PROFILE_NOT_FOUND"
-    db.commit.assert_not_awaited()
-    db.refresh.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_update_my_profile_rejects_email_change(monkeypatch):
-    user = make_user()
-    db = make_write_db()
-
-    monkeypatch.setattr(
-        profile_service,
-        "fetch_user_by_id",
-        AsyncMock(return_value=user),
-    )
-
-    with pytest.raises(ForbiddenError) as exc_info:
-        await profile_service.update_my_profile(
-            user_id=user.id,
-            payload=UserUpdate(email="new@example.com"),
+            payload=ProfileUpdate(
+                displayname="Updated Name",
+            ),
             user_db=db,
         )
 
     error = exc_info.value
 
-    assert error.status_code == 403
-    assert error.code == "PROFILE_FIELD_FORBIDDEN"
-    assert error.message == "Not allowed."
+    assert error.status_code == 404
+    assert error.code == "PROFILE_NOT_FOUND"
+    assert error.message == "Profile not found."
 
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_update_my_profile_rejects_password_change(monkeypatch):
-    user = make_user()
-    db = make_write_db()
-
-    monkeypatch.setattr(
-        profile_service,
-        "fetch_user_by_id",
-        AsyncMock(return_value=user),
-    )
-
-    with pytest.raises(ForbiddenError) as exc_info:
-        await profile_service.update_my_profile(
-            user_id=user.id,
-            payload=UserUpdate(password="new-password"),
-            user_db=db,
-        )
-
-    assert exc_info.value.code == "PROFILE_FIELD_FORBIDDEN"
-    db.commit.assert_not_awaited()
-    db.refresh.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_update_my_profile_returns_none_without_displayname(
+async def test_change_password_updates_hash_and_commits(
     monkeypatch,
 ):
-    user = make_user()
-    db = make_write_db()
-
-    monkeypatch.setattr(
-        profile_service,
-        "fetch_user_by_id",
-        AsyncMock(return_value=user),
+    authenticated_user = make_user(
+        hashed_password="detached-old-hash",
     )
-
-    result = await profile_service.update_my_profile(
-        user_id=user.id,
-        payload=UserUpdate(username="newusername"),
-        user_db=db,
-    )
-
-    assert result is None
-    assert user.username == "testuser"
-
-    db.commit.assert_not_awaited()
-    db.refresh.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_change_password_updates_hash_and_commits(monkeypatch):
-    authenticated_user = make_user(hashed_password="detached-old-hash")
     db_user = make_user(
         user_id=authenticated_user.id,
         hashed_password="old-hash",
@@ -233,6 +316,7 @@ async def test_change_password_updates_hash_and_commits(monkeypatch):
     db = make_write_db()
 
     fetch_user = AsyncMock(return_value=db_user)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -270,10 +354,15 @@ async def test_change_password_updates_hash_and_commits(monkeypatch):
         "old-password",
         "old-hash",
     )
-    password_helper.hash.assert_called_once_with("new-password")
+    password_helper.hash.assert_called_once_with(
+        "new-password"
+    )
 
     assert db_user.hashed_password == "new-hash"
-    assert authenticated_user.hashed_password == "detached-old-hash"
+    assert (
+        authenticated_user.hashed_password
+        == "detached-old-hash"
+    )
     assert result.id == authenticated_user.id
 
     db.commit.assert_awaited_once()
@@ -292,6 +381,7 @@ async def test_change_password_rejects_unverified_password(
     db = make_write_db()
 
     fetch_user = AsyncMock(return_value=db_user)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -322,7 +412,9 @@ async def test_change_password_rejects_unverified_password(
 
     assert error.status_code == 400
     assert error.code == "CURRENT_PASSWORD_INCORRECT"
-    assert error.message == "Current password is incorrect."
+    assert error.message == (
+        "Current password is incorrect."
+    )
 
     fetch_user.assert_awaited_once_with(
         db,
@@ -351,6 +443,7 @@ async def test_change_password_converts_unknown_hash_error(
     db = make_write_db()
 
     fetch_user = AsyncMock(return_value=db_user)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",
@@ -358,8 +451,8 @@ async def test_change_password_converts_unknown_hash_error(
     )
 
     password_helper = MagicMock()
-    password_helper.verify_and_update.side_effect = UnknownHashError(
-        db_user.hashed_password
+    password_helper.verify_and_update.side_effect = (
+        UnknownHashError(db_user.hashed_password)
     )
 
     user_manager = MagicMock()
@@ -380,7 +473,9 @@ async def test_change_password_converts_unknown_hash_error(
 
     assert error.status_code == 400
     assert error.code == "CURRENT_PASSWORD_INCORRECT"
-    assert error.message == "Current password is incorrect."
+    assert error.message == (
+        "Current password is incorrect."
+    )
 
     fetch_user.assert_awaited_once_with(
         db,
@@ -405,6 +500,7 @@ async def test_change_password_raises_when_profile_missing(
     db = make_write_db()
 
     fetch_user = AsyncMock(return_value=None)
+
     monkeypatch.setattr(
         profile_service,
         "fetch_user_by_id",

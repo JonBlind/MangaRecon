@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, Annotated
 
 from fastapi_users import schemas
-from pydantic import EmailStr, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, ConfigDict, field_validator, ValidationInfo
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -24,20 +24,28 @@ class UserCreate(schemas.BaseUserCreate):
     '''
     # password included w/ BaseUserCreate
     password: Annotated[str, StringConstraints(min_length=8)]
-    username: Annotated[str, StringConstraints(min_length=4)]
-    displayname: Annotated[str, StringConstraints(min_length=4, max_length=64)]
+    username: Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]
+    displayname: Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]
 
 
-class UserUpdate(schemas.BaseUserUpdate):
+class ProfileUpdate(BaseModel):
     '''
-    Partial update for user profile fields. Only provided fields are modified.
+    Change profile information request for users who wish to change one of the following:
+    - Username
+    - Displayname
     '''
-    # email + password ARE OPTIONAL and included w/ BaseUserCreate
-    displayname: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64)]] = None
-    username: Optional[Annotated[str, StringConstraints(min_length=4)]] = None
+    model_config = ConfigDict(extra="forbid")
+    username: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]] = None
+    displayname: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]] = None
 
+    @field_validator("username", "displayname")
+    @classmethod
+    def reject_explicit_null(cls, value: str | None, info: ValidationInfo) -> str:
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
 
-class ChangePassword(schemas.BaseModel):
+class ChangePassword(BaseModel):
     '''
     Change-password request for users who know their current password.
     Provides the current password and the desired new password.
