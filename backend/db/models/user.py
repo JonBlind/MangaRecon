@@ -24,8 +24,10 @@ class User(Base):
     email = Column(String, nullable=False, unique=True)
     hashed_password = Column(String(255), nullable=False)
 
-    username = Column(String, unique=True, nullable=False)
+    username = Column(String(64), unique=True, nullable=False)
     displayname = Column(String(64), nullable=False)
+
+    username_changed_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     is_active = Column(Boolean, nullable=False, default=True)
     is_superuser = Column(Boolean, nullable=False, default=False)

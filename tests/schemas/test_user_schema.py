@@ -364,3 +364,42 @@ def test_user_create_rejects_username_over_maximum_length():
                 "username": "a" * 65,
             }
         )
+
+def test_user_read_accepts_username_changed_at():
+    changed_at = datetime(
+        2026,
+        7,
+        1,
+        12,
+        30,
+        tzinfo=timezone.utc,
+    )
+
+    user = UserRead(
+        id=uuid.uuid4(),
+        email="reader@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        username="reader",
+        displayname="Manga Reader",
+        created_at=datetime.now(timezone.utc),
+        last_login=None,
+        username_changed_at=changed_at,
+    )
+
+    assert user.username_changed_at == changed_at
+
+def test_user_read_allows_missing_username_changed_at():
+    user = UserRead(
+        id=uuid.uuid4(),
+        email="reader@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        username="reader",
+        displayname="Manga Reader",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    assert user.username_changed_at is None

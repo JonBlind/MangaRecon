@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock
 import uuid
 
 import pytest
 from pwdlib.exceptions import UnknownHashError
+from sqlalchemy.exc import IntegrityError
 
 from backend.db.models.user import User
 from backend.schemas.user import ChangePassword, ProfileUpdate
@@ -11,6 +12,7 @@ from backend.services import profile_service
 from backend.utils.domain_exceptions import (
     BadRequestError,
     NotFoundError,
+    ConflictError
 )
 
 
@@ -21,6 +23,7 @@ def make_user(
     username="testuser",
     displayname="Test User",
     hashed_password="old-hash",
+    username_changed_at=None,
 ):
     return User(
         id=user_id or uuid.uuid4(),
@@ -28,6 +31,7 @@ def make_user(
         username=username,
         displayname=displayname,
         hashed_password=hashed_password,
+        username_changed_at=username_changed_at,
         is_active=True,
         is_superuser=False,
         is_verified=False,
@@ -44,9 +48,9 @@ def make_user(
 def make_write_db():
     db = MagicMock()
     db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     return db
-
 
 @pytest.mark.asyncio
 async def test_get_my_profile_returns_validated_user(
@@ -532,4 +536,402 @@ async def test_change_password_raises_when_profile_missing(
     )
 
     db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_update_my_profile_converts_duplicate_username_to_conflict(
+    monkeypatch,
+):
+    user = make_user(username="originaluser")
+    db = make_write_db()
+
+    db.commit.side_effect = IntegrityError(
+        "UPDATE user",
+        {},
+        Exception("duplicate username"),
+    )
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await profile_service.update_my_profile(
+            user_id=user.id,
+            payload=ProfileUpdate(
+                username="existinguser",
+            ),
+            user_db=db,
+        )
+
+    error = exc_info.value
+
+    assert error.status_code == 409
+    assert error.code == "USERNAME_TAKEN"
+    assert error.message == "That username is already in use."
+
+    db.commit.assert_awaited_once()
+    db.rollback.assert_awaited_once()
+    db.refresh.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_first_username_change_sets_change_timestamp(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+
+    user = make_user(
+        username="originaluser",
+        username_changed_at=None,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="updateduser",
+        ),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.username == "updateduser"
+    assert result.username_changed_at == now
+
+    assert user.username == "updateduser"
+    assert user.username_changed_at == now
+
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+    db.rollback.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_username_change_rejected_during_cooldown(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+    last_changed_at = now - timedelta(days=10)
+    next_change_at = (
+        last_changed_at
+        + profile_service.USERNAME_CHANGE_COOLDOWN
+    )
+
+    user = make_user(
+        username="currentuser",
+        username_changed_at=last_changed_at,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await profile_service.update_my_profile(
+            user_id=user.id,
+            payload=ProfileUpdate(
+                username="anotheruser",
+            ),
+            user_db=db,
+        )
+
+    error = exc_info.value
+
+    assert error.status_code == 409
+    assert error.code == "USERNAME_CHANGE_COOLDOWN"
+    assert error.message == (
+        "Username can only be changed once every 30 days."
+    )
+    assert error.detail == {
+        "next_change_at": next_change_at.isoformat(),
+    }
+
+    assert user.username == "currentuser"
+    assert user.username_changed_at == last_changed_at
+
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+    db.rollback.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_username_change_allowed_at_exact_cooldown_boundary(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+    last_changed_at = (
+        now - profile_service.USERNAME_CHANGE_COOLDOWN
+    )
+
+    user = make_user(
+        username="currentuser",
+        username_changed_at=last_changed_at,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="availableuser",
+        ),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.username == "availableuser"
+    assert result.username_changed_at == now
+
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+@pytest.mark.asyncio
+async def test_displayname_change_allowed_during_username_cooldown(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+    last_changed_at = now - timedelta(days=2)
+
+    user = make_user(
+        displayname="Original Name",
+        username_changed_at=last_changed_at,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            displayname="Updated Name",
+        ),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.displayname == "Updated Name"
+
+    assert user.username_changed_at == last_changed_at
+    assert result.username_changed_at == last_changed_at
+
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+@pytest.mark.asyncio
+async def test_unchanged_username_does_not_trigger_cooldown(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+    last_changed_at = now - timedelta(days=2)
+
+    user = make_user(
+        username="sameusername",
+        displayname="Old Name",
+        username_changed_at=last_changed_at,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            username="sameusername",
+            displayname="New Name",
+        ),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.username == "sameusername"
+    assert result.displayname == "New Name"
+    assert result.username_changed_at == last_changed_at
+
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+@pytest.mark.asyncio
+async def test_cooldown_rejects_entire_mixed_profile_update(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+    last_changed_at = now - timedelta(days=5)
+
+    user = make_user(
+        username="currentuser",
+        displayname="Current Display",
+        username_changed_at=last_changed_at,
+    )
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await profile_service.update_my_profile(
+            user_id=user.id,
+            payload=ProfileUpdate(
+                username="blockeduser",
+                displayname="Blocked Display",
+            ),
+            user_db=db,
+        )
+
+    assert (
+        exc_info.value.code
+        == "USERNAME_CHANGE_COOLDOWN"
+    )
+
+    assert user.username == "currentuser"
+    assert user.displayname == "Current Display"
+    assert user.username_changed_at == last_changed_at
+
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_duplicate_username_rolls_back_and_returns_conflict(
+    monkeypatch,
+):
+    now = datetime(
+        2026,
+        7,
+        24,
+        12,
+        tzinfo=timezone.utc,
+    )
+
+    user = make_user(
+        username="currentuser",
+        username_changed_at=None,
+    )
+    db = make_write_db()
+
+    db.commit.side_effect = IntegrityError(
+        "UPDATE user",
+        {},
+        Exception("duplicate username"),
+    )
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+    monkeypatch.setattr(
+        profile_service,
+        "utc_now",
+        lambda: now,
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await profile_service.update_my_profile(
+            user_id=user.id,
+            payload=ProfileUpdate(
+                username="existinguser",
+            ),
+            user_db=db,
+        )
+
+    error = exc_info.value
+
+    assert error.status_code == 409
+    assert error.code == "USERNAME_TAKEN"
+    assert error.message == (
+        "That username is already in use."
+    )
+
+    db.commit.assert_awaited_once()
+    db.rollback.assert_awaited_once()
     db.refresh.assert_not_awaited()

@@ -15,6 +15,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     displayname: str
     created_at: datetime
     last_login: Optional[datetime] = None
+    username_changed_at: Optional[datetime] = None
 
 
 class UserCreate(schemas.BaseUserCreate):

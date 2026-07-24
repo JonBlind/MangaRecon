@@ -6,7 +6,6 @@ Routes:
 - /auth/register   : Account registration.
 - /auth/verify/*   : Email verification flows.
 - /auth/reset/*    : Password reset flows.
-- /users/*         : User CRUD (admin/self as configured).
 '''
 
 from fastapi import APIRouter

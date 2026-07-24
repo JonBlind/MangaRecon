@@ -7,6 +7,7 @@ export type UserMe = {
 
   username: string;
   displayname: string;
+  username_changed_at: string | null;
 
   created_at: string;
   last_login?: string | null;

@@ -3,7 +3,6 @@ User manager and DB providers for FastAPI Users.
 
 - Provides a DB generator bound to our async SQLAlchemy session.
 - Implements user lifecycle hooks (register, forgot-password, verify).
-- Customizes update behavior for display name, email, and password.
 '''
 
 import uuid
@@ -46,8 +45,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     Notes:
         - Hooks log significant user events.
-        - `update` is extended to handle display name, email re-verification,
-          and password hashing before delegating to the base implementation.
     '''
     user_db_model = User
     reset_password_token_secret = settings.auth_secret

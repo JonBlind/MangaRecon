@@ -12,7 +12,7 @@ if _ENV == "test":
     load_dotenv(".env.test", override=True)
 else:
     # load prod env url instead.
-    load_dotenv(override=False)
+    load_dotenv(".env", override=False)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -28,11 +28,11 @@ database_url_sync = os.getenv("DATABASE_URL_SYNC")
 if database_url_sync:
     config.set_main_option("sqlalchemy.url", database_url_sync)
 
-if _ENV == "test":
-    if not database_url_sync:
-        raise RuntimeError("MANGARECON_ENV=test but DATABASE_URL_SYNC is not set (check .env.test)")
-    if "test" not in database_url_sync.lower():
-        raise RuntimeError("Refusing to run test migrations against a non-test DATABASE_URL_SYNC")
+if not database_url_sync:
+    env_file = ".env.test" if _ENV == "test" else ".env"
+    raise RuntimeError(f"DATABASE_URL_SYNC is not set. Check {env_file}.")
+
+config.set_main_option("sqlalchemy.url", database_url_sync.replace("%", "%%"))
 
 # add your model's MetaData object here
 # for 'autogenerate' support
