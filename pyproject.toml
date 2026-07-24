@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mangarecon"
+version = "0.1.0"
+description = "A full-stack manga recommendation application."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+
+    "sqlalchemy",
+    "asyncpg",
+    "alembic",
+    "psycopg[binary]",
+
+    "redis",
+    "slowapi",
+
+    "fastapi-users",
+    "fastapi-users-db-sqlalchemy",
+    "pwdlib[argon2]",
+
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "email-validator",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "httpx2",
+    "asgi-lifespan",
+]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
