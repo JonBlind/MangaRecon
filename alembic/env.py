@@ -4,7 +4,7 @@ from sqlalchemy import engine_from_config, pool
 from logging.config import fileConfig
 from alembic import context
 from backend.db.models.base import Base
-from backend.db.models import user, rating, manga, collection, genre, demographics, author, join_tables, manga_collection, tag  
+import backend.db.models
 
 _ENV = os.getenv("MANGARECON_ENV", "").lower().strip()
 

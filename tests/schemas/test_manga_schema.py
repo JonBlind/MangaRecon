@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.schemas.manga import (
+    CreatorCreditRead,
     DemographicRead,
     GenreRead,
     MangaListItem,
@@ -90,7 +91,13 @@ def test_manga_read_accepts_complete_payload():
         published_date=date(1989, 8, 25),
         external_average_rating=9.4,
         average_rating=9.0,
-        author_id=1,
+        creator_credits=[
+            {
+                "creator_id": 1,
+                "creator_name": "Kentaro Miura",
+                "role": "author",
+            }
+        ],
         genres=[
             {
                 "genre_id": 1,
@@ -117,10 +124,17 @@ def test_manga_read_accepts_complete_payload():
     assert manga.published_date == date(1989, 8, 25)
     assert manga.external_average_rating == 9.4
     assert manga.average_rating == 9.0
-    assert manga.author_id == 1
     assert manga.cover_image_url == (
         "https://example.com/cover.jpg"
     )
+
+    assert manga.creator_credits == [
+        CreatorCreditRead(
+            creator_id=1,
+            creator_name="Kentaro Miura",
+            role="author",
+        )
+    ]
 
     assert manga.genres == [
         GenreRead(
@@ -152,7 +166,6 @@ def test_manga_read_accepts_optional_null_fields():
         published_date=None,
         external_average_rating=None,
         average_rating=None,
-        author_id=None,
         cover_image_url=None,
     )
 
@@ -160,25 +173,12 @@ def test_manga_read_accepts_optional_null_fields():
     assert manga.published_date is None
     assert manga.external_average_rating is None
     assert manga.average_rating is None
-    assert manga.author_id is None
     assert manga.cover_image_url is None
 
+    assert manga.creator_credits == []
     assert manga.genres == []
     assert manga.tags == []
     assert manga.demographics == []
-
-
-def test_manga_read_requires_author_id_even_though_it_may_be_none():
-    with pytest.raises(ValidationError) as exc_info:
-        MangaRead(
-            manga_id=10,
-            title="Berserk",
-        )
-
-    assert any(
-        error["loc"] == ("author_id",)
-        for error in exc_info.value.errors()
-    )
 
 
 def test_manga_read_supports_from_attributes():
@@ -189,7 +189,13 @@ def test_manga_read_supports_from_attributes():
         published_date=date(1994, 12, 5),
         external_average_rating=9.0,
         average_rating=8.8,
-        author_id=5,
+        creator_credits=[
+            SimpleNamespace(
+                creator_id=5,
+                creator_name="Naoki Urasawa",
+                role="author",
+            )
+        ],
         genres=[
             SimpleNamespace(
                 genre_id=1,
@@ -217,6 +223,11 @@ def test_manga_read_supports_from_attributes():
 
     assert manga.manga_id == 10
     assert manga.title == "Monster"
+    assert (
+        manga.creator_credits[0].creator_name
+        == "Naoki Urasawa"
+    )
+    assert manga.creator_credits[0].role == "author"
     assert manga.genres[0].genre_name == "Mystery"
     assert manga.tags[0].tag_name == "Psychological"
     assert (
@@ -229,12 +240,10 @@ def test_manga_read_default_lists_are_not_shared():
     first = MangaRead(
         manga_id=1,
         title="One",
-        author_id=None,
     )
     second = MangaRead(
         manga_id=2,
         title="Two",
-        author_id=None,
     )
 
     first.genres.append(

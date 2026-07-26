@@ -5,10 +5,7 @@ All foreign keys are `ON DELETE CASCADE` so links are removed when a parent row
 is deleted.
 '''
 
-from sqlalchemy import (Column, Table, Integer, String, Text, Boolean, ForeignKey,
-    DateTime, Numeric, UniqueConstraint, Date, TIMESTAMP, func)
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, ForeignKey, Integer, Table
 from backend.db.models.base import Base
 
 # M:N link between manga and genres.
@@ -33,12 +30,4 @@ manga_demographic = Table(
     Base.metadata,
     Column("manga_id", Integer, ForeignKey("manga.manga_id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column("demographic_id", Integer, ForeignKey("demographic.demographic_id", ondelete="CASCADE"), primary_key=True, nullable=False),
-)
-
-# M:N link between manga and author.
-manga_author = Table(
-    "manga_author",
-    Base.metadata,
-    Column("manga_id", Integer, ForeignKey("manga.manga_id", ondelete="CASCADE"), primary_key=True, nullable=False),
-    Column("author_id", Integer, ForeignKey("author.author_id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )

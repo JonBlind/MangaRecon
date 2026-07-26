@@ -5,6 +5,7 @@ from typing import List, Optional
 from backend.db.client_db import ClientReadDatabase
 from backend.repositories.manga_repo import (
     fetch_manga_core_by_id,
+    fetch_manga_creator_credits,
     fetch_manga_genres,
     fetch_manga_tags,
     fetch_manga_demographics,
@@ -13,7 +14,7 @@ from backend.repositories.manga_repo import (
     fetch_filtered_manga_page,
     fetch_genres_for_manga_ids,
 )
-from backend.schemas.manga import MangaRead, GenreRead, TagRead, DemographicRead, MangaListItem
+from backend.schemas.manga import MangaRead, CreatorCreditRead, GenreRead, TagRead, DemographicRead, MangaListItem
 from backend.utils.ordering import MangaOrderField, OrderDirection
 from backend.utils.domain_exceptions import NotFoundError
 
@@ -21,6 +22,12 @@ async def get_manga_detail(*, manga_id: int, db: ClientReadDatabase) -> MangaRea
     row = await fetch_manga_core_by_id(db, manga_id=manga_id)
     if not row:
         raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
+
+    creator_rows = await fetch_manga_creator_credits(db, manga_id=manga_id)
+    creator_credits = [
+        CreatorCreditRead(creator_id=int(credit.creator_id), creator_name=credit.creator_name, role=credit.role)
+        for credit in creator_rows
+    ]
 
     genres = [GenreRead.model_validate(g) for g in await fetch_manga_genres(db, manga_id=manga_id)]
     tags = [TagRead.model_validate(t) for t in await fetch_manga_tags(db, manga_id=manga_id)]
@@ -33,7 +40,7 @@ async def get_manga_detail(*, manga_id: int, db: ClientReadDatabase) -> MangaRea
         published_date=row.published_date,
         external_average_rating=row.external_average_rating,
         average_rating=row.average_rating,
-        author_id=row.author_id,
+        creator_credits=creator_credits,
         genres=genres,
         tags=tags,
         demographics=demographics,

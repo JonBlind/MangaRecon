@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from .helpers import (
     assert_error,
@@ -31,6 +33,76 @@ def test_public_query_list_recommendations_exclude_seed_and_rank_similar_candida
     ids = [item["manga_id"] for item in data["items"]]
     assert catalog.seed_manga_id not in ids
     assert catalog.similar_manga_id in ids
+    similar = next(
+        item
+        for item in data["items"]
+        if item["manga_id"] == catalog.similar_manga_id
+    )
+    assert similar["details"]["creator_score"] == 3
+
+
+def test_public_recommendations_include_creator_only_candidate(
+    client: TestClient,
+    manga_write_engine: Engine,
+) -> None:
+    catalog = seed_catalog(manga_write_engine)
+    creator_only_manga_id = 104
+
+    with manga_write_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga (
+                    manga_id,
+                    title,
+                    description,
+                    published_date,
+                    external_average_rating,
+                    average_rating,
+                    cover_image_url
+                )
+                VALUES (
+                    :manga_id,
+                    'Same Creator, Different Metadata',
+                    'Shares only a creator with the seed manga.',
+                    :published_date,
+                    8.2,
+                    NULL,
+                    NULL
+                )
+                """
+            ),
+            {
+                "manga_id": creator_only_manga_id,
+                "published_date": date(2020, 6, 1),
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga_creator (manga_id, creator_id, role)
+                VALUES (:manga_id, 1, 'author')
+                """
+            ),
+            {"manga_id": creator_only_manga_id},
+        )
+
+    data = assert_success(
+        client.post(
+            "/recommendations/query-list",
+            json={"manga_ids": [catalog.seed_manga_id]},
+        )
+    )["data"]
+
+    creator_only = next(
+        item
+        for item in data["items"]
+        if item["manga_id"] == creator_only_manga_id
+    )
+    assert creator_only["details"]["creator_score"] == 3
+    assert creator_only["details"]["genre_score"] == 0
+    assert creator_only["details"]["tag_score"] == 0
+    assert creator_only["details"]["demo_score"] == 0
 
 
 def test_public_query_list_recommendations_deduplicate_seeds(

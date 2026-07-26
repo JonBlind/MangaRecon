@@ -81,6 +81,38 @@ async def test_fetch_manga_core_by_id_returns_none():
 
 
 @pytest.mark.asyncio
+async def test_fetch_manga_creator_credits_returns_rows():
+    db = MagicMock()
+
+    creator_credits = [
+        SimpleNamespace(
+            creator_id=1,
+            creator_name="Primary Creator",
+            role="author",
+        ),
+        SimpleNamespace(
+            creator_id=2,
+            creator_name="Artist",
+            role="artist",
+        ),
+    ]
+
+    db.execute = AsyncMock(
+        return_value=FakeResult(
+            rows=creator_credits,
+        )
+    )
+
+    result = await manga_repo.fetch_manga_creator_credits(
+        db,
+        manga_id=4,
+    )
+
+    assert result == creator_credits
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_fetch_manga_genres_returns_scalar_rows():
     db = MagicMock()
 

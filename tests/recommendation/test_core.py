@@ -108,7 +108,7 @@ async def test_metadata_profile_collects_all_metadata():
         FakeResult(rows=[(10,), (20,), (10,)]),
         # Demographics
         FakeResult(rows=[(100,), (100,), (200,)]),
-        # Authors
+        # creators
         FakeResult(rows=[(500,), (600,), (500,)]),
         # External ratings
         FakeResult(rows=[(8.5,), (None,), (7.5,)]),
@@ -129,8 +129,9 @@ async def test_metadata_profile_collects_all_metadata():
 
     assert profile["genres"] == Counter({1: 2, 2: 1})
     assert profile["tags"] == Counter({10: 2, 20: 1})
+    assert profile["creators"] == {500, 600}
     assert profile["demographics"] == Counter({100: 2, 200: 1})
-    assert profile["authors"] == {500, 600}
+    assert profile["creators"] == {500, 600}
     assert profile["external_ratings"] == [8.5, 7.5]
     assert profile["years"] == [2001, 2005]
     assert db.execute.await_count == 6
@@ -150,7 +151,7 @@ async def test_metadata_profile_returns_empty_profile_on_database_error():
         "genres": Counter(),
         "tags": Counter(),
         "demographics": Counter(),
-        "authors": set(),
+        "creators": set(),
         "external_ratings": [],
         "years": [],
     }
@@ -164,7 +165,6 @@ async def test_get_candidate_manga_returns_mapping_rows():
         {
             "manga_id": 10,
             "title": "Candidate One",
-            "author_id": 100,
             "description": "Description one",
             "published_date": date(2020, 1, 1),
             "external_average_rating": 8.4,
@@ -174,7 +174,6 @@ async def test_get_candidate_manga_returns_mapping_rows():
         {
             "manga_id": 20,
             "title": "Candidate Two",
-            "author_id": 200,
             "description": "Description two",
             "published_date": date(2018, 1, 1),
             "external_average_rating": 7.8,
@@ -190,6 +189,7 @@ async def test_get_candidate_manga_returns_mapping_rows():
         genre_ids=[3],
         tag_ids=[4],
         demo_ids=[5],
+        creator_ids=[500],
         db=db,
         max_candidates=50,
     )
@@ -210,6 +210,7 @@ async def test_get_candidate_manga_returns_empty_on_error():
         genre_ids=[2],
         tag_ids=[3],
         demo_ids=[4],
+        creator_ids=[5],
         db=db,
     )
 
@@ -226,7 +227,7 @@ async def test_scored_recommendations_returns_empty_for_no_candidates():
             "genres": Counter(),
             "tags": Counter(),
             "demographics": Counter(),
-            "authors": set(),
+            "creators": set(),
             "external_ratings": [],
             "years": [],
         },
@@ -242,7 +243,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
     db = AsyncMock()
 
     # The scorer executes four metadata queries in this order:
-    # genres, tags, demographics, authors.
+    # genres, tags, demographics, creators.
     db.execute.side_effect = [
         FakeResult(
             rows=[
@@ -288,7 +289,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
         "genres": Counter({1: 2, 2: 1}),
         "tags": Counter({10: 2}),
         "demographics": Counter({100: 1}),
-        "authors": {500},
+        "creators": {500},
         "external_ratings": [8.0, 6.0],
         "years": [2000, 2004],
     }
@@ -318,7 +319,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
         # 1 occurrence × weight 1.25 = 1.25
         "demo_score": 1.25,
         # Candidate shares author 500.
-        "author_score": 3,
+        "creator_score": 3,
         # Seed average is 7.0; candidate is 8.0:
         # 5 - abs(8 - 7) = 4
         "rating_score": 4.0,
@@ -334,7 +335,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
     assert weak["details"]["genre_score"] == 2
     assert weak["details"]["tag_score"] == 0
     assert weak["details"]["demo_score"] == 0
-    assert weak["details"]["author_score"] == 0
+    assert weak["details"]["creator_score"] == 0
     assert weak["details"]["rating_score"] == 3.0
     assert weak["details"]["year_score"] == 0
     assert weak["score"] == 5.0
@@ -366,7 +367,7 @@ async def test_scoring_handles_missing_seed_averages_and_candidate_values():
         "genres": Counter(),
         "tags": Counter(),
         "demographics": Counter(),
-        "authors": set(),
+        "creators": set(),
         "external_ratings": [],
         "years": [],
     }
@@ -388,9 +389,53 @@ async def test_scoring_handles_missing_seed_averages_and_candidate_values():
                 "genre_score": 0,
                 "tag_score": 0,
                 "demo_score": 0.0,
-                "author_score": 0,
+                "creator_score": 0,
                 "rating_score": 0,
                 "year_score": 0,
             },
         }
     ]
+
+@pytest.mark.asyncio
+async def test_get_candidate_manga_uses_creator_for_candidate_discovery():
+    db = AsyncMock()
+    db.execute.return_value = FakeResult(mapping_rows=[])
+
+    result = await get_candidate_manga(
+        excluded_ids=[1],
+        genre_ids=[],
+        tag_ids=[],
+        demo_ids=[],
+        creator_ids=[500],
+        db=db,
+    )
+
+    assert result == []
+
+    stmt = db.execute.await_args.args[0]
+    sql = str(
+        stmt.compile(
+            compile_kwargs={
+                "literal_binds": True,
+            }
+        )
+    )
+
+    assert "manga_creator.creator_id IN (500)" in sql
+    assert "manga.manga_id NOT IN (1)" in sql
+
+@pytest.mark.asyncio
+async def test_get_candidate_manga_skips_query_without_similarity_metadata():
+    db = AsyncMock()
+
+    result = await get_candidate_manga(
+        excluded_ids=[1],
+        genre_ids=[],
+        tag_ids=[],
+        demo_ids=[],
+        creator_ids=[],
+        db=db,
+    )
+
+    assert result == []
+    db.execute.assert_not_awaited()

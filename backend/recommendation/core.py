@@ -5,15 +5,16 @@ scores candidates against the profile to produce ranked results.
 '''
 
 import uuid
-from sqlalchemy import select, distinct
+from sqlalchemy import or_, select
 from backend.db.client_db import ClientReadDatabase
 from sqlalchemy.exc import SQLAlchemyError
 from backend.db.models.collection import Collection
 from backend.db.models.manga_collection import MangaCollection
-from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic, manga_author
+from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic
+from backend.db.models.manga_creator import MangaCreator
 from backend.db.models.manga import Manga
 from collections import Counter, defaultdict
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -51,21 +52,21 @@ async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: in
     
 async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientReadDatabase) -> Dict[str, any]:
     '''
-    Build a metadata profile for the provided collection (frequency counts, authors, ratings, years).
+    Build a metadata profile for the provided collection (frequency counts, creators, ratings, years).
 
     Args:
         manga_ids (List[int]): IDs of manga used to build the collection.
         session (AsyncSession): SQLAlchemy async session bound to the manga domain.
 
     Returns:
-        dict: A dictionary with genre/tag/demographic frequency maps, an author set, and aggregates like external ratings and years.
+        dict: A dictionary with genre/tag/demographic frequency maps, a creator set, and aggregates like external ratings and years.
     '''
     try:
         profile = {
             "genres": Counter(),
             "tags": Counter(),
             "demographics": Counter(),
-            "authors": set(),
+            "creators": set(),
             "external_ratings": [],
             "years": []
         }
@@ -85,10 +86,10 @@ async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientRe
         demo_result = await db.execute(demo_stmt)
         profile["demographics"].update([row[0] for row in demo_result.fetchall()])
 
-        # Authors
-        author_stmt = select(manga_author.c.author_id).where(manga_author.c.manga_id.in_(manga_ids))
-        author_result = await db.execute(author_stmt)
-        profile["authors"].update([row[0] for row in author_result.fetchall()])
+        # Creators
+        creator_stmt = select(MangaCreator.creator_id).where(MangaCreator.manga_id.in_(manga_ids))
+        creator_result = await db.execute(creator_stmt)
+        profile["creators"].update(row[0] for row in creator_result.fetchall())
 
         # External ratings
         rating_stmt = select(Manga.external_average_rating).where(Manga.manga_id.in_(manga_ids))
@@ -108,7 +109,7 @@ async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientRe
             "genres": Counter(),
             "tags": Counter(),
             "demographics": Counter(),
-            "authors": set(),
+            "creators": set(),
             "external_ratings": [],
             "years": []
         }
@@ -119,46 +120,72 @@ async def get_candidate_manga(
     genre_ids: List[int],
     tag_ids: List[int],
     demo_ids: List[int],
+    creator_ids: List[int],
     db: ClientReadDatabase,
-    max_candidates: int = 2000  # soft cap for candidates
-) -> List[Manga]:
-    '''
-    Fetch candidate manga not in the seed set and return them with lightweight metadata needed for scoring.
+    max_candidates: int = 2000,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch candidate manga that share at least one relevant metadata value with
+    the seed manga.
 
-    Args:
-        excluded_ids (List[int]): Seed manga IDs to exclude from candidates.
-        session (AsyncSession): SQLAlchemy async session bound to the manga domain.
-        max_candidates (int): Soft cap on number of candidates fetched for scoring.
-
-    Returns:
-        list: A list of candidate manga rows/objects for scoring.
-    '''
+    Creator identity participates in candidate discovery regardless of the
+    creator's role on either manga.
+    """
     try:
+        similarity_conditions = []
+
+        if genre_ids:
+            similarity_conditions.append(
+                Manga.manga_id.in_(
+                    select(manga_genre.c.manga_id).where(
+                        manga_genre.c.genre_id.in_(genre_ids)
+                    )
+                )
+            )
+
+        if tag_ids:
+            similarity_conditions.append(
+                Manga.manga_id.in_(
+                    select(manga_tag.c.manga_id).where(
+                        manga_tag.c.tag_id.in_(tag_ids)
+                    )
+                )
+            )
+
+        if demo_ids:
+            similarity_conditions.append(
+                Manga.manga_id.in_(
+                    select(manga_demographic.c.manga_id).where(
+                        manga_demographic.c.demographic_id.in_(demo_ids)
+                    )
+                )
+            )
+
+        if creator_ids:
+            similarity_conditions.append(
+                Manga.manga_id.in_(
+                    select(MangaCreator.manga_id).where(
+                        MangaCreator.creator_id.in_(creator_ids)
+                    )
+                )
+            )
+
+        if not similarity_conditions:
+            return []
+
         stmt = (
             select(
                 Manga.manga_id,
                 Manga.title,
-                Manga.author_id,
                 Manga.description,
                 Manga.published_date,
                 Manga.external_average_rating,
                 Manga.average_rating,
                 Manga.cover_image_url,
             )
-            .join(manga_genre, Manga.manga_id == manga_genre.c.manga_id, isouter=True)
-            .join(manga_tag, Manga.manga_id == manga_tag.c.manga_id, isouter=True)
-            .join(
-                manga_demographic,
-                Manga.manga_id == manga_demographic.c.manga_id,
-                isouter=True,
-            )
             .where(
                 Manga.manga_id.notin_(excluded_ids),
-                (
-                    (manga_genre.c.genre_id.in_(genre_ids))
-                    | (manga_tag.c.tag_id.in_(tag_ids))
-                    | (manga_demographic.c.demographic_id.in_(demo_ids))
-                ),
+                or_(*similarity_conditions),
                 Manga.external_average_rating.is_not(None),
             )
             .distinct()
@@ -166,12 +193,23 @@ async def get_candidate_manga(
         )
 
         result = await db.execute(stmt)
-        candidates = [dict(row) for row in result.mappings().all()]
-        logger.info("Generated %s candidate manga to score", len(candidates))
+        candidates = [
+            dict(row)
+            for row in result.mappings().all()
+        ]
+
+        logger.info(
+            "Generated %s candidate manga to score",
+            len(candidates),
+        )
         return candidates
 
-    except Exception as e:
-        logger.error("Error generating candidate manga: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error(
+            "Error generating candidate manga: %s",
+            exc,
+            exc_info=True,
+        )
         return []
     
 async def get_scored_recommendations(
@@ -199,16 +237,24 @@ async def get_scored_recommendations(
         "genres": defaultdict(set),
         "tags": defaultdict(set),
         "demographics": defaultdict(set),
-        "authors": defaultdict(set)
+        "creators": defaultdict(set)
     }
 
     genre_stmt = select(manga_genre.c.manga_id, manga_genre.c.genre_id).where(manga_genre.c.manga_id.in_(candidate_ids))
     tag_stmt = select(manga_tag.c.manga_id, manga_tag.c.tag_id).where(manga_tag.c.manga_id.in_(candidate_ids))
     demo_stmt = select(manga_demographic.c.manga_id, manga_demographic.c.demographic_id).where(manga_demographic.c.manga_id.in_(candidate_ids))
-    author_stmt = select(manga_author.c.manga_id, manga_author.c.author_id).where(manga_author.c.manga_id.in_(candidate_ids))
+    creator_stmt = select(MangaCreator.manga_id, MangaCreator.creator_id,).where(MangaCreator.manga_id.in_(candidate_ids))
 
-    for stmt, key in [(genre_stmt, "genres"), (tag_stmt, "tags"), (demo_stmt, "demographics"), (author_stmt, "authors")]:
+    metadata_queries = [
+        (genre_stmt, "genres"),
+        (tag_stmt, "tags"),
+        (demo_stmt, "demographics"),
+        (creator_stmt, "creators"),
+    ]
+
+    for stmt, key in metadata_queries:
         result = await db.execute(stmt)
+
         for manga_id, item_id in result.fetchall():
             meta[key][manga_id].add(item_id)
 
@@ -233,19 +279,19 @@ async def get_scored_recommendations(
         # + (# genres * 2)
         # + (# tags * 3)
         # + (# demographics * 1.25)
-        # + 3 author match
+        # + 3 creator match
         # - 0.5 per year off average year of release
         genre_score = sum(metadata_profile["genres"].get(g, 0) for g in meta["genres"].get(manga_id, [])) * 2
         tag_score = sum(metadata_profile["tags"].get(t, 0) for t in meta["tags"].get(manga_id, [])) * 3
         demo_score = sum(metadata_profile["demographics"].get(d, 0) for d in meta["demographics"].get(manga_id, [])) * 1.25
-        author_score = 3 if metadata_profile["authors"] & meta["authors"].get(manga_id, set()) else 0
+        creator_score = (3 if metadata_profile["creators"] & meta["creators"].get(manga_id, set())else 0)
         rating_score = max(0, 5 - abs(float(manga["external_average_rating"] - avg_rating)) if manga["external_average_rating"] and avg_rating else 0)
 
         year_score = 0
         if manga["published_date"] and avg_year:
             year_score = max(0, 5 - (abs(manga["published_date"].year - avg_year) * 0.5))
 
-        score = genre_score + tag_score + demo_score + author_score + rating_score + year_score
+        score = genre_score + tag_score + demo_score + creator_score + rating_score + year_score
 
         scored.append({
             "manga_id": manga["manga_id"],
@@ -257,7 +303,7 @@ async def get_scored_recommendations(
                 "genre_score": genre_score,
                 "tag_score": tag_score,
                 "demo_score": demo_score,
-                "author_score":author_score,
+                "creator_score":creator_score,
                 "rating_score": rating_score,
                 "year_score": year_score
             }

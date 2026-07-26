@@ -17,7 +17,7 @@ def make_metadata_profile():
         "genres": Counter({1: 2, 2: 1}),
         "tags": Counter({10: 1}),
         "demographics": Counter({100: 1}),
-        "authors": {500},
+        "creators": {500},
         "external_ratings": [8.0],
         "years": [2020],
     }
@@ -121,6 +121,7 @@ async def test_generate_for_collection_composes_core_steps():
         genre_ids=[1, 2],
         tag_ids=[10],
         demo_ids=[100],
+        creator_ids=[500],
         db=manga_db,
     )
 
@@ -143,7 +144,7 @@ async def test_generate_for_collection_truncates_large_seed_list():
         "genres": Counter(),
         "tags": Counter(),
         "demographics": Counter(),
-        "authors": set(),
+        "creators": set(),
         "external_ratings": [],
         "years": [],
     }
@@ -190,6 +191,7 @@ async def test_generate_for_collection_truncates_large_seed_list():
         genre_ids=[],
         tag_ids=[],
         demo_ids=[],
+        creator_ids=[],
         db=manga_db,
     )
 
@@ -272,6 +274,7 @@ async def test_generate_for_list_composes_core_steps():
         genre_ids=[1, 2],
         tag_ids=[10],
         demo_ids=[100],
+        creator_ids=[500],
         db=db,
     )
 
@@ -293,7 +296,7 @@ async def test_generate_for_list_truncates_large_seed_list():
         "genres": Counter(),
         "tags": Counter(),
         "demographics": Counter(),
-        "authors": set(),
+        "creators": set(),
         "external_ratings": [],
         "years": [],
     }
@@ -334,6 +337,7 @@ async def test_generate_for_list_truncates_large_seed_list():
         genre_ids=[],
         tag_ids=[],
         demo_ids=[],
+        creator_ids=[],
         db=db,
     )
 

@@ -20,7 +20,6 @@ def make_manga_detail_row(
         published_date=date(2020, 5, 10),
         external_average_rating=8.4,
         average_rating=7.9,
-        author_id=15,
         cover_image_url="https://example.com/cover.jpg",
     )
 
@@ -54,6 +53,20 @@ async def test_get_manga_detail_returns_manga_with_metadata(
     )
 
     fetch_core = AsyncMock(return_value=manga_row)
+    fetch_creator_credits = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                creator_id=15,
+                creator_name="Primary Creator",
+                role="author",
+            ),
+            SimpleNamespace(
+                creator_id=16,
+                creator_name="Artist",
+                role="artist",
+            ),
+        ]
+    )
     fetch_genres = AsyncMock(
         return_value=[
             SimpleNamespace(
@@ -90,6 +103,11 @@ async def test_get_manga_detail_returns_manga_with_metadata(
     )
     monkeypatch.setattr(
         manga_service,
+        "fetch_manga_creator_credits",
+        fetch_creator_credits,
+    )
+    monkeypatch.setattr(
+        manga_service,
         "fetch_manga_genres",
         fetch_genres,
     )
@@ -115,8 +133,23 @@ async def test_get_manga_detail_returns_manga_with_metadata(
     assert result.published_date == date(2020, 5, 10)
     assert result.external_average_rating == 8.4
     assert result.average_rating == 7.9
-    assert result.author_id == 15
     assert result.cover_image_url == "https://example.com/cover.jpg"
+
+    assert [
+        credit.model_dump()
+        for credit in result.creator_credits
+    ] == [
+        {
+            "creator_id": 15,
+            "creator_name": "Primary Creator",
+            "role": "author",
+        },
+        {
+            "creator_id": 16,
+            "creator_name": "Artist",
+            "role": "artist",
+        },
+    ]
 
     assert [
         genre.model_dump()
@@ -156,6 +189,10 @@ async def test_get_manga_detail_returns_manga_with_metadata(
         db,
         manga_id=42,
     )
+    fetch_creator_credits.assert_awaited_once_with(
+        db,
+        manga_id=42,
+    )
     fetch_genres.assert_awaited_once_with(
         db,
         manga_id=42,
@@ -177,6 +214,7 @@ async def test_get_manga_detail_raises_when_manga_missing(
     db = MagicMock()
 
     fetch_core = AsyncMock(return_value=None)
+    fetch_creator_credits = AsyncMock()
     fetch_genres = AsyncMock()
     fetch_tags = AsyncMock()
     fetch_demographics = AsyncMock()
@@ -185,6 +223,11 @@ async def test_get_manga_detail_raises_when_manga_missing(
         manga_service,
         "fetch_manga_core_by_id",
         fetch_core,
+    )
+    monkeypatch.setattr(
+        manga_service,
+        "fetch_manga_creator_credits",
+        fetch_creator_credits,
     )
     monkeypatch.setattr(
         manga_service,
@@ -218,6 +261,7 @@ async def test_get_manga_detail_raises_when_manga_missing(
         db,
         manga_id=999,
     )
+    fetch_creator_credits.assert_not_awaited()
     fetch_genres.assert_not_awaited()
     fetch_tags.assert_not_awaited()
     fetch_demographics.assert_not_awaited()

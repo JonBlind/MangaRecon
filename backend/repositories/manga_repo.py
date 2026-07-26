@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from backend.db.client_db import ClientReadDatabase
 from backend.db.models.manga import Manga
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
+from backend.db.models.creator import Creator
+from backend.db.models.manga_creator import MangaCreator
 from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic
 from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 
@@ -22,12 +24,32 @@ async def fetch_manga_core_by_id(db: ClientReadDatabase, *, manga_id: int):
             Manga.published_date,
             Manga.external_average_rating,
             Manga.average_rating,
-            Manga.author_id,
             Manga.cover_image_url,
         )
         .where(Manga.manga_id == manga_id)
     )
     return (await db.execute(stmt)).one_or_none()
+
+async def fetch_manga_creator_credits(db: ClientReadDatabase, *, manga_id: int):
+
+    stmt = (
+        select(Creator.creator_id, Creator.creator_name, MangaCreator.role)
+        .select_from(MangaCreator)
+        .join(Creator, Creator.creator_id == MangaCreator.creator_id)
+        .where(MangaCreator.manga_id == manga_id)
+        .order_by(
+            case(
+                (MangaCreator.role == "author", 0),
+                (MangaCreator.role == "artist", 1),
+                else_=2,
+            ),
+            Creator.creator_name,
+            Creator.creator_id,
+        )
+    )
+
+    result = await db.execute(stmt)
+    return result.all()
 
 
 async def fetch_manga_genres(db: ClientReadDatabase, *, manga_id: int):

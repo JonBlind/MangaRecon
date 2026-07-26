@@ -52,27 +52,25 @@ def create_test_manga(title=None):
     engine = create_engine(sync_url)
 
     with engine.begin() as conn:
-        author_id = conn.execute(
+        creator_id = conn.execute(
             text("""
-                INSERT INTO author (author_name)
-                VALUES (:author_name)
-                RETURNING author_id
+                INSERT INTO creator (creator_name)
+                VALUES (:creator_name)
+                RETURNING creator_id
             """),
-            {"author_name": f"Test Author {unique}"},
+            {"creator_name": f"Test Creator {unique}"},
         ).scalar_one()
 
         manga_id = conn.execute(
             text("""
                 INSERT INTO manga (
                     title,
-                    author_id,
                     description,
                     external_average_rating,
                     average_rating
                 )
                 VALUES (
                     :title,
-                    :author_id,
                     :description,
                     :external_average_rating,
                     :average_rating
@@ -81,17 +79,41 @@ def create_test_manga(title=None):
             """),
             {
                 "title": manga_title,
-                "author_id": author_id,
                 "description": "Test manga description",
                 "external_average_rating": 4.5,
                 "average_rating": 4.0,
             },
         ).scalar_one()
 
+        conn.execute(
+            text("""
+                INSERT INTO manga_creator (
+                    manga_id,
+                    creator_id,
+                    role
+                )
+                VALUES (
+                    :manga_id,
+                    :creator_id,
+                    'author'
+                )
+            """),
+            {
+                "manga_id": manga_id,
+                "creator_id": creator_id,
+            },
+        )
+
     engine.dispose()
 
     return {
         "manga_id": manga_id,
         "title": manga_title,
-        "author_id": author_id,
+        "creator_credits": [
+            {
+                "creator_id": creator_id,
+                "creator_name": f"Test Creator {unique}",
+                "role": "author",
+            }
+        ],
     }

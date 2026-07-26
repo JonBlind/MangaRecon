@@ -475,10 +475,10 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
         connection.execute(
             text(
                 """
-                INSERT INTO author (author_id, author_name)
+                INSERT INTO creator (creator_id, creator_name)
                 VALUES
-                    (1, 'Seed Author'),
-                    (2, 'Other Author')
+                    (1, 'Seed Creator'),
+                    (2, 'Other Creator')
                 """
             )
         )
@@ -530,7 +530,6 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                 INSERT INTO manga (
                     manga_id,
                     title,
-                    author_id,
                     description,
                     published_date,
                     external_average_rating,
@@ -541,7 +540,6 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                     (
                         :seed_id,
                         'Alpha Quest',
-                        1,
                         'The seed manga.',
                         :seed_date,
                         8.5,
@@ -551,7 +549,6 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                     (
                         :similar_id,
                         'Beta Quest',
-                        1,
                         'A similar recommendation candidate.',
                         :similar_date,
                         8.0,
@@ -561,7 +558,6 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                     (
                         :unrelated_id,
                         'Romance Story',
-                        2,
                         'An unrelated title.',
                         :unrelated_date,
                         7.0,
@@ -577,6 +573,22 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                 "seed_date": date(2020, 1, 1),
                 "similar_date": date(2021, 1, 1),
                 "unrelated_date": date(2010, 1, 1),
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga_creator (manga_id, creator_id, role)
+                VALUES
+                    (:seed_id, 1, 'author'),
+                    (:similar_id, 1, 'author'),
+                    (:unrelated_id, 2, 'author')
+                """
+            ),
+            {
+                "seed_id": values.seed_manga_id,
+                "similar_id": values.similar_manga_id,
+                "unrelated_id": values.unrelated_manga_id,
             },
         )
         connection.execute(

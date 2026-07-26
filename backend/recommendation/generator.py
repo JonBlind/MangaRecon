@@ -50,6 +50,7 @@ async def generate_recommendations_for_collection(
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
+        creator_ids=list(metadata_profile["creators"]),
         db=manga_db,
     )
 
@@ -97,6 +98,7 @@ async def generate_recommendations_for_list(
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
+        creator_ids=list(metadata_profile["creators"]),
         db=db,
     )
 

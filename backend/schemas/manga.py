@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional, Annotated
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, Literal
 from datetime import date
-import uuid
+
+CreatorRole = Literal["author", "artist"]
 
 # Get the genre
 # Response
@@ -34,6 +35,17 @@ class DemographicRead(BaseModel):
 
 # Get all the info on a manga
 # Response
+
+class CreatorCreditRead(BaseModel):
+    """
+    A creator's role on a particular manga.
+    """
+
+    creator_id: int
+    creator_name: str
+    role: CreatorRole
+
+    model_config = ConfigDict(from_attributes=True)
 class MangaRead(BaseModel):
     '''
     Full API representation of a manga, including core fields and attached metadata
@@ -46,10 +58,10 @@ class MangaRead(BaseModel):
     external_average_rating: Optional[float] = None
     average_rating: Optional[float] = None
 
-    author_id: Optional[int]
-    genres: List[GenreRead] = []
-    tags: List[TagRead] = []
-    demographics: List[DemographicRead] = []
+    creator_credits: list[CreatorCreditRead] = Field(default_factory=list)
+    genres: list[GenreRead] = Field(default_factory=list)
+    tags: list[TagRead] = Field(default_factory=list)
+    demographics: list[DemographicRead] = Field(default_factory=list)
     cover_image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -63,7 +75,7 @@ class MangaListItem(BaseModel):
     '''
     manga_id: int
     title: str
-    genres: List[GenreRead] = []
+    genres: list[GenreRead] = Field(default_factory=list)
     average_rating: Optional[float] = None
     cover_image_url: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)

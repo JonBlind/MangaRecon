@@ -34,7 +34,13 @@ def test_manga_detail_returns_attached_metadata(
 
     assert data["manga_id"] == catalog.seed_manga_id
     assert data["title"] == "Alpha Quest"
-    assert data["author_id"] == 1
+    assert data["creator_credits"] == [
+        {
+            "creator_id": 1,
+            "creator_name": "Seed Creator",
+            "role": "author",
+        }
+    ]
     assert data["genres"] == [{"genre_id": 1, "genre_name": "Action"}]
     assert data["tags"] == [{"tag_id": 1, "tag_name": "Adventure"}]
     assert data["demographics"] == [
