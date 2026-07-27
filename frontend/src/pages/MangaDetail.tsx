@@ -6,14 +6,19 @@ import {
   useCollections,
   useAddMangaToCollection,
 } from "../hooks/useCollections";
-import type { FeedbackMessage, ReturnToLocationState } from "../types/ui";
+import type {
+  FeedbackMessage,
+  ReturnToLocationState,
+} from "../types/ui";
 
-const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
+const FALLBACK_COVER =
+  "https://placehold.co/400x600?text=No+Cover";
 
 export default function MangaDetail() {
   const { id } = useParams();
   const location = useLocation();
-  const state = location.state as ReturnToLocationState | null;
+  const state =
+    location.state as ReturnToLocationState | null;
   const backTo = state?.returnTo || "/search";
 
   const mangaId = Number(id);
@@ -22,14 +27,24 @@ export default function MangaDetail() {
     return <div className="p-6">Invalid manga id.</div>;
   }
 
-  const { data, isPending, isError } = useManga(mangaId);
+  const { data, isPending, isError } =
+    useManga(mangaId);
 
   // auth + collections
   const meQ = useMe();
-  const collectionsQ = useCollections({ page: 1, size: 100 });
-  const [selectedCollection, setSelectedCollection] = useState<number | "">("");
-  const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
-  const addM = useAddMangaToCollection(typeof selectedCollection === "number" ? selectedCollection : -1);
+  const collectionsQ = useCollections({
+    page: 1,
+    size: 100,
+  });
+  const [selectedCollection, setSelectedCollection] =
+    useState<number | "">("");
+  const [feedback, setFeedback] =
+    useState<FeedbackMessage | null>(null);
+  const addM = useAddMangaToCollection(
+    typeof selectedCollection === "number"
+      ? selectedCollection
+      : -1
+  );
 
   useEffect(() => {
     setFeedback(null);
@@ -40,16 +55,30 @@ export default function MangaDetail() {
   }
 
   if (isError || !data) {
-    return <div className="p-6">Couldn't load this manga.</div>;
+    return (
+      <div className="p-6">
+        Couldn't load this manga.
+      </div>
+    );
   }
 
   const m = data;
   const demographics = m.demographics ?? [];
   const genres = m.genres ?? [];
   const tags = m.tags ?? [];
+  const creatorCredits = m.creator_credits ?? [];
+
+  const authors = creatorCredits.filter(
+    (credit) => credit.role === "author"
+  );
+  const artists = creatorCredits.filter(
+    (credit) => credit.role === "artist"
+  );
 
   async function handleAdd() {
-    if (typeof selectedCollection !== "number") return;
+    if (typeof selectedCollection !== "number") {
+      return;
+    }
 
     setFeedback(null);
 
@@ -63,7 +92,9 @@ export default function MangaDetail() {
     } catch (e: any) {
       setFeedback({
         type: "error",
-        message: e?.message ?? "Failed to add manga to collection.",
+        message:
+          e?.message ??
+          "Failed to add manga to collection.",
       });
     }
   }
@@ -90,7 +121,35 @@ export default function MangaDetail() {
         />
 
         <div className="flex-1 space-y-4">
-          <h1 className="text-3xl font-bold">{m.title}</h1>
+          <h1 className="text-3xl font-bold">
+            {m.title}
+          </h1>
+
+          {(authors.length > 0 || artists.length > 0) && (
+            <div className="space-y-1 text-sm opacity-80">
+              {authors.length > 0 && (
+                <p>
+                  <span className="font-medium">
+                    {authors.length === 1 ? "Author:" : "Authors:"}
+                  </span>{" "}
+                  {authors
+                    .map((credit) => credit.creator_name)
+                    .join(", ")}
+                </p>
+              )}
+
+              {artists.length > 0 && (
+                <p>
+                  <span className="font-medium">
+                    {artists.length === 1 ? "Artist:" : "Artists:"}
+                  </span>{" "}
+                  {artists
+                    .map((credit) => credit.creator_name)
+                    .join(", ")}
+                </p>
+              )}
+            </div>
+          )}
 
           {!meQ.isPending && meQ.data && (
             <div className="space-y-3">
@@ -101,40 +160,60 @@ export default function MangaDetail() {
                   onChange={(e) => {
                     setFeedback(null);
                     setSelectedCollection(
-                      e.target.value ? Number(e.target.value) : ""
+                      e.target.value
+                        ? Number(e.target.value)
+                        : ""
                     );
                   }}
-                  disabled={collectionsQ.isLoading || addM.isPending}
+                  disabled={
+                    collectionsQ.isLoading ||
+                    addM.isPending
+                  }
                 >
-                  <option value="">Add to collection…</option>
-                  {(collectionsQ.data?.items ?? []).map((c) => (
-                    <option key={c.collection_id} value={c.collection_id}>
-                      {c.collection_name}
-                    </option>
-                  ))}
+                  <option value="">
+                    Add to collection…
+                  </option>
+
+                  {(collectionsQ.data?.items ?? []).map(
+                    (c) => (
+                      <option
+                        key={c.collection_id}
+                        value={c.collection_id}
+                      >
+                        {c.collection_name}
+                      </option>
+                    )
+                  )}
                 </select>
 
                 <button
                   className="rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50"
                   disabled={
-                    typeof selectedCollection !== "number" ||
+                    typeof selectedCollection !==
+                      "number" ||
                     addM.isPending ||
                     collectionsQ.isLoading
                   }
                   onClick={handleAdd}
                 >
-                  {addM.isPending ? "Adding…" : "Add"}
+                  {addM.isPending
+                    ? "Adding…"
+                    : "Add"}
                 </button>
               </div>
 
               {collectionsQ.isLoading && (
-                <p className="text-sm opacity-70">Loading collections…</p>
+                <p className="text-sm opacity-70">
+                  Loading collections…
+                </p>
               )}
 
               {!collectionsQ.isLoading &&
-                (collectionsQ.data?.items?.length ?? 0) === 0 && (
+                (collectionsQ.data?.items?.length ??
+                  0) === 0 && (
                   <p className="text-sm opacity-70">
-                    You don't have any collections yet.
+                    You don't have any collections
+                    yet.
                   </p>
                 )}
 
@@ -153,14 +232,27 @@ export default function MangaDetail() {
           )}
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-80">
-            {m.published_date ? <span>Published: {m.published_date}</span> : null}
-            {m.average_rating != null ? <span>Avg: {m.average_rating}</span> : null}
+            {m.published_date ? (
+              <span>
+                Published: {m.published_date}
+              </span>
+            ) : null}
+
+            {m.average_rating != null ? (
+              <span>Avg: {m.average_rating}</span>
+            ) : null}
+
             {m.external_average_rating != null ? (
-              <span>External: {m.external_average_rating}</span>
+              <span>
+                External:{" "}
+                {m.external_average_rating}
+              </span>
             ) : null}
           </div>
 
-          {(demographics.length > 0 || genres.length > 0 || tags.length > 0) && (
+          {(demographics.length > 0 ||
+            genres.length > 0 ||
+            tags.length > 0) && (
             <div className="flex flex-wrap gap-2">
               {demographics.map((d) => (
                 <span
@@ -194,9 +286,13 @@ export default function MangaDetail() {
       </div>
 
       {m.description ? (
-        <p className="whitespace-pre-line leading-relaxed">{m.description}</p>
+        <p className="whitespace-pre-line leading-relaxed">
+          {m.description}
+        </p>
       ) : (
-        <p className="opacity-70">No description available.</p>
+        <p className="opacity-70">
+          No description available.
+        </p>
       )}
     </div>
   );

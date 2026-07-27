@@ -6,7 +6,7 @@ export type RecommendationBreakdown = {
   genre_score: number;
   tag_score: number;
   demo_score: number;
-  author_score: number;
+  creator_score: number;
   rating_score: number;
   year_score: number;
 };

@@ -30,6 +30,12 @@ export type MangaSearchParams = {
   order_dir?: "asc" | "desc";
 };
 
+export type CreatorCredit = {
+  creator_id: number;
+  creator_name: string;
+  role: "author" | "artist";
+};
+
 export type MangaDetail = {
   manga_id: number;
   title: string;
@@ -39,7 +45,7 @@ export type MangaDetail = {
   external_average_rating?: number | null;
   average_rating?: number | null;
 
-  author_id: number | null;
+  creator_credits: CreatorCredit[];
 
   genres: Genre[];
   tags: Tag[];

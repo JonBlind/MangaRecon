@@ -34,7 +34,13 @@ const mangaDetail = {
   published_date: "1999-09-21",
   average_rating: 4.2,
   external_average_rating: 4.7,
-  author_id: 1,
+  creator_credits: [
+    {
+      creator_id: 1,
+      creator_name: "Masashi Kishimoto",
+      role: "author",
+    },
+  ],
   cover_image_url: "https://example.com/naruto.jpg",
   demographics: [{ demographic_id: 1, demographic_name: "Shounen" }],
   genres: [{ genre_id: 1, genre_name: "Action" }],

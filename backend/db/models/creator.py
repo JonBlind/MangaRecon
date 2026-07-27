@@ -8,7 +8,7 @@ class Creator(Base):
     Master record for a person credited on one or more manga.
 
     A creator's role is stored on MangaCreator because the same person may be
-    an author on one manga, an artist on another, or both on the same manga.
+    a creator on one manga, an artist on another, or both on the same manga.
     '''
     __tablename__ = "creator"
 
