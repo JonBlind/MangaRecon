@@ -1,4 +1,34 @@
+import pytest
 from sqlalchemy import Engine, inspect
+
+
+@pytest.mark.parametrize(
+    ("table_name", "related_id_column"),
+    [
+        ("manga_genre", "genre_id"),
+        ("manga_tag", "tag_id"),
+        ("manga_demographic", "demographic_id"),
+    ],
+)
+def test_metadata_association_schema_matches_many_to_many_models(
+    manga_write_engine: Engine,
+    table_name: str,
+    related_id_column: str,
+) -> None:
+    inspector = inspect(manga_write_engine)
+
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns(table_name)
+    }
+    assert columns["manga_id"]["nullable"] is False
+    assert columns[related_id_column]["nullable"] is False
+
+    primary_key = inspector.get_pk_constraint(table_name)
+    assert primary_key["constrained_columns"] == [
+        "manga_id",
+        related_id_column,
+    ]
 
 
 def test_creator_schema_matches_role_aware_many_to_many_model(
