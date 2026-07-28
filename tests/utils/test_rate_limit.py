@@ -55,7 +55,7 @@ def test_get_storage_uri_uses_memory_in_non_production(
         environment,
     )
     monkeypatch.delenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         raising=False,
     )
 
@@ -71,12 +71,12 @@ def test_get_storage_uri_returns_configured_production_uri(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
-        "redis://localhost:6379/1",
+        "REDIS_URL",
+        "rediss://user:secret@redis.example:6380/1",
     )
 
     assert rate_limit._get_storage_uri() == (
-        "redis://localhost:6379/1"
+        "rediss://user:secret@redis.example:6380/1"
     )
 
 
@@ -89,14 +89,14 @@ def test_get_storage_uri_rejects_missing_production_uri(
         "prod",
     )
     monkeypatch.delenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         raising=False,
     )
 
     with pytest.raises(
         RuntimeError,
         match=(
-            "RATELIMIT_STORAGE_URI must be set "
+            "REDIS_URL must be set "
             "when MANGARECON_ENV=prod"
         ),
     ):
@@ -120,7 +120,7 @@ def test_validate_rate_limit_config_allows_non_production(
         environment,
     )
     monkeypatch.delenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         raising=False,
     )
 
@@ -136,8 +136,8 @@ def test_validate_rate_limit_config_accepts_production_uri(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
-        "redis://localhost:6379",
+        "REDIS_URL",
+        "rediss://redis.example:6380/0",
     )
 
     assert rate_limit.validate_rate_limit_config() is None
@@ -152,15 +152,15 @@ def test_validate_rate_limit_config_rejects_missing_production_uri(
         "prod",
     )
     monkeypatch.delenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         raising=False,
     )
 
     with pytest.raises(
         RuntimeError,
         match=(
-            "ENV=prod requires "
-            "RATELIMIT_STORAGE_URI"
+            "REDIS_URL must be set when "
+            "MANGARECON_ENV=prod"
         ),
     ):
         rate_limit.validate_rate_limit_config()
@@ -207,7 +207,7 @@ async def test_storage_ready_is_false_when_uri_missing(
         "prod",
     )
     monkeypatch.delenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         raising=False,
     )
 
@@ -217,17 +217,8 @@ async def test_storage_ready_is_false_when_uri_missing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "uri",
-    [
-        "memory://",
-        "postgresql://database",
-        "custom://storage",
-    ],
-)
-async def test_storage_ready_accepts_non_redis_storage_without_ping(
+async def test_storage_ready_rejects_non_redis_url_without_ping(
     monkeypatch,
-    uri,
 ):
     from_url = MagicMock()
 
@@ -237,8 +228,8 @@ async def test_storage_ready_accepts_non_redis_storage_without_ping(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
-        uri,
+        "REDIS_URL",
+        "https://redis.example",
     )
     monkeypatch.setattr(
         rate_limit.Redis,
@@ -248,7 +239,7 @@ async def test_storage_ready_accepts_non_redis_storage_without_ping(
 
     result = await rate_limit.rate_limit_storage_ready()
 
-    assert result is True
+    assert result is False
     from_url.assert_not_called()
 
 
@@ -280,7 +271,7 @@ async def test_storage_ready_pings_redis_and_closes_client(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         "redis://localhost:6379/2",
     )
     monkeypatch.setattr(
@@ -321,7 +312,7 @@ async def test_storage_ready_returns_false_when_ping_is_false(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         "rediss://redis.example",
     )
     monkeypatch.setattr(
@@ -352,7 +343,7 @@ async def test_storage_ready_returns_false_and_closes_after_ping_error(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         "redis://localhost",
     )
     monkeypatch.setattr(
@@ -385,7 +376,7 @@ async def test_storage_ready_suppresses_close_error(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         "redis://localhost",
     )
     monkeypatch.setattr(
@@ -409,7 +400,7 @@ async def test_storage_ready_returns_false_when_client_creation_fails(
         "prod",
     )
     monkeypatch.setenv(
-        "RATELIMIT_STORAGE_URI",
+        "REDIS_URL",
         "redis://localhost",
     )
     monkeypatch.setattr(
@@ -1141,7 +1132,7 @@ def test_register_rate_limiter_adds_all_production_middleware(
     monkeypatch.setattr(
         rate_limit,
         "_storage_uri",
-        "redis://redis.example",
+        "rediss://user:secret@redis.example:6380/0",
     )
     monkeypatch.setattr(
         rate_limit.logger,
@@ -1165,7 +1156,11 @@ def test_register_rate_limiter_adds_all_production_middleware(
 
     log_info.assert_called_once_with(
         "Rate limiter enabled "
-        "(ENV=%s, storage=%s).",
+        "(ENV=%s, storage=Redis).",
         "prod",
-        "redis://redis.example",
     )
+
+    logged_arguments = repr(log_info.call_args)
+    assert "user" not in logged_arguments
+    assert "secret" not in logged_arguments
+    assert "redis.example" not in logged_arguments

@@ -5,34 +5,58 @@ Provides a lightweight wrapper around redis.asyncio with convenience methods
 for JSON (de)serialization, default TTL handling, and safe error logging.
 '''
 
-from redis.asyncio import Redis
 import json
-import os
 import logging
+import os
 from typing import Optional
+from urllib.parse import urlparse
+
+from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+SUPPORTED_REDIS_SCHEMES = {"redis", "rediss"}
+
+
+def get_redis_url(*, required: bool = False) -> str:
+    """
+    Resolve and validate the shared Redis connection URL.
+
+    Production callers pass ``required=True`` so a missing Redis
+    configuration fails during application startup. Local development and
+    tests may use the default local Redis instance.
+    """
+    url = os.getenv("REDIS_URL")
+
+    if not url:
+        if required:
+            raise RuntimeError("REDIS_URL must be set when MANGARECON_ENV=prod.")
+        return DEFAULT_REDIS_URL
+
+    scheme = urlparse(url).scheme.lower()
+    if scheme not in SUPPORTED_REDIS_SCHEMES:
+        raise RuntimeError("REDIS_URL must use the redis:// or rediss:// scheme.")
+
+    return url
+
 
 class RedisCache:
     '''
     Lightweight async Redis helper with JSON serialization and TTL defaults.
 
     Args:
-        host (str | None): Redis host; falls back to REDIS_HOST env.
-        port (int | None): Redis port; falls back to REDIS_PORT env.
-        db (int | None): Redis DB index; falls back to REDIS_DB env.
-        password (str | None): Redis password; falls back to REDIS_PASSWORD env.
+        url (str | None): Redis URL; falls back to REDIS_URL and then the
+            local development default.
         ttl_default (int | None): Default TTL in seconds; falls back to CACHE_TTL_SECONDS env.
 
     Notes:
         - All methods log and fail soft (returning None / no-raise on errors).
         - Values are JSON-encoded on set and JSON-decoded on get.
+        - Both redis:// and TLS-enabled rediss:// URLs are supported.
     '''
-    def __init__(self, host=None, port=None, db=None, password=None, ttl_default=None):
-        self._host = host
-        self._port = port
-        self._db = db
-        self._password = password
+    def __init__(self, url=None, ttl_default=None):
+        self._url = url
         self._ttl_default = ttl_default
         self._client: Redis | None = None
 
@@ -46,18 +70,14 @@ class RedisCache:
             client instance of this redis cache.
         '''
         if self._client is None:
-            host = self._host or os.getenv("REDIS_HOST", "localhost")
-            port = self._port if self._port is not None else int(os.getenv("REDIS_PORT", "6379"))
-            db = self._db if self._db is not None else int(os.getenv("REDIS_DB", "0"))
-            password = self._password or os.getenv("REDIS_PASSWORD")
+            url = self._url or get_redis_url()
 
-            self._client = Redis(
-                host=host,
-                port=port,
-                db=db,
-                password=password,
-                decode_responses=True,  # returns str, not bytes
-            )
+            if self._url is not None:
+                scheme = urlparse(self._url).scheme.lower()
+                if scheme not in SUPPORTED_REDIS_SCHEMES:
+                    raise RuntimeError("Redis URL must use the redis:// or rediss:// scheme.")
+
+            self._client = Redis.from_url(url, decode_responses=True)
         return self._client
     
     def _resolve_ttl(self, ttl: int | None) -> int | None:
@@ -146,7 +166,7 @@ class RedisCache:
             None
         '''
         if self._client is not None:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
 
 # Shared cache instance used across the app

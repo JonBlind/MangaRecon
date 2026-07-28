@@ -16,7 +16,7 @@ def redis_client():
     client.set = AsyncMock()
     client.get = AsyncMock()
     client.delete = AsyncMock()
-    client.close = AsyncMock()
+    client.aclose = AsyncMock()
 
     return client
 
@@ -26,23 +26,87 @@ def attach_client(cache: RedisCache, client):
     return cache
 
 
+def test_get_redis_url_returns_configured_url(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "REDIS_URL",
+        "rediss://user:secret@redis.internal:6380/4",
+    )
+
+    result = redis_module.get_redis_url()
+
+    assert result == (
+        "rediss://user:secret@redis.internal:6380/4"
+    )
+
+
+def test_get_redis_url_uses_local_default_when_optional(
+    monkeypatch,
+):
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    result = redis_module.get_redis_url()
+
+    assert result == "redis://localhost:6379/0"
+
+
+def test_get_redis_url_rejects_missing_required_url(
+    monkeypatch,
+):
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "REDIS_URL must be set when "
+            "MANGARECON_ENV=prod"
+        ),
+    ):
+        redis_module.get_redis_url(required=True)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://redis.example",
+        "memory://",
+        "redis.example:6379",
+    ],
+)
+def test_get_redis_url_rejects_unsupported_scheme(
+    monkeypatch,
+    url,
+):
+    monkeypatch.setenv("REDIS_URL", url)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "REDIS_URL must use the redis:// "
+            "or rediss:// scheme"
+        ),
+    ):
+        redis_module.get_redis_url()
+
+
 def test_get_client_creates_redis_client_from_environment(
     monkeypatch,
 ):
-    monkeypatch.setenv("REDIS_HOST", "redis.internal")
-    monkeypatch.setenv("REDIS_PORT", "6380")
-    monkeypatch.setenv("REDIS_DB", "4")
-    monkeypatch.setenv("REDIS_PASSWORD", "secret")
+    monkeypatch.setenv(
+        "REDIS_URL",
+        "rediss://user:secret@redis.internal:6380/4",
+    )
 
     created_client = MagicMock()
-    redis_constructor = MagicMock(
+    from_url = MagicMock(
         return_value=created_client
     )
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache()
@@ -51,32 +115,26 @@ def test_get_client_creates_redis_client_from_environment(
 
     assert result is created_client
 
-    redis_constructor.assert_called_once_with(
-        host="redis.internal",
-        port=6380,
-        db=4,
-        password="secret",
+    from_url.assert_called_once_with(
+        "rediss://user:secret@redis.internal:6380/4",
         decode_responses=True,
     )
 
 
-def test_get_client_uses_default_environment_values(
+def test_get_client_uses_local_default_when_url_is_missing(
     monkeypatch,
 ):
-    monkeypatch.delenv("REDIS_HOST", raising=False)
-    monkeypatch.delenv("REDIS_PORT", raising=False)
-    monkeypatch.delenv("REDIS_DB", raising=False)
-    monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
 
     created_client = MagicMock()
-    redis_constructor = MagicMock(
+    from_url = MagicMock(
         return_value=created_client
     )
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache()
@@ -85,64 +143,82 @@ def test_get_client_uses_default_environment_values(
 
     assert result is created_client
 
-    redis_constructor.assert_called_once_with(
-        host="localhost",
-        port=6379,
-        db=0,
-        password=None,
+    from_url.assert_called_once_with(
+        "redis://localhost:6379/0",
         decode_responses=True,
     )
 
 
-def test_get_client_prefers_constructor_values_over_environment(
+def test_get_client_prefers_constructor_url_over_environment(
     monkeypatch,
 ):
-    monkeypatch.setenv("REDIS_HOST", "environment-host")
-    monkeypatch.setenv("REDIS_PORT", "9999")
-    monkeypatch.setenv("REDIS_DB", "8")
-    monkeypatch.setenv("REDIS_PASSWORD", "environment-password")
+    monkeypatch.setenv(
+        "REDIS_URL",
+        "redis://environment-host:6379/0",
+    )
 
     created_client = MagicMock()
-    redis_constructor = MagicMock(
+    from_url = MagicMock(
         return_value=created_client
     )
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache(
-        host="configured-host",
-        port=6381,
-        db=2,
-        password="configured-password",
+        url="rediss://configured-host:6381/2",
     )
 
     result = cache._get_client()
 
     assert result is created_client
 
-    redis_constructor.assert_called_once_with(
-        host="configured-host",
-        port=6381,
-        db=2,
-        password="configured-password",
+    from_url.assert_called_once_with(
+        "rediss://configured-host:6381/2",
         decode_responses=True,
     )
+
+
+def test_get_client_rejects_invalid_constructor_url(
+    monkeypatch,
+):
+    from_url = MagicMock()
+
+    monkeypatch.setattr(
+        redis_module.Redis,
+        "from_url",
+        from_url,
+    )
+
+    cache = RedisCache(
+        url="https://redis.example",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Redis URL must use the redis:// "
+            "or rediss:// scheme"
+        ),
+    ):
+        cache._get_client()
+
+    from_url.assert_not_called()
 
 
 def test_get_client_returns_existing_client_without_creating_another(
     monkeypatch,
     redis_client,
 ):
-    redis_constructor = MagicMock()
+    from_url = MagicMock()
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache()
@@ -153,7 +229,7 @@ def test_get_client_returns_existing_client_without_creating_another(
 
     assert first_result is redis_client
     assert second_result is redis_client
-    redis_constructor.assert_not_called()
+    from_url.assert_not_called()
 
 
 def test_resolve_ttl_prefers_method_override():
@@ -595,12 +671,12 @@ async def test_delete_multiple_deletes_all_keys_in_one_call(
 async def test_delete_multiple_returns_without_creating_client_when_no_keys(
     monkeypatch,
 ):
-    redis_constructor = MagicMock()
+    from_url = MagicMock()
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache()
@@ -608,7 +684,7 @@ async def test_delete_multiple_returns_without_creating_client_when_no_keys(
     result = await cache.delete_multiple()
 
     assert result is None
-    redis_constructor.assert_not_called()
+    from_url.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -666,7 +742,7 @@ async def test_close_closes_existing_client_and_clears_reference(
     result = await cache.close()
 
     assert result is None
-    redis_client.close.assert_awaited_once()
+    redis_client.aclose.assert_awaited_once()
     assert cache._client is None
 
 
@@ -674,12 +750,12 @@ async def test_close_closes_existing_client_and_clears_reference(
 async def test_close_does_nothing_when_client_was_never_created(
     monkeypatch,
 ):
-    redis_constructor = MagicMock()
+    from_url = MagicMock()
 
     monkeypatch.setattr(
-        redis_module,
-        "Redis",
-        redis_constructor,
+        redis_module.Redis,
+        "from_url",
+        from_url,
     )
 
     cache = RedisCache()
@@ -688,7 +764,7 @@ async def test_close_does_nothing_when_client_was_never_created(
 
     assert result is None
     assert cache._client is None
-    redis_constructor.assert_not_called()
+    from_url.assert_not_called()
 
 
 def test_get_redis_cache_creates_and_reuses_shared_instance(
