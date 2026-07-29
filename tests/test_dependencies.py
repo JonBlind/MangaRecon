@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -58,6 +58,37 @@ class FakeSessionFactory:
         self.contexts.append(context)
 
         return context
+
+
+class FakeConnectionContext:
+    def __init__(self, connection):
+        self.connection = connection
+
+    async def __aenter__(self):
+        return self.connection
+
+    async def __aexit__(
+        self,
+        exc_type,
+        exc,
+        traceback,
+    ):
+        return False
+
+
+def make_engine(*, execute_side_effect=None):
+    connection = MagicMock()
+    connection.execute = AsyncMock(
+        side_effect=execute_side_effect
+    )
+
+    engine = MagicMock()
+    engine.connect.return_value = (
+        FakeConnectionContext(connection)
+    )
+    engine.dispose = AsyncMock()
+
+    return engine, connection
 
 
 async def exhaust_generator(generator):
@@ -515,3 +546,193 @@ async def test_dependency_context_receives_exception_on_generator_throw(
     assert str(context.exit_args[1]) == (
         "route failed"
     )
+
+
+def test_validate_database_config_allows_non_production(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        dependencies,
+        "ENV",
+        "test",
+    )
+
+    assert dependencies.validate_database_config() is None
+
+
+def test_validate_database_config_accepts_complete_production_config(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        dependencies,
+        "ENV",
+        "prod",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "user_write",
+        "postgresql+asyncpg://user-write",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "user_read",
+        "postgresql+asyncpg://user-read",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "manga_write",
+        "postgresql+asyncpg://manga-write",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "manga_read",
+        "postgresql+asyncpg://manga-read",
+    )
+
+    assert dependencies.validate_database_config() is None
+
+
+def test_validate_database_config_lists_missing_production_urls(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        dependencies,
+        "ENV",
+        "prod",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "user_write",
+        None,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "user_read",
+        "postgresql+asyncpg://user-read",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "manga_write",
+        None,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "manga_read",
+        "postgresql+asyncpg://manga-read",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="UserWriterDB, MangaWriterDB",
+    ):
+        dependencies.validate_database_config()
+
+
+@pytest.mark.asyncio
+async def test_database_engine_ready_executes_select_one():
+    engine, connection = make_engine()
+
+    result = await dependencies._database_engine_ready(
+        engine,
+        timeout=0.5,
+    )
+
+    assert result is True
+    connection.execute.assert_awaited_once()
+    assert str(
+        connection.execute.await_args.args[0]
+    ) == "SELECT 1"
+
+
+@pytest.mark.asyncio
+async def test_database_engine_ready_returns_false_without_engine():
+    result = await dependencies._database_engine_ready(
+        None,
+        timeout=0.5,
+    )
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_database_engine_ready_returns_false_on_query_error():
+    engine, _ = make_engine(
+        execute_side_effect=RuntimeError(
+            "database unavailable"
+        )
+    )
+
+    result = await dependencies._database_engine_ready(
+        engine,
+        timeout=0.5,
+    )
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_database_connections_ready_requires_every_engine(
+    monkeypatch,
+):
+    engines = tuple(
+        (name, MagicMock())
+        for name in (
+            "user_writer",
+            "user_reader",
+            "manga_writer",
+            "manga_reader",
+        )
+    )
+    probe = AsyncMock(
+        side_effect=[True, True, False, True]
+    )
+
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engines",
+        lambda: engines,
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engine_ready",
+        probe,
+    )
+
+    result = await dependencies.database_connections_ready(
+        timeout=0.75
+    )
+
+    assert result is False
+    assert probe.await_count == 4
+    assert all(
+        call.kwargs == {"timeout": 0.75}
+        for call in probe.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispose_database_engines_disposes_every_configured_engine(
+    monkeypatch,
+):
+    engines = [
+        make_engine()[0],
+        make_engine()[0],
+        make_engine()[0],
+        make_engine()[0],
+    ]
+
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engines",
+        lambda: (
+            ("user_writer", engines[0]),
+            ("user_reader", engines[1]),
+            ("manga_writer", engines[2]),
+            ("manga_reader", engines[3]),
+        ),
+    )
+
+    await dependencies.dispose_database_engines()
+
+    for engine in engines:
+        engine.dispose.assert_awaited_once_with()

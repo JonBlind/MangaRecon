@@ -5,6 +5,19 @@ import pytest
 from backend import main
 
 
+@pytest.fixture(autouse=True)
+def mock_database_disposal(
+    monkeypatch,
+):
+    dispose = AsyncMock()
+    monkeypatch.setattr(
+        main,
+        "dispose_database_engines",
+        dispose,
+    )
+    return dispose
+
+
 @pytest.mark.asyncio
 async def test_lifespan_test_environment_sets_ready_without_redis(
     monkeypatch,
@@ -125,45 +138,9 @@ async def test_lifespan_prod_checks_storage_and_closes_redis(
 
 
 @pytest.mark.asyncio
-async def test_lifespan_non_prod_deployment_uses_redis_but_skips_storage_check(
-    monkeypatch,
-):
-    app = MagicMock()
-
-    redis_cache = MagicMock()
-    redis_cache.close = AsyncMock()
-
-    get_cache = MagicMock(
-        return_value=redis_cache
-    )
-    storage_ready = AsyncMock()
-
-    monkeypatch.setattr(main, "ENV", "staging")
-    monkeypatch.setattr(
-        main,
-        "get_redis_cache",
-        get_cache,
-    )
-    monkeypatch.setattr(
-        main,
-        "rate_limit_storage_ready",
-        storage_ready,
-    )
-
-    async with main.lifespan(app):
-        assert (
-            app.state.rate_limit_storage_ready
-            is True
-        )
-
-    get_cache.assert_called_once_with()
-    storage_ready.assert_not_awaited()
-    redis_cache.close.assert_awaited_once_with()
-
-
-@pytest.mark.asyncio
 async def test_lifespan_closes_redis_when_application_raises(
     monkeypatch,
+    mock_database_disposal,
 ):
     app = MagicMock()
 
@@ -192,6 +169,43 @@ async def test_lifespan_closes_redis_when_application_raises(
             )
 
     redis_cache.close.assert_awaited_once_with()
+    mock_database_disposal.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_disposes_databases_when_redis_close_fails(
+    monkeypatch,
+    mock_database_disposal,
+):
+    app = MagicMock()
+
+    redis_cache = MagicMock()
+    redis_cache.close = AsyncMock(
+        side_effect=RuntimeError(
+            "Redis close failed"
+        )
+    )
+
+    monkeypatch.setattr(main, "ENV", "prod")
+    monkeypatch.setattr(
+        main,
+        "get_redis_cache",
+        MagicMock(return_value=redis_cache),
+    )
+    monkeypatch.setattr(
+        main,
+        "rate_limit_storage_ready",
+        AsyncMock(return_value=True),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Redis close failed",
+    ):
+        async with main.lifespan(app):
+            pass
+
+    mock_database_disposal.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -222,6 +236,7 @@ def test_create_app_configures_application_in_test_environment(
         return_value=app
     )
     register_errors = MagicMock()
+    validate_database = MagicMock()
     validate_config = MagicMock()
     register_limiter = MagicMock()
 
@@ -234,6 +249,11 @@ def test_create_app_configures_application_in_test_environment(
         main,
         "register_exception_handlers",
         register_errors,
+    )
+    monkeypatch.setattr(
+        main,
+        "validate_database_config",
+        validate_database,
     )
     monkeypatch.setattr(
         main,
@@ -258,6 +278,7 @@ def test_create_app_configures_application_in_test_environment(
     )
 
     register_errors.assert_called_once_with(app)
+    validate_database.assert_called_once_with()
     validate_config.assert_called_once_with()
     register_limiter.assert_not_called()
 
@@ -303,6 +324,11 @@ def test_create_app_registers_rate_limiter_outside_test(
     )
     monkeypatch.setattr(
         main,
+        "validate_database_config",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        main,
         "validate_rate_limit_config",
         MagicMock(),
     )
@@ -342,9 +368,16 @@ def test_create_app_validates_rate_limit_config_before_registering_limiter(
     )
     monkeypatch.setattr(
         main,
+        "validate_database_config",
+        lambda: events.append(
+            "database"
+        ),
+    )
+    monkeypatch.setattr(
+        main,
         "validate_rate_limit_config",
         lambda: events.append(
-            "validate"
+            "rate-limit"
         ),
     )
     monkeypatch.setattr(
@@ -360,7 +393,8 @@ def test_create_app_validates_rate_limit_config_before_registering_limiter(
 
     assert events == [
         "exceptions",
-        "validate",
+        "database",
+        "rate-limit",
         "limiter",
     ]
 
@@ -378,6 +412,11 @@ def test_create_app_propagates_rate_limit_validation_error(
     monkeypatch.setattr(
         main,
         "register_exception_handlers",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        main,
+        "validate_database_config",
         MagicMock(),
     )
     monkeypatch.setattr(
@@ -406,6 +445,56 @@ def test_create_app_propagates_rate_limit_validation_error(
     ):
         main.create_app()
 
+    register_limiter.assert_not_called()
+    app.add_middleware.assert_not_called()
+    app.include_router.assert_not_called()
+
+
+def test_create_app_propagates_database_validation_error(
+    monkeypatch,
+):
+    app = MagicMock()
+
+    monkeypatch.setattr(
+        main,
+        "FastAPI",
+        MagicMock(return_value=app),
+    )
+    monkeypatch.setattr(
+        main,
+        "register_exception_handlers",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        main,
+        "validate_database_config",
+        MagicMock(
+            side_effect=RuntimeError(
+                "missing database configuration"
+            )
+        ),
+    )
+
+    validate_rate_limit = MagicMock()
+    register_limiter = MagicMock()
+    monkeypatch.setattr(
+        main,
+        "validate_rate_limit_config",
+        validate_rate_limit,
+    )
+    monkeypatch.setattr(
+        main,
+        "register_rate_limiter",
+        register_limiter,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="missing database configuration",
+    ):
+        main.create_app()
+
+    validate_rate_limit.assert_not_called()
     register_limiter.assert_not_called()
     app.add_middleware.assert_not_called()
     app.include_router.assert_not_called()

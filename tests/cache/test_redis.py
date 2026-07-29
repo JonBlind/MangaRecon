@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
+import asyncio
 import json
 import uuid
 
@@ -16,6 +17,7 @@ def redis_client():
     client.set = AsyncMock()
     client.get = AsyncMock()
     client.delete = AsyncMock()
+    client.ping = AsyncMock()
     client.aclose = AsyncMock()
 
     return client
@@ -290,6 +292,59 @@ def test_resolve_ttl_preserves_zero_override():
     result = cache._resolve_ttl(0)
 
     assert result == 0
+
+
+@pytest.mark.asyncio
+async def test_ping_returns_true_when_redis_responds(
+    redis_client,
+):
+    redis_client.ping.return_value = True
+    cache = attach_client(
+        RedisCache(),
+        redis_client,
+    )
+
+    result = await cache.ping(timeout=0.5)
+
+    assert result is True
+    redis_client.ping.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_ping_returns_false_when_redis_fails(
+    redis_client,
+):
+    redis_client.ping.side_effect = RuntimeError(
+        "Redis unavailable"
+    )
+    cache = attach_client(
+        RedisCache(),
+        redis_client,
+    )
+
+    result = await cache.ping()
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_ping_returns_false_when_redis_times_out(
+    redis_client,
+):
+    async def wait_forever():
+        await asyncio.Event().wait()
+
+    redis_client.ping = MagicMock(
+        side_effect=wait_forever
+    )
+    cache = attach_client(
+        RedisCache(),
+        redis_client,
+    )
+
+    result = await cache.ping(timeout=0.001)
+
+    assert result is False
 
 
 @pytest.mark.asyncio

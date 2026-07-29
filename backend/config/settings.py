@@ -3,7 +3,11 @@ from dotenv import load_dotenv
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV = os.getenv("MANGARECON_ENV", "prod").lower()
+SUPPORTED_ENVIRONMENTS = {"dev", "test", "prod"}
+ENV = os.getenv("MANGARECON_ENV", "prod").strip().lower()
+
+if ENV not in SUPPORTED_ENVIRONMENTS:
+    raise RuntimeError("MANGARECON_ENV must be one of: dev, test, prod.")
 
 if ENV == "test":
     load_dotenv(".env.test", override=True)

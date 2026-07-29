@@ -486,47 +486,13 @@ async def test_maintenance_health_endpoint_always_returns_200(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_ready_endpoint_returns_200_when_ready(
+async def test_maintenance_allows_ready_probe_to_reach_route(
     monkeypatch,
 ):
     monkeypatch.setattr(
         rate_limit,
         "ENV",
         "prod",
-    )
-
-    middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
-    )
-    request = make_request(
-        "/readyz",
-        ready=True,
-    )
-
-    response = await middleware.dispatch(
-        request,
-        AsyncMock(),
-    )
-
-    assert response.status_code == 200
-    assert response_json(response) == {
-        "message": "MangaRecon API is ready"
-    }
-
-
-@pytest.mark.asyncio
-async def test_maintenance_ready_endpoint_returns_503_when_unready(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        rate_limit,
-        "ENV",
-        "prod",
-    )
-    monkeypatch.setattr(
-        rate_limit.time,
-        "monotonic",
-        MagicMock(return_value=10.0),
     )
 
     middleware = make_middleware(
@@ -535,23 +501,19 @@ async def test_maintenance_ready_endpoint_returns_503_when_unready(
     request = make_request(
         "/readyz",
         ready=False,
-        last_check=5.0,
-        check_interval=15.0,
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(
+        return_value=expected
     )
 
-    response = await middleware.dispatch(
+    result = await middleware.dispatch(
         request,
-        AsyncMock(),
+        call_next,
     )
 
-    assert response.status_code == 503
-    assert response.headers["retry-after"] == "15"
-    assert response_json(response) == {
-        "status": "error",
-        "data": {},
-        "message": "Service unavailable",
-        "detail": "TEMPORARILY_UNAVAILABLE",
-    }
+    assert result is expected
+    call_next.assert_awaited_once_with(request)
 
 
 @pytest.mark.asyncio

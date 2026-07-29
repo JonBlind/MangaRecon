@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 
 from fastapi import Request
@@ -12,11 +11,10 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.cache.redis import get_redis_url
+from backend.config.settings import ENV
 from backend.utils.response import error
 
 logger = logging.getLogger(__name__)
-
-ENV = os.getenv("MANGARECON_ENV", "prod").lower()
 
 
 def _get_storage_uri() -> str:
@@ -73,6 +71,9 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/healthz":
             return JSONResponse(status_code=200, content={"message": "MangaRecon API is running."})
 
+        if request.url.path == "/readyz":
+            return await call_next(request)
+
         ready = getattr(request.app.state, "rate_limit_storage_ready", False)
 
         if not ready:
@@ -86,11 +87,6 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
                 request.app.state.rate_limit_storage_ready = ok
                 ready = ok
         
-        if request.url.path == "/readyz":
-            if ready:
-                return JSONResponse(status_code=200, content={"message": "MangaRecon API is ready"})
-            return JSONResponse(status_code=503, content=error("Service unavailable", detail="TEMPORARILY_UNAVAILABLE"), headers={"Retry-After": "15"})
-
         if ready:
             return await call_next(request)
 

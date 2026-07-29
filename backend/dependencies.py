@@ -6,11 +6,20 @@ yields `ClientDatabase` for those sessions, and exposes a
 user-write session for `fastapi-users` integration.
 '''
 
+import asyncio
 from typing import AsyncGenerator, Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
+
 from backend.config.settings import ENV
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.db.models # DO NOT REMOVE. This is to just ensure all models are loaded before used.
@@ -37,12 +46,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore")
-    
+
     user_write: Optional[str] = Field(default=None, validation_alias="UserWriterDB")
     user_read: Optional[str] = Field(default=None, validation_alias="UserReaderDB")
     manga_write: Optional[str] = Field(default=None, validation_alias="MangaWriterDB")
     manga_read: Optional[str] = Field(default=None, validation_alias="MangaReaderDB")
-    
+
 settings = Settings()
 
 engine_kwargs = {"pool_pre_ping": True}
@@ -54,6 +63,76 @@ _engine_user_write = create_async_engine(settings.user_write, **engine_kwargs) i
 _engine_user_read = create_async_engine(settings.user_read, **engine_kwargs) if settings.user_read else None
 _engine_manga_write = create_async_engine(settings.manga_write, **engine_kwargs) if settings.manga_write else None
 _engine_manga_read = create_async_engine(settings.manga_read, **engine_kwargs) if settings.manga_read else None
+
+
+def validate_database_config() -> None:
+    if ENV != "prod":
+        return
+
+    required_urls = {
+        "UserWriterDB": settings.user_write,
+        "UserReaderDB": settings.user_read,
+        "MangaWriterDB": settings.manga_write,
+        "MangaReaderDB": settings.manga_read,
+    }
+    missing = [name for name, url in required_urls.items() if not url]
+
+    if missing:
+        raise RuntimeError(
+            "MANGARECON_ENV=prod requires database URLs for: "
+            + ", ".join(missing)
+            + "."
+        )
+
+
+def _database_engines() -> tuple[tuple[str, AsyncEngine | None], ...]:
+    return (
+        ("user_writer", _engine_user_write),
+        ("user_reader", _engine_user_read),
+        ("manga_writer", _engine_manga_write),
+        ("manga_reader", _engine_manga_read),
+    )
+
+
+async def _database_engine_ready(
+    engine: AsyncEngine | None,
+    *,
+    timeout: float,
+) -> bool:
+    if engine is None:
+        return False
+
+    async def execute_probe() -> None:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(execute_probe(), timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+async def database_connections_ready(timeout: float = 0.5) -> bool:
+    results = await asyncio.gather(
+        *(
+            _database_engine_ready(engine, timeout=timeout)
+            for _, engine in _database_engines()
+        )
+    )
+    return all(results)
+
+
+async def dispose_database_engines() -> None:
+    await asyncio.gather(
+        *(
+            engine.dispose()
+            for _, engine in _database_engines()
+            if engine is not None
+        ),
+        return_exceptions=True,
+    )
+
 
 # Session factories (expire_on_commit=False ensures objects remain usable after commit).
 _Session_user_write = async_sessionmaker(_engine_user_write, class_=AsyncSession, expire_on_commit=False) if _engine_user_write else None

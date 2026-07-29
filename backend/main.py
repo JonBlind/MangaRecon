@@ -14,6 +14,7 @@ from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready, validate_rate_limit_config
 from backend.cache.redis import get_redis_cache
 from backend.config.settings import ENV, settings, origins
+from backend.dependencies import dispose_database_engines, validate_database_config
 from dotenv import load_dotenv
 from backend.routes import (
     auth_routes,
@@ -39,7 +40,7 @@ async def lifespan(app: FastAPI):
     '''
     redis_cache = None
 
-    if ENV not in ("dev", "test"):
+    if ENV == "prod":
         redis_cache = get_redis_cache()
 
     if ENV == "prod":
@@ -54,19 +55,23 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        if redis_cache is not None:
-            await redis_cache.close()
+        try:
+            if redis_cache is not None:
+                await redis_cache.close()
+        finally:
+            await dispose_database_engines()
 
 def create_app() -> FastAPI:
     '''
     Primary method responsible for producing the backend client application.
-    
+
     Returns:
         FastAPI
     '''
     app = FastAPI(lifespan=lifespan, debug=settings.debug, redirect_slashes=False)
 
     register_exception_handlers(app)
+    validate_database_config()
     validate_rate_limit_config()
 
     # Rate limiting is disabled in tests

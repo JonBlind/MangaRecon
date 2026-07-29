@@ -268,6 +268,29 @@ def test_environment_name_is_lowercased(
     assert "lowercase-env-ok" in result.stdout
 
 
+def test_invalid_environment_name_fails_import(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "staging",
+            "FRONTEND_ORIGINS": (
+                "http://example.com"
+            ),
+        },
+        code=(
+            "from backend.config import settings"
+        ),
+    )
+
+    assert result.returncode != 0
+    assert (
+        "MANGARECON_ENV must be one of: "
+        "dev, test, prod"
+    ) in result.stderr
+
+
 def test_default_environment_is_prod(
     tmp_path,
 ):

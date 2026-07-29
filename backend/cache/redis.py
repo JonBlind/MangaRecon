@@ -5,6 +5,7 @@ Provides a lightweight wrapper around redis.asyncio with convenience methods
 for JSON (de)serialization, default TTL handling, and safe error logging.
 '''
 
+import asyncio
 import json
 import logging
 import os
@@ -157,6 +158,16 @@ class RedisCache:
             await self._get_client().delete(*keys)
         except Exception as e:
             logger.warning(f"Redis DELETE_MULTIPLE error for {keys[:3]}... : {e}", exc_info=True)
+
+    async def ping(self, timeout: float = 0.25) -> bool:
+        try:
+            result = await asyncio.wait_for(
+                self._get_client().ping(),
+                timeout=timeout,
+            )
+            return bool(result)
+        except Exception:
+            return False
 
     async def close(self):
         '''
