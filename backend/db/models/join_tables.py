@@ -1,9 +1,9 @@
-'''
-Association tables linking manga to genres, tags, demographics, and authors.
+"""
+Association tables linking manga to genres, tags, and demographics.
 
 All foreign keys are `ON DELETE CASCADE` so links are removed when a parent row
 is deleted.
-'''
+"""
 
 from sqlalchemy import Column, ForeignKey, Integer, Table
 from backend.db.models.base import Base

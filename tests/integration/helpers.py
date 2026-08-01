@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from typing import Any
 from uuid import uuid4
 
@@ -531,7 +530,7 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                     manga_id,
                     title,
                     description,
-                    published_date,
+                    publication_year,
                     external_average_rating,
                     average_rating,
                     cover_image_url
@@ -541,7 +540,7 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                         :seed_id,
                         'Alpha Quest',
                         'The seed manga.',
-                        :seed_date,
+                        :seed_year,
                         8.5,
                         8.0,
                         'https://example.com/alpha.jpg'
@@ -550,7 +549,7 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                         :similar_id,
                         'Beta Quest',
                         'A similar recommendation candidate.',
-                        :similar_date,
+                        :similar_year,
                         8.0,
                         7.5,
                         'https://example.com/beta.jpg'
@@ -559,7 +558,7 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                         :unrelated_id,
                         'Romance Story',
                         'An unrelated title.',
-                        :unrelated_date,
+                        :unrelated_year,
                         7.0,
                         6.5,
                         'https://example.com/romance.jpg'
@@ -570,9 +569,9 @@ def seed_catalog(engine: Engine) -> CatalogSeed:
                 "seed_id": values.seed_manga_id,
                 "similar_id": values.similar_manga_id,
                 "unrelated_id": values.unrelated_manga_id,
-                "seed_date": date(2020, 1, 1),
-                "similar_date": date(2021, 1, 1),
-                "unrelated_date": date(2010, 1, 1),
+                "seed_year": 2020,
+                "similar_year": 2021,
+                "unrelated_year": 2010,
             },
         )
         connection.execute(

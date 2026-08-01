@@ -16,3 +16,4 @@ class Creator(Base):
     creator_name = Column(String(255), nullable=False)
 
     manga_links = relationship("MangaCreator", back_populates="creator", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin")
+    external_sources = relationship("CreatorExternalSource", back_populates="creator", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin")

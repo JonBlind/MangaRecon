@@ -492,9 +492,12 @@ async def test_fetch_filtered_manga_page_applies_order_offset_and_limit(
         "external_average_rating",
         "desc",
     )
-    stmt.order_by.assert_called_once_with(
-        ordering_clause,
-    )
+    stmt.order_by.assert_called_once()
+
+    order_by_args = stmt.order_by.call_args.args
+
+    assert order_by_args[0] is ordering_clause
+    assert str(order_by_args[1]) == "manga.manga_id ASC"
     ordered_stmt.offset.assert_called_once_with(10)
     offset_stmt.limit.assert_called_once_with(5)
     db.execute.assert_awaited_once_with(final_stmt)

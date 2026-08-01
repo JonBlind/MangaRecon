@@ -9,8 +9,8 @@ from backend.utils.ordering import get_ordering_clause
     [
         ("title", "asc", "manga.title ASC"),
         ("title", "desc", "manga.title DESC"),
-        ("published_date", "asc", "manga.published_date ASC"),
-        ("published_date", "desc", "manga.published_date DESC"),
+        ("publication_year", "asc", "manga.publication_year ASC"),
+        ("publication_year", "desc", "manga.publication_year DESC"),
         (
             "external_average_rating",
             "asc",

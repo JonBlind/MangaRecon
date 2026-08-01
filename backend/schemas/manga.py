@@ -1,40 +1,45 @@
+from typing import Literal, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Literal
-from datetime import date
+
 
 CreatorRole = Literal["author", "artist"]
 
-# Get the genre
-# Response
+
 class GenreRead(BaseModel):
-    '''
+    """
     Genre master record used for categorizing manga (e.g., Action, Romance).
-    '''
+    """
+
     genre_id: int
     genre_name: str
+
     model_config = ConfigDict(from_attributes=True)
 
-# Get the tag
-# Response
+
 class TagRead(BaseModel):
-    '''
-    Tag master record for more specific classification (e.g., Time Travel, Found Family).
-    '''
+    """
+    Tag master record for more specific classification
+    (e.g., Time Travel, Tournament).
+    """
+
     tag_id: int
     tag_name: str
+
     model_config = ConfigDict(from_attributes=True)
 
-# Get the demographic label
+
 class DemographicRead(BaseModel):
-    '''
-    Demographic label for the intended audience (e.g., Shonen, Seinen, Josei).
-    '''
+    """
+    Demographic label for the intended audience
+    (e.g., Shonen, Seinen, Josei).
+    """
+
     demographic_id: int
     demographic_name: str
+
     model_config = ConfigDict(from_attributes=True)
 
-# Get all the info on a manga
-# Response
 
 class CreatorCreditRead(BaseModel):
     """
@@ -46,36 +51,51 @@ class CreatorCreditRead(BaseModel):
     role: CreatorRole
 
     model_config = ConfigDict(from_attributes=True)
+
+
 class MangaRead(BaseModel):
-    '''
-    Full API representation of a manga, including core fields and attached metadata
-    (author, genres, tags, demographics). Ratings may include external and aggregate values.
-    '''
+    """
+    Full API representation of a manga, including core fields, creator
+    credits, classifications, and internal and external rating metadata.
+    """
+
     manga_id: int
     title: str
     description: Optional[str] = None
-    published_date: Optional[date] = None
+    publication_year: Optional[int] = None
+    media_type: Optional[str] = None
+
     external_average_rating: Optional[float] = None
+    external_rating_votes: Optional[int] = None
     average_rating: Optional[float] = None
 
     creator_credits: list[CreatorCreditRead] = Field(default_factory=list)
     genres: list[GenreRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     demographics: list[DemographicRead] = Field(default_factory=list)
+
     cover_image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
-# Get very minimal info for listing manga
-# Response
+
 class MangaListItem(BaseModel):
-    '''
-    Lightweight representation for listing/search results and recommendations.
-    Includes identifier, title, and optional average rating.
-    '''
+    """
+    Lightweight manga representation used for listing and search results.
+    """
+
     manga_id: int
     title: str
+    description: Optional[str] = None
+    publication_year: Optional[int] = None
+    media_type: Optional[str] = None
+
     genres: list[GenreRead] = Field(default_factory=list)
+
     average_rating: Optional[float] = None
+    external_average_rating: Optional[float] = None
+    external_rating_votes: Optional[int] = None
+
     cover_image_url: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)

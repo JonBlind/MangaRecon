@@ -1,4 +1,3 @@
-from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -88,8 +87,10 @@ def test_manga_read_accepts_complete_payload():
         manga_id=10,
         title="Berserk",
         description="A dark fantasy manga",
-        published_date=date(1989, 8, 25),
+        publication_year=1989,
+        media_type="manga",
         external_average_rating=9.4,
+        external_rating_votes=125_000,
         average_rating=9.0,
         creator_credits=[
             {
@@ -121,8 +122,10 @@ def test_manga_read_accepts_complete_payload():
 
     assert manga.manga_id == 10
     assert manga.title == "Berserk"
-    assert manga.published_date == date(1989, 8, 25)
+    assert manga.publication_year == 1989
+    assert manga.media_type == "manga"
     assert manga.external_average_rating == 9.4
+    assert manga.external_rating_votes == 125_000
     assert manga.average_rating == 9.0
     assert manga.cover_image_url == (
         "https://example.com/cover.jpg"
@@ -163,15 +166,19 @@ def test_manga_read_accepts_optional_null_fields():
         manga_id=10,
         title="Berserk",
         description=None,
-        published_date=None,
+        publication_year=None,
+        media_type=None,
+        external_rating_votes=None,
         external_average_rating=None,
         average_rating=None,
         cover_image_url=None,
     )
 
     assert manga.description is None
-    assert manga.published_date is None
+    assert manga.publication_year is None
+    assert manga.media_type is None
     assert manga.external_average_rating is None
+    assert manga.external_rating_votes is None
     assert manga.average_rating is None
     assert manga.cover_image_url is None
 
@@ -186,8 +193,10 @@ def test_manga_read_supports_from_attributes():
         manga_id=10,
         title="Monster",
         description=None,
-        published_date=date(1994, 12, 5),
+        publication_year=1994,
+        media_type="manga",
         external_average_rating=9.0,
+        external_rating_votes=45_000,
         average_rating=8.8,
         creator_credits=[
             SimpleNamespace(
@@ -234,6 +243,9 @@ def test_manga_read_supports_from_attributes():
         manga.demographics[0].demographic_name
         == "Seinen"
     )
+    assert manga.publication_year == 1994
+    assert manga.media_type == "manga"
+    assert manga.external_rating_votes == 45_000
 
 
 def test_manga_read_default_lists_are_not_shared():
@@ -281,12 +293,22 @@ def test_manga_list_item_accepts_minimum_payload():
     assert item.genres == []
     assert item.average_rating is None
     assert item.cover_image_url is None
+    assert item.description is None
+    assert item.publication_year is None
+    assert item.media_type is None
+    assert item.external_average_rating is None
+    assert item.external_rating_votes is None
 
 
 def test_manga_list_item_parses_nested_genres():
     item = MangaListItem(
         manga_id=10,
         title="Berserk",
+        description="A dark fantasy manga",
+        publication_year=1989,
+        media_type="manga",
+        external_average_rating=9.2,
+        external_rating_votes=125_000,
         genres=[
             {
                 "genre_id": 1,
@@ -304,6 +326,11 @@ def test_manga_list_item_parses_nested_genres():
         )
     ]
     assert item.average_rating == 9.4
+    assert item.description == "A dark fantasy manga"
+    assert item.publication_year == 1989
+    assert item.media_type == "manga"
+    assert item.external_average_rating == 9.2
+    assert item.external_rating_votes == 125_000
 
 
 def test_manga_list_item_supports_from_attributes():

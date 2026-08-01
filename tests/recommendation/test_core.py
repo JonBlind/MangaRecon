@@ -1,5 +1,4 @@
 from collections import Counter
-from datetime import date
 from unittest.mock import AsyncMock
 import uuid
 
@@ -112,12 +111,12 @@ async def test_metadata_profile_collects_all_metadata():
         FakeResult(rows=[(500,), (600,), (500,)]),
         # External ratings
         FakeResult(rows=[(8.5,), (None,), (7.5,)]),
-        # Publication dates
+        # Publication years
         FakeResult(
             rows=[
-                (date(2001, 1, 1),),
+                (2001,),
                 (None,),
-                (date(2005, 6, 15),),
+                (2005,),
             ]
         ),
     ]
@@ -166,7 +165,7 @@ async def test_get_candidate_manga_returns_mapping_rows():
             "manga_id": 10,
             "title": "Candidate One",
             "description": "Description one",
-            "published_date": date(2020, 1, 1),
+            "publication_year": 2020,
             "external_average_rating": 8.4,
             "average_rating": 7.9,
             "cover_image_url": "one.jpg",
@@ -175,7 +174,7 @@ async def test_get_candidate_manga_returns_mapping_rows():
             "manga_id": 20,
             "title": "Candidate Two",
             "description": "Description two",
-            "published_date": date(2018, 1, 1),
+            "publication_year": 2018,
             "external_average_rating": 7.8,
             "average_rating": 7.0,
             "cover_image_url": "two.jpg",
@@ -273,14 +272,14 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
             "manga_id": 101,
             "title": "Strong Match",
             "external_average_rating": 8.0,
-            "published_date": date(2004, 1, 1),
+            "publication_year": 2004,
             "cover_image_url": "strong.jpg",
         },
         {
             "manga_id": 102,
             "title": "Weak Match",
             "external_average_rating": 5.0,
-            "published_date": date(1990, 1, 1),
+            "publication_year": 1990,
             "cover_image_url": "weak.jpg",
         },
     ]
@@ -358,7 +357,7 @@ async def test_scoring_handles_missing_seed_averages_and_candidate_values():
             "manga_id": 101,
             "title": "Sparse Metadata",
             "external_average_rating": None,
-            "published_date": None,
+            "publication_year": None,
             "cover_image_url": None,
         }
     ]

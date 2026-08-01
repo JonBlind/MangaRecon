@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
-
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
@@ -56,7 +54,7 @@ def test_public_recommendations_include_creator_only_candidate(
                     manga_id,
                     title,
                     description,
-                    published_date,
+                    publication_year,
                     external_average_rating,
                     average_rating,
                     cover_image_url
@@ -65,7 +63,7 @@ def test_public_recommendations_include_creator_only_candidate(
                     :manga_id,
                     'Same Creator, Different Metadata',
                     'Shares only a creator with the seed manga.',
-                    :published_date,
+                    :publication_year,
                     8.2,
                     NULL,
                     NULL
@@ -74,7 +72,7 @@ def test_public_recommendations_include_creator_only_candidate(
             ),
             {
                 "manga_id": creator_only_manga_id,
-                "published_date": date(2020, 6, 1),
+                "publication_year": 2020,
             },
         )
         connection.execute(

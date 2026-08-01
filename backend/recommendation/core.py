@@ -97,9 +97,9 @@ async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientRe
         profile["external_ratings"].extend([row[0] for row in rating_result.fetchall() if row[0] is not None])
 
         # Years
-        year_stmt = select(Manga.published_date).where(Manga.manga_id.in_(manga_ids))
+        year_stmt = select(Manga.publication_year).where(Manga.manga_id.in_(manga_ids))
         years_result = await db.execute(year_stmt)
-        profile["years"].extend([row[0].year for row in years_result.fetchall() if row[0] is not None])
+        profile["years"].extend(row[0]for row in years_result.fetchall() if row[0] is not None)
 
         return profile
 
@@ -178,7 +178,7 @@ async def get_candidate_manga(
                 Manga.manga_id,
                 Manga.title,
                 Manga.description,
-                Manga.published_date,
+                Manga.publication_year,
                 Manga.external_average_rating,
                 Manga.average_rating,
                 Manga.cover_image_url,
@@ -288,8 +288,8 @@ async def get_scored_recommendations(
         rating_score = max(0, 5 - abs(float(manga["external_average_rating"] - avg_rating)) if manga["external_average_rating"] and avg_rating else 0)
 
         year_score = 0
-        if manga["published_date"] and avg_year:
-            year_score = max(0, 5 - (abs(manga["published_date"].year - avg_year) * 0.5))
+        if manga["publication_year"] is not None and avg_year is not None:
+            year_score = max(0, 5 - (abs(manga["publication_year"] - avg_year) * 0.5))
 
         score = genre_score + tag_score + demo_score + creator_score + rating_score + year_score
 

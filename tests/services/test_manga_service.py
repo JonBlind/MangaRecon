@@ -1,4 +1,3 @@
-from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,8 +16,10 @@ def make_manga_detail_row(
         manga_id=manga_id,
         title=title,
         description="A test description.",
-        published_date=date(2020, 5, 10),
+        publication_year=2020,
+        media_type="manga",
         external_average_rating=8.4,
+        external_rating_votes=2_500,
         average_rating=7.9,
         cover_image_url="https://example.com/cover.jpg",
     )
@@ -28,16 +29,22 @@ def make_manga_list_row(
     *,
     manga_id: int,
     title: str,
+    publication_year: int | None = None,
+    media_type: str | None = None,
     average_rating: float | None = None,
     external_average_rating: float | None = None,
+    external_rating_votes: int | None = None,
     cover_image_url: str | None = None,
 ):
     return SimpleNamespace(
         manga_id=manga_id,
         title=title,
         description=f"Description for {title}",
+        publication_year=publication_year,
+        media_type=media_type,
         average_rating=average_rating,
         external_average_rating=external_average_rating,
+        external_rating_votes=external_rating_votes,
         cover_image_url=cover_image_url,
     )
 
@@ -130,8 +137,10 @@ async def test_get_manga_detail_returns_manga_with_metadata(
     assert result.manga_id == 42
     assert result.title == "Detailed Manga"
     assert result.description == "A test description."
-    assert result.published_date == date(2020, 5, 10)
+    assert result.publication_year == 2020
+    assert result.media_type == "manga"
     assert result.external_average_rating == 8.4
+    assert result.external_rating_votes == 2_500
     assert result.average_rating == 7.9
     assert result.cover_image_url == "https://example.com/cover.jpg"
 
@@ -360,8 +369,11 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         make_manga_list_row(
             manga_id=10,
             title="First Manga",
+            publication_year=2020,
+            media_type="manga",
             average_rating=7.5,
             external_average_rating=8.0,
+            external_rating_votes=1_500,
             cover_image_url="first.jpg",
         ),
         make_manga_list_row(
@@ -444,6 +456,11 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
     assert first.title == "First Manga"
     assert first.average_rating == 7.5
     assert first.cover_image_url == "first.jpg"
+    assert first.description == "Description for First Manga"
+    assert first.publication_year == 2020
+    assert first.media_type == "manga"
+    assert first.external_average_rating == 8.0
+    assert first.external_rating_votes == 1_500
     assert [
         genre.model_dump()
         for genre in first.genres

@@ -16,18 +16,18 @@ from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering
 
 
 async def fetch_manga_core_by_id(db: ClientReadDatabase, *, manga_id: int):
-    stmt = (
-        select(
-            Manga.manga_id,
-            Manga.title,
-            Manga.description,
-            Manga.published_date,
-            Manga.external_average_rating,
-            Manga.average_rating,
-            Manga.cover_image_url,
-        )
-        .where(Manga.manga_id == manga_id)
-    )
+    stmt = select(
+        Manga.manga_id,
+        Manga.title,
+        Manga.description,
+        Manga.publication_year,
+        Manga.media_type,
+        Manga.external_average_rating,
+        Manga.external_rating_votes,
+        Manga.average_rating,
+        Manga.cover_image_url,
+    ).where(Manga.manga_id == manga_id)
+
     return (await db.execute(stmt)).one_or_none()
 
 async def fetch_manga_creator_credits(db: ClientReadDatabase, *, manga_id: int):
@@ -88,9 +88,12 @@ def build_filter_stmt(
             Manga.manga_id,
             Manga.title,
             Manga.description,
+            Manga.publication_year,
+            Manga.media_type,
             Manga.cover_image_url,
             Manga.average_rating,
             Manga.external_average_rating,
+            Manga.external_rating_votes,
         )
         .distinct()
     )
@@ -145,7 +148,7 @@ async def fetch_filtered_manga_page(
     order_by: MangaOrderField,
     order_dir: OrderDirection,
 ):
-    stmt = stmt.order_by(get_ordering_clause(order_by, order_dir)).offset(offset).limit(limit)
+    stmt = (stmt.order_by(get_ordering_clause(order_by, order_dir), Manga.manga_id.asc()).offset(offset).limit(limit))
     res = await db.execute(stmt)
     return res.all()
 
