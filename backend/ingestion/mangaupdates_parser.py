@@ -107,7 +107,7 @@ def parse_mangaupdates_series(
         tags=_parse_named_items(
             payload.get("categories"),
             field_name="category",
-            max_length=255,
+            max_length=50,
         ),
         demographics=demographics,
         creator_credits=_parse_creator_credits(
@@ -320,7 +320,7 @@ def _parse_genres(
     for item in _mapping_items(value):
         name = _optional_text(
             item.get("genre"),
-            max_length=255,
+            max_length=50,
         )
 
         if name is None:

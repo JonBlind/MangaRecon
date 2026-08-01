@@ -23,11 +23,17 @@ def run_isolated_settings_import(
     """
     env = os.environ.copy()
 
-    env.pop("MANGARECON_ENV", None)
-    env.pop("FRONTEND_ORIGINS", None)
-    env.pop("frontend_origins", None)
-    env.pop("DEBUG", None)
-    env.pop("debug", None)
+    for name in (
+        "MANGARECON_ENV",
+        "FRONTEND_ORIGINS",
+        "DEBUG",
+        "MANGAUPDATES_BASE_URL",
+        "MANGAUPDATES_TIMEOUT_SECONDS",
+        "MANGAUPDATES_MIN_REQUEST_INTERVAL_SECONDS",
+        "MANGAUPDATES_USER_AGENT",
+    ):
+        env.pop(name, None)
+        env.pop(name.lower(), None)
 
     env.update(environment)
 
@@ -390,3 +396,87 @@ def test_import_fails_when_frontend_origins_is_missing(
 
     assert result.returncode != 0
     assert "FRONTEND_ORIGINS" in result.stderr
+
+def test_mangaupdates_settings_use_safe_defaults(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "http://example.com"
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.mangaupdates_base_url == "
+            "'https://api.mangaupdates.com/v1'; "
+            "assert configured."
+            "mangaupdates_timeout_seconds == 10.0; "
+            "assert configured."
+            "mangaupdates_min_request_interval_seconds "
+            "== 1.0; "
+            "assert configured.mangaupdates_user_agent "
+            "== 'MangaRecon/0.1'; "
+            "print('mangaupdates-defaults-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert (
+        "mangaupdates-defaults-ok"
+        in result.stdout
+    )
+
+
+def test_mangaupdates_settings_accept_environment_overrides(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "http://example.com"
+            ),
+            "MANGAUPDATES_BASE_URL": (
+                "https://configured.example/v1"
+            ),
+            "MANGAUPDATES_TIMEOUT_SECONDS": "7.5",
+            (
+                "MANGAUPDATES_"
+                "MIN_REQUEST_INTERVAL_SECONDS"
+            ): "0.25",
+            "MANGAUPDATES_USER_AGENT": (
+                "MangaRecon-Test/1.0"
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.mangaupdates_base_url == "
+            "'https://configured.example/v1'; "
+            "assert configured."
+            "mangaupdates_timeout_seconds == 7.5; "
+            "assert configured."
+            "mangaupdates_min_request_interval_seconds "
+            "== 0.25; "
+            "assert configured.mangaupdates_user_agent "
+            "== 'MangaRecon-Test/1.0'; "
+            "print('mangaupdates-overrides-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert (
+        "mangaupdates-overrides-ok"
+        in result.stdout
+    )

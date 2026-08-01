@@ -91,7 +91,8 @@ def _clean_manga_domain(engine: Engine) -> None:
                     genre,
                     tag,
                     demographic,
-                    creator
+                    creator,
+                    data_provider
                 RESTART IDENTITY CASCADE
                 '''
             )

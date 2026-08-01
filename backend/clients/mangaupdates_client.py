@@ -6,6 +6,8 @@ from typing import Any, Self
 
 import httpx2
 
+from backend.config.settings import settings
+
 
 class MangaUpdatesClientError(RuntimeError):
     """
@@ -61,7 +63,7 @@ class MangaUpdatesInvalidResponseError(
     MangaUpdatesClientError
 ):
     """
-    Raised when MangaUpdates returns invalid JSON.
+    Raised when MangaUpdates returns an invalid response body.
     """
 
 
@@ -84,6 +86,12 @@ class MangaUpdatesClient:
         user_agent: str = "MangaRecon/0.1",
         transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
+        normalized_base_url = base_url.strip()
+        normalized_user_agent = user_agent.strip()
+
+        if not normalized_base_url:
+            raise ValueError("base_url cannot be blank.")
+
         if timeout_seconds <= 0:
             raise ValueError(
                 "timeout_seconds must be greater than zero."
@@ -94,6 +102,9 @@ class MangaUpdatesClient:
                 "min_request_interval_seconds cannot be negative."
             )
 
+        if not normalized_user_agent:
+            raise ValueError("user_agent cannot be blank.")
+
         self._min_request_interval_seconds = (
             min_request_interval_seconds
         )
@@ -101,11 +112,13 @@ class MangaUpdatesClient:
         self._last_request_started_at: float | None = None
 
         self._http_client = httpx2.AsyncClient(
-            base_url=f"{base_url.rstrip('/')}/",
+            base_url=(
+                f"{normalized_base_url.rstrip('/')}/"
+            ),
             timeout=timeout_seconds,
             headers={
                 "Accept": "application/json",
-                "User-Agent": user_agent,
+                "User-Agent": normalized_user_agent,
             },
             transport=transport,
         )
@@ -133,7 +146,7 @@ class MangaUpdatesClient:
         *,
         page: int = 1,
         per_page: int = 25,
-    ) -> Any:
+    ) -> dict[str, Any]:
         """
         Search MangaUpdates for series matching a title.
         """
@@ -163,7 +176,7 @@ class MangaUpdatesClient:
         series_id: int,
         *,
         unrendered_fields: bool = False,
-    ) -> Any:
+    ) -> dict[str, Any]:
         """
         Retrieve the full MangaUpdates record for one series.
         """
@@ -192,7 +205,7 @@ class MangaUpdatesClient:
         *,
         json_body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
-    ) -> Any:
+    ) -> dict[str, Any]:
         await self._wait_for_request_slot()
 
         try:
@@ -233,11 +246,21 @@ class MangaUpdatesClient:
             )
 
         try:
-            return response.json()
+            payload = response.json()
         except ValueError as exc:
             raise MangaUpdatesInvalidResponseError(
                 "MangaUpdates returned invalid JSON."
             ) from exc
+
+        if not isinstance(payload, dict):
+            raise MangaUpdatesInvalidResponseError(
+                (
+                    "MangaUpdates returned JSON that was "
+                    "not an object."
+                )
+            )
+
+        return payload
 
     async def _wait_for_request_slot(self) -> None:
         async with self._request_lock:
@@ -257,3 +280,19 @@ class MangaUpdatesClient:
                     now = monotonic()
 
             self._last_request_started_at = now
+
+
+def create_mangaupdates_client() -> MangaUpdatesClient:
+    """
+    Create a MangaUpdates client from application settings.
+    """
+    return MangaUpdatesClient(
+        base_url=settings.mangaupdates_base_url,
+        timeout_seconds=(
+            settings.mangaupdates_timeout_seconds
+        ),
+        min_request_interval_seconds=(
+            settings.mangaupdates_min_request_interval_seconds
+        ),
+        user_agent=settings.mangaupdates_user_agent,
+    )
