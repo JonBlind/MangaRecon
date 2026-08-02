@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from backend.db.client_db import ClientWriteDatabase
 from backend.ingestion.mangaupdates_parser import parse_mangaupdates_series

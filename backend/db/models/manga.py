@@ -49,5 +49,5 @@ class Manga(Base):
     genres = relationship("Genre", secondary=manga_genre, back_populates="manga")
     tags = relationship("Tag", secondary=manga_tag, back_populates="manga")
     demographics = relationship("Demographic", secondary=manga_demographic, back_populates="manga")
-    manga_collection_links = relationship("MangaCollection", back_populates="manga", cascade="all, delete-orphan", lazy="selectin")
+    manga_collection_links = relationship("MangaCollection", back_populates="manga", cascade="all, delete-orphan", passive_deletes=True, lazy="raise")
     

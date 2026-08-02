@@ -30,4 +30,4 @@ class Collection(Base):
 
     # Many-to-many relationships 
     user = relationship("User", back_populates="collections")
-    manga_collection_links = relationship("MangaCollection", back_populates="collection", cascade="all, delete-orphan", lazy="selectin")
+    manga_collection_links = relationship("MangaCollection", back_populates="collection", cascade="all, delete-orphan", passive_deletes=True, lazy="raise")

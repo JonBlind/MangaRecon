@@ -7,10 +7,7 @@ from typing import Any
 
 import pytest
 
-from backend.ingestion.mangaupdates_parser import (
-    MangaUpdatesParseError,
-    parse_mangaupdates_series,
-)
+import backend.ingestion.mangaupdates_parser as parser_module
 from backend.ingestion.records import CreatorCreditRecord
 
 
@@ -125,7 +122,7 @@ def make_payload() -> dict[str, Any]:
 def test_parse_series_normalizes_expected_record() -> None:
     payload = make_payload()
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.provider_key == "mangaupdates"
     assert result.external_id == "51239621230"
@@ -208,12 +205,41 @@ def test_parse_series_normalizes_expected_record() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "appendix",
+    [
+        "Note: Nominated for an award.",
+        (
+            "**Original Manga:** "
+            "[Publisher](https://example.com/original)"
+        ),
+        (
+            "**Official Translations:**  \n"
+            "English: [Publisher](https://example.com/en)"
+        ),
+    ],
+)
+def test_description_excludes_source_and_appendix_metadata(
+    appendix: str,
+) -> None:
+    payload = make_payload()
+    payload["description"] = (
+        "From Viz:  \n"
+        "The actual synopsis.\n\n"
+        f"{appendix}"
+    )
+
+    result = parser_module.parse_mangaupdates_series(payload)
+
+    assert result.description == "The actual synopsis."
+
+
 def test_zero_votes_normalizes_rating_to_none() -> None:
     payload = make_payload()
     payload["bayesian_rating"] = 0
     payload["rating_votes"] = 0
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.external_average_rating is None
     assert result.external_rating_votes == 0
@@ -223,7 +249,7 @@ def test_thumbnail_is_used_when_original_is_missing() -> None:
     payload = make_payload()
     payload["image"]["url"]["original"] = " "
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.cover_image_url == (
         "https://cdn.mangaupdates.com/"
@@ -238,7 +264,7 @@ def test_timestamp_is_used_when_rfc3339_is_invalid() -> None:
         "as_rfc3339": "invalid",
     }
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.source_updated_at == (
         datetime.fromtimestamp(
@@ -315,7 +341,7 @@ def test_malformed_optional_fields_are_ignored() -> None:
         }
     )
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.description is None
     assert result.cover_image_url is None
@@ -348,7 +374,7 @@ def test_invalid_ratings_are_ignored(
     payload["bayesian_rating"] = rating
     payload["rating_votes"] = 1
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.external_average_rating is None
 
@@ -361,8 +387,8 @@ def test_payload_hash_is_independent_of_object_key_order() -> None:
         )
     )
 
-    first = parse_mangaupdates_series(payload)
-    second = parse_mangaupdates_series(reordered)
+    first = parser_module.parse_mangaupdates_series(payload)
+    second = parser_module.parse_mangaupdates_series(reordered)
 
     assert first.payload_hash == second.payload_hash
 
@@ -372,12 +398,29 @@ def test_payload_hash_changes_when_payload_changes() -> None:
     second_payload = deepcopy(first_payload)
     second_payload["description"] = "Updated description."
 
-    first = parse_mangaupdates_series(
+    first = parser_module.parse_mangaupdates_series(
         first_payload
     )
-    second = parse_mangaupdates_series(
+    second = parser_module.parse_mangaupdates_series(
         second_payload
     )
+
+    assert first.payload_hash != second.payload_hash
+
+
+def test_payload_hash_changes_when_normalization_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = make_payload()
+    first = parser_module.parse_mangaupdates_series(payload)
+
+    monkeypatch.setattr(
+        parser_module,
+        "_MANGAUPDATES_NORMALIZATION_VERSION",
+        2,
+    )
+
+    second = parser_module.parse_mangaupdates_series(payload)
 
     assert first.payload_hash != second.payload_hash
 
@@ -404,18 +447,18 @@ def test_required_identity_fields_are_validated(
     payload[field_name] = value
 
     with pytest.raises(
-        MangaUpdatesParseError,
+        parser_module.MangaUpdatesParseError,
         match=field_name,
     ):
-        parse_mangaupdates_series(payload)
+        parser_module.parse_mangaupdates_series(payload)
 
 
 def test_payload_must_be_an_object() -> None:
     with pytest.raises(
-        MangaUpdatesParseError,
+        parser_module.MangaUpdatesParseError,
         match="must be an object",
     ):
-        parse_mangaupdates_series(
+        parser_module.parse_mangaupdates_series(
             []  # type: ignore[arg-type]
         )
 
@@ -431,7 +474,7 @@ def test_external_string_ids_are_canonicalized() -> None:
         }
     ]
 
-    result = parse_mangaupdates_series(payload)
+    result = parser_module.parse_mangaupdates_series(payload)
 
     assert result.external_id == "123"
     assert result.creator_credits[0].external_id == "42"

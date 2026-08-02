@@ -12,9 +12,29 @@ from backend.ingestion.records import (
     CreatorRole,
     MangaIngestionRecord,
 )
-
+import re
 
 MANGAUPDATES_PROVIDER_KEY = "mangaupdates"
+
+_MANGAUPDATES_NORMALIZATION_VERSION = 1
+
+_DESCRIPTION_SOURCE_PREFIX = re.compile(
+    r"\AFrom[ \t]+[^:\r\n]{1,100}:"
+    r"[ \t]*(?:\r?\n)?[ \t]*",
+    re.IGNORECASE,
+)
+
+_DESCRIPTION_APPENDIX_HEADING = re.compile(
+    r"\A(?:\*\*)?"
+    r"(?:notes?|original(?:[ \t]+[^:\r\n]+)?|"
+    r"official(?:[ \t]+[^:\r\n]+)?)"
+    r":(?:\*\*)?",
+    re.IGNORECASE,
+)
+
+_DESCRIPTION_PARAGRAPH_BREAK = re.compile(
+    r"\r?\n[ \t]*\r?\n"
+)
 
 _DEMOGRAPHIC_NAMES = {
     "josei": "Josei",
@@ -85,7 +105,7 @@ def parse_mangaupdates_series(
             payload.get("associated"),
             primary_title=title,
         ),
-        description=_optional_text(
+        description=_parse_description(
             payload.get("description")
         ),
         publication_year=_parse_year(
@@ -196,6 +216,39 @@ def _optional_text(
         return None
 
     return normalized
+
+def _parse_description(value: Any) -> str | None:
+    description = _optional_text(value)
+
+    if description is None:
+        return None
+
+    description = _DESCRIPTION_SOURCE_PREFIX.sub(
+        "",
+        description,
+        count=1,
+    ).strip()
+
+    synopsis_paragraphs = []
+
+    for paragraph in _DESCRIPTION_PARAGRAPH_BREAK.split(
+        description
+    ):
+        normalized = paragraph.strip()
+
+        if not normalized:
+            continue
+
+        if _DESCRIPTION_APPENDIX_HEADING.match(
+            normalized
+        ):
+            break
+
+        synopsis_paragraphs.append(normalized)
+
+    return _optional_text(
+        "\n\n".join(synopsis_paragraphs)
+    )
 
 
 def _parse_year(value: Any) -> int | None:
@@ -478,10 +531,14 @@ def _calculate_payload_hash(
             "MangaUpdates payload is not valid JSON data."
         ) from exc
 
-    return hashlib.sha256(
-        canonical_payload.encode("utf-8")
-    ).hexdigest()
+    fingerprint_input = (
+        f"{_MANGAUPDATES_NORMALIZATION_VERSION}\0"
+        f"{canonical_payload}"
+    )
 
+    return hashlib.sha256(
+        fingerprint_input.encode("utf-8")
+    ).hexdigest()
 
 def _mapping_items(
     value: Any,
