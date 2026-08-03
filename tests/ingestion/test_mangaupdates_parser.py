@@ -357,6 +357,34 @@ def test_malformed_optional_fields_are_ignored() -> None:
     assert result.source_updated_at is None
 
 
+def test_creator_without_external_id_is_preserved() -> None:
+    payload = make_payload()
+    payload["authors"] = [
+        {
+            "name": "DISCIPLES (Redice Studio)",
+            "author_id": None,
+            "url": None,
+            "type": "Artist",
+        },
+        {
+            "name": "disciples (redice studio)",
+            "type": "Artist",
+        },
+    ]
+
+    result = parser_module.parse_mangaupdates_series(payload)
+
+    assert result.creator_credits == (
+        CreatorCreditRecord(
+            provider_key="mangaupdates",
+            external_id=None,
+            name="DISCIPLES (Redice Studio)",
+            role="artist",
+            source_url=None,
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     "rating",
     [
@@ -413,11 +441,15 @@ def test_payload_hash_changes_when_normalization_changes(
 ) -> None:
     payload = make_payload()
     first = parser_module.parse_mangaupdates_series(payload)
+    next_version = (
+        parser_module._MANGAUPDATES_NORMALIZATION_VERSION
+        + 1
+    )
 
     monkeypatch.setattr(
         parser_module,
         "_MANGAUPDATES_NORMALIZATION_VERSION",
-        2,
+        next_version,
     )
 
     second = parser_module.parse_mangaupdates_series(payload)

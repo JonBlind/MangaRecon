@@ -192,7 +192,11 @@ async def _load_manga_for_replacement(
             selectinload(Manga.genres),
             selectinload(Manga.tags),
             selectinload(Manga.demographics),
-            selectinload(Manga.creator_links),
+            selectinload(
+                Manga.creator_links
+            ).selectinload(
+                MangaCreator.creator
+            ),
         )
         .where(Manga.manga_id == manga_id)
     )
@@ -315,9 +319,15 @@ async def _resolve_creator_links(
     if not credits:
         return []
 
-    first_credit_by_external_id = {}
+    first_credit_by_external_id: dict[
+        str,
+        CreatorCreditRecord,
+    ] = {}
 
     for credit in credits:
+        if credit.external_id is None:
+            continue
+
         first_credit_by_external_id.setdefault(
             credit.external_id,
             credit,
@@ -327,7 +337,10 @@ async def _resolve_creator_links(
         first_credit_by_external_id
     )
 
-    if provider.provider_id is None:
+    if (
+        provider.provider_id is None
+        or not external_ids
+    ):
         existing_sources = []
     else:
         stmt = (
@@ -370,7 +383,7 @@ async def _resolve_creator_links(
             source = CreatorExternalSource(
                 creator=creator,
                 provider=provider,
-                external_id=credit.external_id,
+                external_id=external_id,
                 source_url=credit.source_url,
             )
             user_db.add(creator)
@@ -389,12 +402,53 @@ async def _resolve_creator_links(
         (link.creator_id, link.role): link
         for link in manga.creator_links
     }
+    existing_links_by_name_and_role = {
+        (
+            link.creator.creator_name.casefold(),
+            link.role,
+        ): link
+        for link in manga.creator_links
+    }
+    idless_creators_by_name: dict[str, Creator] = {}
     resolved_links = []
 
     for credit in credits:
-        creator = creators_by_external_id[
-            credit.external_id
-        ]
+        if credit.external_id is None:
+            name_identity = credit.name.casefold()
+            existing_link = (
+                existing_links_by_name_and_role.get(
+                    (
+                        name_identity,
+                        credit.role,
+                    )
+                )
+            )
+
+            if existing_link is not None:
+                resolved_links.append(existing_link)
+                idless_creators_by_name.setdefault(
+                    name_identity,
+                    existing_link.creator,
+                )
+                continue
+
+            creator = idless_creators_by_name.get(
+                name_identity
+            )
+
+            if creator is None:
+                creator = Creator(
+                    creator_name=credit.name
+                )
+                user_db.add(creator)
+                idless_creators_by_name[
+                    name_identity
+                ] = creator
+        else:
+            creator = creators_by_external_id[
+                credit.external_id
+            ]
+
         existing_link = None
 
         if creator.creator_id is not None:

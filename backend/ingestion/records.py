@@ -16,7 +16,7 @@ class CreatorCreditRecord:
     """
 
     provider_key: str
-    external_id: str
+    external_id: str | None
     name: str
     role: CreatorRole
     source_url: str | None

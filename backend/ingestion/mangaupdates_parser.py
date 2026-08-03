@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -12,11 +13,10 @@ from backend.ingestion.records import (
     CreatorRole,
     MangaIngestionRecord,
 )
-import re
 
 MANGAUPDATES_PROVIDER_KEY = "mangaupdates"
 
-_MANGAUPDATES_NORMALIZATION_VERSION = 1
+_MANGAUPDATES_NORMALIZATION_VERSION = 2
 
 _DESCRIPTION_SOURCE_PREFIX = re.compile(
     r"\AFrom[ \t]+[^:\r\n]{1,100}:"
@@ -421,8 +421,9 @@ def _parse_creator_credits(
     seen = set()
 
     for item in _mapping_items(value):
+        raw_external_id = item.get("author_id")
         external_id = _optional_external_id(
-            item.get("author_id")
+            raw_external_id
         )
         name = _optional_text(
             item.get("name"),
@@ -433,9 +434,12 @@ def _parse_creator_credits(
         )
 
         if (
-            external_id is None
-            or name is None
+            name is None
             or raw_role is None
+            or (
+                raw_external_id is not None
+                and external_id is None
+            )
         ):
             continue
 
@@ -446,7 +450,18 @@ def _parse_creator_credits(
         if role is None:
             continue
 
-        identity = (external_id, role)
+        if external_id is None:
+            identity = (
+                "name",
+                name.casefold(),
+                role,
+            )
+        else:
+            identity = (
+                "external_id",
+                external_id,
+                role,
+            )
 
         if identity in seen:
             continue

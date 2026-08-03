@@ -531,6 +531,94 @@ async def test_named_metadata_is_reused_case_insensitively(
 
 
 @pytest.mark.asyncio
+async def test_idless_creator_is_preserved_and_reused_on_refresh(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    credit = CreatorCreditRecord(
+        provider_key="mangaupdates",
+        external_id=None,
+        name="DISCIPLES (Redice Studio)",
+        role="artist",
+        source_url=None,
+    )
+    initial = await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            creator_credits=(credit,),
+        ),
+    )
+    manga_id = initial.manga.manga_id
+    assert manga_id is not None
+
+    manga = await load_manga(
+        ingestion_db,
+        manga_id=manga_id,
+    )
+    initial_link = manga.creator_links[0]
+    creator_id = initial_link.creator_id
+
+    assert creator_id is not None
+    assert initial_link.creator.creator_name == (
+        "DISCIPLES (Redice Studio)"
+    )
+    assert initial_link.role == "artist"
+    assert await ingestion_db.scalar_one_or_none(
+        select(CreatorExternalSource).where(
+            CreatorExternalSource.creator_id
+            == creator_id
+        )
+    ) is None
+    refreshed = await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            payload_hash="b" * 64,
+            creator_credits=(credit,),
+        ),
+    )
+
+    assert refreshed.manga.manga_id == manga_id
+    assert refreshed.created is False
+    assert refreshed.changed is True
+
+    manga = await load_manga(
+        ingestion_db,
+        manga_id=manga_id,
+    )
+
+    assert [
+        (
+            link.creator_id,
+            link.creator.creator_name,
+            link.role,
+        )
+        for link in manga.creator_links
+    ] == [
+        (
+            creator_id,
+            "DISCIPLES (Redice Studio)",
+            "artist",
+        )
+    ]
+    assert await ingestion_db.scalar_one_or_none(
+        select(CreatorExternalSource).where(
+            CreatorExternalSource.creator_id
+            == creator_id
+        )
+    ) is None
+    matching_creators = await ingestion_db.scalars_all(
+        select(Creator).where(
+            Creator.creator_name
+            == "DISCIPLES (Redice Studio)"
+        )
+    )
+
+    assert [
+        creator.creator_id
+        for creator in matching_creators
+    ] == [creator_id]
+
+
+@pytest.mark.asyncio
 async def test_identity_uses_provider_and_external_id_not_title(
     ingestion_db: ClientWriteDatabase,
 ) -> None:
