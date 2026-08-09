@@ -1,6 +1,9 @@
 import { useMemo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useCollectionRecommendations, useQueryListRecommendations } from "../hooks/useRecommendations";
+import {
+  useCollectionRecommendations,
+  useQueryListRecommendations,
+} from "../hooks/useRecommendations";
 import type { RecommendationPage } from "../types/recommendation";
 import MangaCard from "../components/MangaCard";
 
@@ -25,8 +28,13 @@ export default function Recommendations() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const collectionId = Number(searchParams.get("collectionId") ?? "0");
+  const hasCollectionSource = Number.isInteger(collectionId) && collectionId > 0;
 
   const mangaIds = useMemo(() => {
+    if (hasCollectionSource) {
+      return [];
+    }
+
     const stateMangaIds = Array.isArray(location.state?.mangaIds)
       ? location.state.mangaIds.filter((id: unknown) => Number.isInteger(id))
       : [];
@@ -36,10 +44,10 @@ export default function Recommendations() {
     }
 
     return getStoredRecommendationSeedIds();
-  }, [location.state]);
+  }, [hasCollectionSource, location.state]);
 
-  const isQueryListMode = mangaIds.length > 0;
-  const hasRecommendationSource = isQueryListMode || !!collectionId;
+  const isQueryListMode = !hasCollectionSource && mangaIds.length > 0;
+  const hasRecommendationSource = isQueryListMode || hasCollectionSource;
 
   const params = useMemo(
     () => ({
@@ -48,7 +56,7 @@ export default function Recommendations() {
       order_by: (searchParams.get("order_by") as any) ?? "score",
       order_dir: (searchParams.get("order_dir") as any) ?? "desc",
     }),
-    [searchParams]
+    [searchParams],
   );
 
   function updateParams(updates: Record<string, string | number | null | undefined>) {
@@ -68,7 +76,7 @@ export default function Recommendations() {
   const collectionQuery = useCollectionRecommendations({
     collectionId,
     params,
-    enabled: !isQueryListMode && !!collectionId,
+    enabled: hasCollectionSource,
   });
 
   const queryListQuery = useQueryListRecommendations({
@@ -88,12 +96,8 @@ export default function Recommendations() {
 
   return (
     <div className="space-y-6">
-
       <div>
-        <button
-          onClick={() => nav(-1)}
-          className="text-sm opacity-80 hover:underline"
-        >
+        <button onClick={() => nav(-1)} className="text-sm opacity-80 hover:underline">
           ← Back
         </button>
 
@@ -129,13 +133,10 @@ export default function Recommendations() {
           )}
 
           {activeQuery.isError && (
-            <div className="text-sm text-red-400">
-              Failed to load recommendations.
-            </div>
+            <div className="text-sm text-red-400">Failed to load recommendations.</div>
           )}
 
           <div className="space-y-2">
-
             <div className="flex items-center justify-between text-sm opacity-80">
               <span>
                 {total.toLocaleString()} result{total === 1 ? "" : "s"}
@@ -147,10 +148,7 @@ export default function Recommendations() {
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {(data?.items ?? []).map((manga) => (
-                <MangaCard
-                  key={manga.manga_id}
-                  manga={manga}
-                />
+                <MangaCard key={manga.manga_id} manga={manga} />
               ))}
             </div>
 

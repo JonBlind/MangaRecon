@@ -153,6 +153,97 @@ async def test_search_series_sends_expected_request() -> None:
 
 
 @pytest.mark.asyncio
+async def test_discover_series_page_sends_filters_without_query(
+) -> None:
+    requests: list[httpx2.Request] = []
+    payload = {
+        "total_hits": 1,
+        "page": 3,
+        "per_page": 100,
+        "results": [],
+    }
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=make_json_transport(
+            payload,
+            requests=requests,
+        ),
+    ) as client:
+        result = await client.discover_series_page(
+            page=3,
+            per_page=100,
+            series_types=("Manga", "Manhwa", "Manga"),
+            year=" 2020 ",
+            genres=("Action",),
+            exclude_genres=("Hentai",),
+            filters=("completed", "no_oneshots"),
+            order_by="rating",
+        )
+
+    assert result == payload
+    assert len(requests) == 1
+    assert json.loads(
+        requests[0].content.decode("utf-8")
+    ) == {
+        "page": 3,
+        "perpage": 100,
+        "orderby": "rating",
+        "type": ["Manga", "Manhwa"],
+        "year": "2020",
+        "genre": ["Action"],
+        "exclude_genre": ["Hentai"],
+        "filters": ["completed", "no_oneshots"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"page": 0}, "page must be at least 1"),
+        (
+            {"per_page": 101},
+            "per_page must be between 1 and 100",
+        ),
+        ({"query": "   "}, "query cannot be blank"),
+        ({"year": "   "}, "year cannot be blank"),
+        (
+            {"series_types": ("Unknown",)},
+            "Unsupported MangaUpdates series type",
+        ),
+        (
+            {"filters": ("unknown",)},
+            "Unsupported MangaUpdates filter",
+        ),
+        (
+            {"order_by": "unknown"},
+            "Unsupported MangaUpdates order field",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_discovery_arguments_are_validated_before_io(
+    arguments: dict[str, object],
+    message: str,
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=make_json_transport(
+            {},
+            requests=requests,
+        ),
+    ) as client:
+        with pytest.raises(ValueError, match=message):
+            await client.discover_series_page(
+                **arguments  # type: ignore[arg-type]
+            )
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
 async def test_request_arguments_are_validated_before_io(
 ) -> None:
     requests: list[httpx2.Request] = []

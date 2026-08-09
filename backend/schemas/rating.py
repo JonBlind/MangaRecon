@@ -1,16 +1,19 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Annotated
-from decimal import Decimal
 from datetime import datetime
 
 # Request
 class RatingCreate(BaseModel):
     '''
-    Create or update the caller’s personal rating for a manga.
-    The rating value is bounded (e.g., 0.0–10.0 in 0.5 increments).
+    Create or update the caller's personal rating for a manga.
+    Integer scores from 1-10 map to half-star choices from 0.5-5 stars.
+    An unrated manga has no rating row rather than a score of zero.
     '''
     manga_id: int
-    personal_rating: Annotated[Decimal, Field(ge=0.0, le=10.0, multiple_of=0.5, description="Rating from 0.0 to 10.0 in increments of 0.5")]
+    personal_rating: int = Field(
+        ge=1,
+        le=10,
+        description="Integer score from 1 to 10, representing 0.5 to 5 stars",
+    )
 
 # Response
 class RatingRead(BaseModel):

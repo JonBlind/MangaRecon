@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.recommendation.core import (
     get_candidate_manga,
     get_manga_ids_in_user_collection,
+    get_manga_ids_in_user_collections,
     get_metadata_profile_for_collection,
     get_scored_recommendations,
 )
@@ -91,6 +92,42 @@ async def test_get_manga_ids_returns_empty_on_database_error():
     result = await get_manga_ids_in_user_collection(
         user_id=uuid.uuid4(),
         collection_id=4,
+        db=db,
+    )
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_manga_ids_in_user_collections_returns_deduplicated_ids():
+    db = AsyncMock()
+    db.execute.return_value = FakeResult(
+        rows=[(10,), (20,), (10,), (30,)],
+    )
+
+    user_id = uuid.uuid4()
+    result = await get_manga_ids_in_user_collections(
+        user_id=user_id,
+        db=db,
+    )
+
+    assert result == [10, 20, 30]
+    statement = db.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(statement)
+
+    assert "manga_collection" in sql
+    assert "collection" in sql
+    assert user_id in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_get_manga_ids_in_user_collections_returns_empty_on_database_error():
+    db = AsyncMock()
+    db.execute.side_effect = SQLAlchemyError("database unavailable")
+
+    result = await get_manga_ids_in_user_collections(
+        user_id=uuid.uuid4(),
         db=db,
     )
 

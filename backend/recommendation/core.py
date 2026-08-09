@@ -49,6 +49,33 @@ async def get_manga_ids_in_user_collection(user_id: uuid.UUID, collection_id: in
     except SQLAlchemyError as e:
         logger.error(f"Error fetching manga from collection {collection_id}: {e}", exc_info=True)
         return []
+
+
+async def get_manga_ids_in_user_collections(
+    user_id: uuid.UUID,
+    db: ClientReadDatabase,
+) -> List[int]:
+    """Return every distinct manga ID saved in any collection owned by a user."""
+    try:
+        stmt = (
+            select(MangaCollection.manga_id)
+            .join(
+                Collection,
+                Collection.collection_id == MangaCollection.collection_id,
+            )
+            .where(Collection.user_id == user_id)
+            .distinct()
+        )
+        result = await db.execute(stmt)
+        return list(dict.fromkeys(row[0] for row in result.fetchall()))
+    except SQLAlchemyError as exc:
+        logger.error(
+            "Error fetching manga across collections for user %s: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
+        return []
     
 async def get_metadata_profile_for_collection(manga_ids: List[int], db: ClientReadDatabase) -> Dict[str, any]:
     '''

@@ -30,23 +30,34 @@ async def generate_recommendations_for_collection(
             - seed_used: int
             - seed_truncated: bool
     '''
-    # Get all manga in collection
-    manga_ids = await core.get_manga_ids_in_user_collection(user_id, collection_id, user_db)
-    if not manga_ids:
+    collection_manga_ids = await core.get_manga_ids_in_user_collection(
+        user_id,
+        collection_id,
+        user_db,
+    )
+    if not collection_manga_ids:
         raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Need at least 1 manga in the collection to generate recommendations.", 
                           detail={"collection_id": collection_id})
 
-    seed_truncated = False
-    seed_total = len(manga_ids)
+    all_user_manga_ids = await core.get_manga_ids_in_user_collections(
+        user_id,
+        user_db,
+    )
+    excluded_ids = list(
+        dict.fromkeys([*collection_manga_ids, *all_user_manga_ids])
+    )
 
-    if seed_total > MAX_RECOMMENDATION_SEEDS:
-        manga_ids = manga_ids[:MAX_RECOMMENDATION_SEEDS]
-        seed_truncated = True
+    seed_total = len(collection_manga_ids)
+    seed_truncated = seed_total > MAX_RECOMMENDATION_SEEDS
+    scoring_manga_ids = collection_manga_ids[:MAX_RECOMMENDATION_SEEDS]
 
-    metadata_profile = await core.get_metadata_profile_for_collection(manga_ids, manga_db)
+    metadata_profile = await core.get_metadata_profile_for_collection(
+        scoring_manga_ids,
+        manga_db,
+    )
 
     candidates = await core.get_candidate_manga(
-        excluded_ids=manga_ids,
+        excluded_ids=excluded_ids,
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
@@ -59,7 +70,7 @@ async def generate_recommendations_for_collection(
     return {
         "items": scored,
         "seed_total": seed_total,
-        "seed_used": len(manga_ids),
+        "seed_used": len(scoring_manga_ids),
         "seed_truncated": seed_truncated,
     }
 
@@ -85,16 +96,18 @@ async def generate_recommendations_for_list(
     if not manga_ids:
         raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Please provide at least one manga to generate recommendations.")
 
-    seed_total = len(manga_ids)
+    excluded_ids = list(manga_ids)
+    seed_total = len(excluded_ids)
     seed_truncated = seed_total > MAX_RECOMMENDATION_SEEDS
+    scoring_manga_ids = excluded_ids[:MAX_RECOMMENDATION_SEEDS]
 
-    if seed_truncated:
-        manga_ids = manga_ids[:MAX_RECOMMENDATION_SEEDS]
-
-    metadata_profile = await core.get_metadata_profile_for_collection(manga_ids, db)
+    metadata_profile = await core.get_metadata_profile_for_collection(
+        scoring_manga_ids,
+        db,
+    )
 
     candidates = await core.get_candidate_manga(
-        excluded_ids=manga_ids,
+        excluded_ids=excluded_ids,
         genre_ids=list(metadata_profile["genres"].keys()),
         tag_ids=list(metadata_profile["tags"].keys()),
         demo_ids=list(metadata_profile["demographics"].keys()),
@@ -107,6 +120,6 @@ async def generate_recommendations_for_list(
     return {
         "items": scored,
         "seed_total": seed_total,
-        "seed_used": len(manga_ids),
+        "seed_used": len(scoring_manga_ids),
         "seed_truncated": seed_truncated,
     }

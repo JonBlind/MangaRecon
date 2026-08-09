@@ -83,6 +83,10 @@ async def test_generate_for_collection_composes_core_steps():
             new=AsyncMock(return_value=manga_ids),
         ) as get_ids,
         patch(
+            "backend.recommendation.generator.core.get_manga_ids_in_user_collections",
+            new=AsyncMock(return_value=[1, 2, 3, 99]),
+        ) as get_all_user_ids,
+        patch(
             "backend.recommendation.generator.core.get_metadata_profile_for_collection",
             new=AsyncMock(return_value=metadata_profile),
         ) as get_profile,
@@ -110,6 +114,7 @@ async def test_generate_for_collection_composes_core_steps():
     }
 
     get_ids.assert_awaited_once_with(user_id, 7, user_db)
+    get_all_user_ids.assert_awaited_once_with(user_id, user_db)
 
     get_profile.assert_awaited_once_with(
         manga_ids,
@@ -117,7 +122,7 @@ async def test_generate_for_collection_composes_core_steps():
     )
 
     get_candidates.assert_awaited_once_with(
-        excluded_ids=manga_ids,
+        excluded_ids=[1, 2, 3, 99],
         genre_ids=[1, 2],
         tag_ids=[10],
         demo_ids=[100],
@@ -155,6 +160,10 @@ async def test_generate_for_collection_truncates_large_seed_list():
             new=AsyncMock(return_value=all_manga_ids),
         ),
         patch(
+            "backend.recommendation.generator.core.get_manga_ids_in_user_collections",
+            new=AsyncMock(return_value=[*all_manga_ids, 9999]),
+        ),
+        patch(
             "backend.recommendation.generator.core.get_metadata_profile_for_collection",
             new=AsyncMock(return_value=metadata_profile),
         ) as get_profile,
@@ -187,7 +196,7 @@ async def test_generate_for_collection_truncates_large_seed_list():
     )
 
     get_candidates.assert_awaited_once_with(
-        excluded_ids=expected_used_ids,
+        excluded_ids=[*all_manga_ids, 9999],
         genre_ids=[],
         tag_ids=[],
         demo_ids=[],
@@ -333,7 +342,7 @@ async def test_generate_for_list_truncates_large_seed_list():
     )
 
     get_candidates.assert_awaited_once_with(
-        excluded_ids=expected_used_ids,
+        excluded_ids=all_manga_ids,
         genre_ids=[],
         tag_ids=[],
         demo_ids=[],

@@ -186,3 +186,7 @@ __pycache__/
 # Alembic / Migrations
 alembic/__pycache__/
 alembic/versions/__pycache__/
+
+# Local MangaUpdates discovery output
+/data/mangaupdates-*.json
+/data/mangaupdates-*.txt

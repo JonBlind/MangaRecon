@@ -162,6 +162,37 @@ def test_collection_recommendation_full_http_and_database_flow(
     assert catalog.similar_manga_id in ids
 
 
+def test_collection_recommendations_exclude_manga_from_other_owned_collections(
+    client: TestClient,
+    manga_write_engine: Engine,
+) -> None:
+    register_and_login(client, suffix="crosscollectionrecs")
+    catalog = seed_catalog(manga_write_engine)
+    seed_collection = create_collection(client, name="Recommendation Seeds")
+    other_collection = create_collection(client, name="Already Saved Elsewhere")
+
+    assert_success(
+        client.post(
+            f"/collections/{seed_collection['collection_id']}/mangas",
+            json={"manga_id": catalog.seed_manga_id},
+        )
+    )
+    assert_success(
+        client.post(
+            f"/collections/{other_collection['collection_id']}/mangas",
+            json={"manga_id": catalog.similar_manga_id},
+        )
+    )
+
+    data = assert_success(
+        client.get(f"/recommendations/{seed_collection['collection_id']}")
+    )["data"]
+
+    ids = [item["manga_id"] for item in data["items"]]
+    assert catalog.seed_manga_id not in ids
+    assert catalog.similar_manga_id not in ids
+
+
 def test_collection_recommendations_require_owned_collection(
     client_factory,
     manga_write_engine: Engine,

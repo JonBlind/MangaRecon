@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 
 export function renderWithProviders(
   ui: ReactElement,
-  options?: { withRouter?: boolean }
+  options?: { withRouter?: boolean },
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -20,5 +20,8 @@ export function renderWithProviders(
     </QueryClientProvider>
   );
 
-  return render(content);
+  return {
+    ...render(content),
+    queryClient,
+  };
 }

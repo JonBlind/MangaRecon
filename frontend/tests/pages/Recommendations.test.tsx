@@ -26,9 +26,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>(
-    "react-router-dom"
-  );
+  const actual =
+    await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
 
   return {
     ...actual,
@@ -39,8 +38,7 @@ vi.mock("react-router-dom", async () => {
 vi.mock("../../src/hooks/useRecommendations", () => ({
   useCollectionRecommendations: (args: unknown) =>
     mocks.useCollectionRecommendations(args),
-  useQueryListRecommendations: (args: unknown) =>
-    mocks.useQueryListRecommendations(args),
+  useQueryListRecommendations: (args: unknown) => mocks.useQueryListRecommendations(args),
 }));
 
 const recommendationPage = {
@@ -74,7 +72,7 @@ function renderRecommendations(
         pathname: string;
         search?: string;
         state?: unknown;
-      } = "/recommendations"
+      } = "/recommendations",
 ) {
   return renderWithProviders(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -82,7 +80,7 @@ function renderRecommendations(
         <Route path="/recommendations" element={<Recommendations />} />
       </Routes>
     </MemoryRouter>,
-    { withRouter: false }
+    { withRouter: false },
   );
 }
 
@@ -104,31 +102,23 @@ beforeEach(() => {
     isFetching: false,
   };
 
-  mocks.useCollectionRecommendations.mockImplementation(
-    () => mocks.collectionQuery
-  );
+  mocks.useCollectionRecommendations.mockImplementation(() => mocks.collectionQuery);
 
-  mocks.useQueryListRecommendations.mockImplementation(
-    () => mocks.queryListQuery
-  );
+  mocks.useQueryListRecommendations.mockImplementation(() => mocks.queryListQuery);
 });
 
 describe("Recommendations Page", () => {
   test("shows empty source state when no collection or selected manga are provided", () => {
     renderRecommendations();
 
-    expect(
-      screen.getByRole("heading", { name: /recommendations/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /recommendations/i })).toBeInTheDocument();
 
-    expect(
-      screen.getByText(/no recommendation source selected/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no recommendation source selected/i)).toBeInTheDocument();
 
     expect(
       screen.getByText(
-        /select manga from search or choose a collection to generate recommendations/i
-      )
+        /select manga from search or choose a collection to generate recommendations/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -143,9 +133,7 @@ describe("Recommendations Page", () => {
   test("loads recommendations from a collection id query param", async () => {
     renderRecommendations("/recommendations?collectionId=1");
 
-    expect(
-      await screen.findByText(/based on collection/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/based on collection/i)).toBeInTheDocument();
 
     expect(await screen.findByText(/naruto/i)).toBeInTheDocument();
     expect(await screen.findByText(/one piece/i)).toBeInTheDocument();
@@ -160,7 +148,7 @@ describe("Recommendations Page", () => {
           order_by: "score",
           order_dir: "desc",
         }),
-      })
+      }),
     );
   });
 
@@ -172,9 +160,7 @@ describe("Recommendations Page", () => {
       },
     });
 
-    expect(
-      await screen.findByText(/based on selected manga/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/based on selected manga/i)).toBeInTheDocument();
 
     expect(await screen.findByText(/naruto/i)).toBeInTheDocument();
 
@@ -190,7 +176,7 @@ describe("Recommendations Page", () => {
           order_by: "score",
           order_dir: "desc",
         }),
-      })
+      }),
     );
   });
 
@@ -199,9 +185,7 @@ describe("Recommendations Page", () => {
 
     renderRecommendations();
 
-    expect(
-      await screen.findByText(/based on selected manga/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/based on selected manga/i)).toBeInTheDocument();
 
     expect(mocks.useQueryListRecommendations).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -209,7 +193,7 @@ describe("Recommendations Page", () => {
           manga_ids: [10, 20],
         },
         enabled: true,
-      })
+      }),
     );
   });
 
@@ -230,7 +214,29 @@ describe("Recommendations Page", () => {
         payload: {
           manga_ids: [10, 20],
         },
-      })
+      }),
+    );
+  });
+
+  test("collection query params take priority over stale selected manga ids", async () => {
+    sessionStorage.setItem("recommendationSeedIds", "[999]");
+
+    renderRecommendations("/recommendations?collectionId=1");
+
+    expect(await screen.findByText(/based on collection/i)).toBeInTheDocument();
+
+    expect(mocks.useCollectionRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collectionId: 1,
+        enabled: true,
+      }),
+    );
+
+    expect(mocks.useQueryListRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { manga_ids: [] },
+        enabled: false,
+      }),
     );
   });
 
@@ -257,9 +263,7 @@ describe("Recommendations Page", () => {
 
     renderRecommendations("/recommendations?collectionId=1");
 
-    expect(
-      screen.getByText(/failed to load recommendations/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/failed to load recommendations/i)).toBeInTheDocument();
   });
 
   test("shows no results when recommendation source returns empty items", () => {
@@ -311,7 +315,7 @@ describe("Recommendations Page", () => {
           params: expect.objectContaining({
             page: 2,
           }),
-        })
+        }),
       );
     });
   });

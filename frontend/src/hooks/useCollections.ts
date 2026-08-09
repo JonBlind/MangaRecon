@@ -18,13 +18,12 @@ import type {
   ListCollectionsParams,
   ListCollectionMangaParams,
 } from "../types/collection";
+import { recommendationKeys } from "./useRecommendations";
 
 export const collectionsKeys = {
   all: ["collections"] as const,
-  list: (params: ListCollectionsParams) =>
-    ["collections", "list", params] as const,
-  detail: (collectionId: number) =>
-    ["collections", "detail", collectionId] as const,
+  list: (params: ListCollectionsParams) => ["collections", "list", params] as const,
+  detail: (collectionId: number) => ["collections", "detail", collectionId] as const,
   mangas: (collectionId: number, params: ListCollectionMangaParams) =>
     ["collections", "mangas", collectionId, params] as const,
 };
@@ -56,7 +55,7 @@ export function useCollection(collectionId: number) {
 
 export function useCollectionManga(
   collectionId: number,
-  params: ListCollectionMangaParams = {}
+  params: ListCollectionMangaParams = {},
 ) {
   const normalized = {
     page: params.page ?? 1,
@@ -77,8 +76,7 @@ export function useCreateCollection() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: CollectionCreatePayload) =>
-      createCollection(payload),
+    mutationFn: (payload: CollectionCreatePayload) => createCollection(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: collectionsKeys.all });
     },
@@ -97,6 +95,9 @@ export function useUpdateCollection(collectionId: number) {
       qc.invalidateQueries({
         queryKey: ["collections", "mangas", collectionId],
       });
+      qc.invalidateQueries({
+        queryKey: recommendationKeys.collectionRoot(collectionId),
+      });
     },
   });
 }
@@ -114,6 +115,9 @@ export function useDeleteCollection() {
       qc.removeQueries({
         queryKey: ["collections", "mangas", collectionId],
       });
+      qc.invalidateQueries({
+        queryKey: recommendationKeys.collections,
+      });
     },
   });
 }
@@ -122,8 +126,7 @@ export function useAddMangaToCollection(collectionId: number) {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (mangaId: number) =>
-      addMangaToCollection(collectionId, mangaId),
+    mutationFn: (mangaId: number) => addMangaToCollection(collectionId, mangaId),
     onSuccess: () => {
       qc.invalidateQueries({
         queryKey: ["collections", "mangas", collectionId],
@@ -135,6 +138,9 @@ export function useAddMangaToCollection(collectionId: number) {
 
       qc.invalidateQueries({
         queryKey: ["collections", "list"],
+      });
+      qc.invalidateQueries({
+        queryKey: recommendationKeys.collections,
       });
     },
   });
@@ -144,8 +150,7 @@ export function useRemoveMangaFromCollection(collectionId: number) {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (mangaId: number) =>
-      removeMangaFromCollection(collectionId, mangaId),
+    mutationFn: (mangaId: number) => removeMangaFromCollection(collectionId, mangaId),
     onSuccess: () => {
       qc.invalidateQueries({
         queryKey: ["collections", "mangas", collectionId],
@@ -157,6 +162,9 @@ export function useRemoveMangaFromCollection(collectionId: number) {
 
       qc.invalidateQueries({
         queryKey: ["collections", "list"],
+      });
+      qc.invalidateQueries({
+        queryKey: recommendationKeys.collections,
       });
     },
   });

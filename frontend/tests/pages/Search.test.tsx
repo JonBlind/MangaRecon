@@ -22,9 +22,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>(
-    "react-router-dom"
-  );
+  const actual =
+    await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
 
   return {
     ...actual,
@@ -131,9 +130,7 @@ describe("Search Page", () => {
   test("renders search page and filters", async () => {
     renderWithProviders(<Search />);
 
-    expect(
-      screen.getByRole("heading", { name: /^search$/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^search$/i })).toBeInTheDocument();
 
     expect(screen.getByPlaceholderText(/e\.g\. naruto/i)).toBeInTheDocument();
 
@@ -176,7 +173,7 @@ describe("Search Page", () => {
           size: 25,
           order_by: "title",
           order_dir: "asc",
-        })
+        }),
       );
     });
   });
@@ -184,15 +181,13 @@ describe("Search Page", () => {
   test("selects a manga result", async () => {
     renderWithProviders(<Search />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /select naruto/i })
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /select naruto/i }));
 
     expect(mocks.toggleSelection).toHaveBeenCalledWith(
       expect.objectContaining({
         manga_id: 10,
         title: "Naruto",
-      })
+      }),
     );
   });
 
@@ -206,7 +201,7 @@ describe("Search Page", () => {
 
     expect(await screen.findByText(/sign in required/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/you need an account to save manga to a collection/i)
+      screen.getByText(/you need an account to save manga to a collection/i),
     ).toBeInTheDocument();
   });
 
@@ -216,9 +211,7 @@ describe("Search Page", () => {
 
     renderWithProviders(<Search />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /get recommendations/i })
-    );
+    fireEvent.click(screen.getByRole("button", { name: /get recommendations/i }));
 
     expect(sessionStorage.getItem("recommendationSeedIds")).toBe("[10,20]");
 
@@ -242,12 +235,13 @@ describe("Search Page", () => {
       failed: [],
     });
 
-    renderWithProviders(<Search />);
+    const { queryClient } = renderWithProviders(<Search />);
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
 
     fireEvent.click(screen.getByRole("button", { name: /add to collection/i }));
 
     expect(
-      await screen.findByRole("heading", { name: /add to collection/i })
+      await screen.findByRole("heading", { name: /add to collection/i }),
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue("Select a collection"), {
@@ -257,18 +251,18 @@ describe("Search Page", () => {
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() => {
-      expect(mocks.addMangasBulkToCollection).toHaveBeenCalledWith(1, [
-        10, 20,
-      ]);
+      expect(mocks.addMangasBulkToCollection).toHaveBeenCalledWith(1, [10, 20]);
     });
 
     await waitFor(() => {
       expect(mocks.removeSelectedIds).toHaveBeenCalledWith([10, 20]);
     });
 
-    expect(
-      await screen.findByText(/2 manga added to collection/i)
-    ).toBeInTheDocument();
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["recommendations", "collection"],
+    });
+
+    expect(await screen.findByText(/2 manga added to collection/i)).toBeInTheDocument();
   });
 
   test("clears the current manga selection", () => {
@@ -294,9 +288,7 @@ describe("Search Page", () => {
 
     renderWithProviders(<Search />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /get recommendations/i })
-    );
+    fireEvent.click(screen.getByRole("button", { name: /get recommendations/i }));
 
     expect(mocks.navigate).toHaveBeenCalledWith("/recommendations", {
       state: {
@@ -316,13 +308,13 @@ describe("Search Page", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in to save/i }));
 
     expect(
-      await screen.findByRole("heading", { name: /sign in required/i })
+      await screen.findByRole("heading", { name: /sign in required/i }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
 
     expect(
-      screen.queryByRole("heading", { name: /sign in required/i })
+      screen.queryByRole("heading", { name: /sign in required/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -340,13 +332,13 @@ describe("Search Page", () => {
     fireEvent.click(screen.getByRole("button", { name: /add to collection/i }));
 
     expect(
-      await screen.findByRole("heading", { name: /add to collection/i })
+      await screen.findByRole("heading", { name: /add to collection/i }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
 
     expect(
-      screen.queryByRole("heading", { name: /add to collection/i })
+      screen.queryByRole("heading", { name: /add to collection/i }),
     ).not.toBeInTheDocument();
 
     expect(mocks.addMangasBulkToCollection).not.toHaveBeenCalled();
@@ -368,7 +360,7 @@ describe("Search Page", () => {
         expect.objectContaining({
           genre_id: 1,
           page: 1,
-        })
+        }),
       );
     });
   });
@@ -389,7 +381,7 @@ describe("Search Page", () => {
         expect.objectContaining({
           tag_id: 1,
           page: 1,
-        })
+        }),
       );
     });
   });
@@ -410,7 +402,7 @@ describe("Search Page", () => {
         expect.objectContaining({
           demo_id: 1,
           page: 1,
-        })
+        }),
       );
     });
   });
@@ -430,7 +422,7 @@ describe("Search Page", () => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
           genre_id: 1,
-        })
+        }),
       );
     });
 
@@ -443,7 +435,7 @@ describe("Search Page", () => {
         expect.objectContaining({
           genre_id: null,
           page: 1,
-        })
+        }),
       );
     });
   });
@@ -459,15 +451,11 @@ describe("Search Page", () => {
   });
 
   test("shows manga search error message", async () => {
-    mocks.searchMangas.mockRejectedValueOnce(
-      new Error("Search request failed")
-    );
+    mocks.searchMangas.mockRejectedValueOnce(new Error("Search request failed"));
 
     renderWithProviders(<Search />);
 
-    expect(
-      await screen.findByText(/search request failed/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/search request failed/i)).toBeInTheDocument();
   });
 
   test("shows empty results state", async () => {
@@ -502,7 +490,7 @@ describe("Search Page", () => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
           page: 2,
-        })
+        }),
       );
     });
 
@@ -512,7 +500,7 @@ describe("Search Page", () => {
       expect(mocks.searchMangas).toHaveBeenLastCalledWith(
         expect.objectContaining({
           page: 1,
-        })
+        }),
       );
     });
   });
@@ -552,19 +540,14 @@ describe("Search Page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add to collection/i }));
 
-    fireEvent.change(
-      await screen.findByDisplayValue("Select a collection"),
-      {
-        target: { value: "1" },
-      }
-    );
+    fireEvent.change(await screen.findByDisplayValue("Select a collection"), {
+      target: { value: "1" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
     expect(
-      await screen.findByText(
-        /1 manga added, 1 failed\. 1 already in the collection/i
-      )
+      await screen.findByText(/1 manga added, 1 failed\. 1 already in the collection/i),
     ).toBeInTheDocument();
 
     expect(mocks.removeSelectedIds).toHaveBeenCalledWith([10]);
@@ -596,19 +579,16 @@ describe("Search Page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add to collection/i }));
 
-    fireEvent.change(
-      await screen.findByDisplayValue("Select a collection"),
-      {
-        target: { value: "1" },
-      }
-    );
+    fireEvent.change(await screen.findByDisplayValue("Select a collection"), {
+      target: { value: "1" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
     expect(
       await screen.findByText(
-        /no manga were added\. 1 failed because the collection was not found/i
-      )
+        /no manga were added\. 1 failed because the collection was not found/i,
+      ),
     ).toBeInTheDocument();
 
     expect(mocks.removeSelectedIds).not.toHaveBeenCalled();
@@ -640,19 +620,14 @@ describe("Search Page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add to collection/i }));
 
-    fireEvent.change(
-      await screen.findByDisplayValue("Select a collection"),
-      {
-        target: { value: "1" },
-      }
-    );
+    fireEvent.change(await screen.findByDisplayValue("Select a collection"), {
+      target: { value: "1" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
     expect(
-      await screen.findByText(
-        /no manga were added\. 1 failed for another reason/i
-      )
+      await screen.findByText(/no manga were added\. 1 failed for another reason/i),
     ).toBeInTheDocument();
   });
 });

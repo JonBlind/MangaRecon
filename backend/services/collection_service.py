@@ -5,7 +5,10 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from backend.cache.invalidation import invalidate_collection_recommendations
+from backend.cache.invalidation import (
+    invalidate_collection_recommendations,
+    invalidate_user_recommendations,
+)
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.db.models.collection import Collection
 from backend.repositories.collections_repo import (
@@ -181,7 +184,7 @@ async def delete_user_collection(
         await user_db.delete(collection)
         await user_db.commit()
 
-        await invalidate_collection_recommendations(user_id, collection_id)
+        await invalidate_user_recommendations(user_db, user_id)
 
         return {"collection_id": collection_id}
 
@@ -247,7 +250,7 @@ async def add_manga_to_user_collection(
         raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
 
     await user_db.add_manga_to_collection(user_id, collection_id, manga_id)
-    await invalidate_collection_recommendations(user_id, collection_id)
+    await invalidate_user_recommendations(user_db, user_id)
     return {"collection_id": collection_id, "manga_id": manga_id}
 
 
@@ -309,7 +312,7 @@ async def add_manga_bulk_to_user_collection(
             )
 
     if added_ids:
-        await invalidate_collection_recommendations(user_id, collection_id)
+        await invalidate_user_recommendations(user_db, user_id)
 
     return BulkMangaInCollectionResponse(
         collection_id=collection_id,
@@ -331,5 +334,5 @@ async def remove_manga_from_user_collection(
     Remove a manga from a user's collection.
     """
     await user_db.remove_manga_from_collection(user_id, collection_id, manga_id)
-    await invalidate_collection_recommendations(user_id, collection_id)
+    await invalidate_user_recommendations(user_db, user_id)
     return {"collection_id": collection_id, "manga_id": manga_id}

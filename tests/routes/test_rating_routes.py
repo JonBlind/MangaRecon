@@ -8,7 +8,7 @@ def test_rate_manga_requires_auth(client):
         "/ratings",
         json={
             "manga_id": manga["manga_id"],
-            "personal_rating": 8.5,
+            "personal_rating": 8,
         },
     )
 
@@ -23,7 +23,7 @@ def test_logged_in_user_can_create_rating(client):
         "/ratings",
         json={
             "manga_id": manga["manga_id"],
-            "personal_rating": 8.5,
+            "personal_rating": 8,
         },
     )
 
@@ -31,7 +31,7 @@ def test_logged_in_user_can_create_rating(client):
 
     rating = response.json()["data"]
     assert rating["manga_id"] == manga["manga_id"]
-    assert float(rating["personal_rating"]) == 8.5
+    assert float(rating["personal_rating"]) == 8.0
 
 
 def test_logged_in_user_can_update_existing_rating(client):
@@ -95,7 +95,7 @@ def test_logged_in_user_can_list_own_ratings(client):
         "/ratings",
         json={
             "manga_id": manga["manga_id"],
-            "personal_rating": 6.5,
+            "personal_rating": 6,
         },
     )
     assert create_response.status_code == 200
@@ -123,7 +123,7 @@ def test_logged_in_user_can_delete_rating(client):
         "/ratings",
         json={
             "manga_id": manga["manga_id"],
-            "personal_rating": 7.5,
+            "personal_rating": 7,
         },
     )
     assert create_response.status_code == 200

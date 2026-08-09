@@ -17,11 +17,11 @@ def test_rating_create_read_update_list_delete_persists_real_rows(
     created = assert_success(
         client.post(
             "/ratings",
-            json={"manga_id": catalog.seed_manga_id, "personal_rating": 8.5},
+            json={"manga_id": catalog.seed_manga_id, "personal_rating": 8},
         )
     )["data"]
     assert created["manga_id"] == catalog.seed_manga_id
-    assert created["personal_rating"] == 8.5
+    assert created["personal_rating"] == 8.0
 
     with user_write_engine.connect() as connection:
         persisted = connection.execute(
@@ -30,12 +30,12 @@ def test_rating_create_read_update_list_delete_persists_real_rows(
             ),
             {"manga_id": catalog.seed_manga_id},
         ).scalar_one()
-    assert float(persisted) == 8.5
+    assert float(persisted) == 8.0
 
     single = assert_success(
         client.get("/ratings", params={"manga_id": catalog.seed_manga_id})
     )["data"]
-    assert single["personal_rating"] == 8.5
+    assert single["personal_rating"] == 8.0
 
     updated = assert_success(
         client.put(
@@ -66,7 +66,7 @@ def test_rating_create_rejects_missing_manga_and_does_not_persist(
 
     response = client.post(
         "/ratings",
-        json={"manga_id": 999999, "personal_rating": 7.5},
+        json={"manga_id": 999999, "personal_rating": 7},
     )
     assert_error(response, status_code=404, detail="MANGA_NOT_FOUND")
 
@@ -96,17 +96,75 @@ def test_rating_delete_requires_existing_rating(client: TestClient) -> None:
     assert_error(response, status_code=404, detail="RATING_NOT_FOUND")
 
 
-def test_rating_schema_enforces_range_and_half_steps(client: TestClient) -> None:
+def test_rating_schema_enforces_integer_scores_from_one_to_ten(
+    client: TestClient,
+) -> None:
     register_and_login(client, suffix="ratingvalidation")
 
     too_high = client.post(
         "/ratings",
-        json={"manga_id": 1, "personal_rating": 10.5},
+        json={"manga_id": 1, "personal_rating": 11},
     )
-    wrong_step = client.post(
+    fractional = client.post(
         "/ratings",
-        json={"manga_id": 1, "personal_rating": 7.3},
+        json={"manga_id": 1, "personal_rating": 7.5},
+    )
+    zero = client.post(
+        "/ratings",
+        json={"manga_id": 1, "personal_rating": 0},
     )
 
     assert_error(too_high, status_code=422)
-    assert_error(wrong_step, status_code=422)
+    assert_error(fractional, status_code=422)
+    assert_error(zero, status_code=422)
+
+
+def test_rating_changes_recalculate_internal_manga_average(
+    client_factory,
+    manga_write_engine: Engine,
+) -> None:
+    first_user = client_factory()
+    second_user = client_factory()
+    register_and_login(first_user, suffix="ratingaverageone")
+    register_and_login(second_user, suffix="ratingaveragetwo")
+    catalog = seed_catalog(manga_write_engine)
+
+    def current_average() -> float | None:
+        with manga_write_engine.connect() as connection:
+            value = connection.execute(
+                text(
+                    "SELECT average_rating FROM manga WHERE manga_id = :manga_id"
+                ),
+                {"manga_id": catalog.seed_manga_id},
+            ).scalar_one()
+        return None if value is None else float(value)
+
+    assert_success(
+        first_user.post(
+            "/ratings",
+            json={"manga_id": catalog.seed_manga_id, "personal_rating": 8.0},
+        )
+    )
+    assert current_average() == 8.0
+
+    assert_success(
+        second_user.post(
+            "/ratings",
+            json={"manga_id": catalog.seed_manga_id, "personal_rating": 9.0},
+        )
+    )
+    assert current_average() == 8.5
+
+    assert_success(
+        first_user.post(
+            "/ratings",
+            json={"manga_id": catalog.seed_manga_id, "personal_rating": 10.0},
+        )
+    )
+    assert current_average() == 9.5
+
+    assert_success(second_user.delete(f"/ratings/{catalog.seed_manga_id}"))
+    assert current_average() == 10.0
+
+    assert_success(first_user.delete(f"/ratings/{catalog.seed_manga_id}"))
+    assert current_average() is None

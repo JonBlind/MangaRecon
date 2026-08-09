@@ -543,7 +543,7 @@ async def test_delete_user_collection_deletes_and_invalidates(
     invalidate = AsyncMock()
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -562,8 +562,8 @@ async def test_delete_user_collection_deletes_and_invalidates(
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
     invalidate.assert_awaited_once_with(
+        db,
         user_id,
-        1,
     )
 
 
@@ -891,7 +891,7 @@ async def test_add_manga_to_collection_adds_and_invalidates(
     )
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -918,8 +918,8 @@ async def test_add_manga_to_collection_adds_and_invalidates(
         25,
     )
     invalidate.assert_awaited_once_with(
+        user_db,
         user_id,
-        10,
     )
 
 
@@ -942,7 +942,7 @@ async def test_add_manga_rejects_missing_manga(
     )
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -1060,7 +1060,7 @@ async def test_bulk_add_records_successes_and_failures(
     invalidate = AsyncMock()
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -1125,8 +1125,8 @@ async def test_bulk_add_records_successes_and_failures(
     )
 
     invalidate.assert_awaited_once_with(
+        user_db,
         user_id,
-        4,
     )
 
 
@@ -1155,7 +1155,7 @@ async def test_bulk_add_does_not_invalidate_when_all_manga_missing(
     invalidate = AsyncMock()
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -1215,7 +1215,7 @@ async def test_bulk_add_does_not_invalidate_when_all_conflicts(
     invalidate = AsyncMock()
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -1252,7 +1252,7 @@ async def test_remove_manga_from_collection_removes_and_invalidates(
     invalidate = AsyncMock()
     monkeypatch.setattr(
         collection_service,
-        "invalidate_collection_recommendations",
+        "invalidate_user_recommendations",
         invalidate,
     )
 
@@ -1274,6 +1274,6 @@ async def test_remove_manga_from_collection_removes_and_invalidates(
         99,
     )
     invalidate.assert_awaited_once_with(
+        db,
         user_id,
-        7,
     )

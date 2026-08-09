@@ -1,12 +1,61 @@
 from __future__ import annotations
 
 from asyncio import Lock, sleep
+from collections.abc import Sequence
 from time import monotonic
 from typing import Any, Self
 
 import httpx2
 
 from backend.config.settings import settings
+
+
+MANGAUPDATES_SERIES_TYPES = (
+    "Artbook",
+    "Doujinshi",
+    "Drama CD",
+    "Filipino",
+    "Indonesian",
+    "Manga",
+    "Manhwa",
+    "Manhua",
+    "Novel",
+    "OEL",
+    "Thai",
+    "Vietnamese",
+    "Malaysian",
+    "Nordic",
+    "French",
+    "Spanish",
+    "German",
+)
+
+MANGAUPDATES_SERIES_FILTERS = (
+    "scanlated",
+    "completed",
+    "oneshots",
+    "no_oneshots",
+    "some_releases",
+    "no_releases",
+)
+
+MANGAUPDATES_SERIES_ORDER_FIELDS = (
+    "score",
+    "title",
+    "rank",
+    "rating",
+    "year",
+    "date_added",
+    "week_pos",
+    "month1_pos",
+    "month3_pos",
+    "month6_pos",
+    "year_pos",
+    "list_reading",
+    "list_wish",
+    "list_complete",
+    "list_unfinished",
+)
 
 
 class MangaUpdatesClientError(RuntimeError):
@@ -171,6 +220,121 @@ class MangaUpdatesClient:
             },
         )
 
+    async def discover_series_page(
+        self,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        per_page: int = 100,
+        series_types: Sequence[str] = (),
+        year: str | None = None,
+        genres: Sequence[str] = (),
+        exclude_genres: Sequence[str] = (),
+        filters: Sequence[str] = (),
+        order_by: str = "rating",
+    ) -> dict[str, Any]:
+        """
+        Retrieve one filtered page for controlled catalog discovery.
+
+        Unlike title search, MangaUpdates permits this request without a
+        search string when structured filters are supplied.
+        """
+        if page < 1:
+            raise ValueError("page must be at least 1.")
+
+        if not 1 <= per_page <= 100:
+            raise ValueError(
+                "per_page must be between 1 and 100."
+            )
+
+        normalized_query = self._optional_text(
+            query,
+            field_name="query",
+        )
+        normalized_year = self._optional_text(
+            year,
+            field_name="year",
+        )
+        normalized_types = self._text_values(
+            series_types,
+            field_name="series_types",
+        )
+        normalized_genres = self._text_values(
+            genres,
+            field_name="genres",
+        )
+        normalized_excluded_genres = self._text_values(
+            exclude_genres,
+            field_name="exclude_genres",
+        )
+        normalized_filters = self._text_values(
+            filters,
+            field_name="filters",
+        )
+
+        unsupported_types = set(
+            normalized_types
+        ).difference(MANGAUPDATES_SERIES_TYPES)
+
+        if unsupported_types:
+            raise ValueError(
+                (
+                    "Unsupported MangaUpdates series type: "
+                    f"{sorted(unsupported_types)[0]}."
+                )
+            )
+
+        unsupported_filters = set(
+            normalized_filters
+        ).difference(MANGAUPDATES_SERIES_FILTERS)
+
+        if unsupported_filters:
+            raise ValueError(
+                (
+                    "Unsupported MangaUpdates filter: "
+                    f"{sorted(unsupported_filters)[0]}."
+                )
+            )
+
+        if order_by not in MANGAUPDATES_SERIES_ORDER_FIELDS:
+            raise ValueError(
+                (
+                    "Unsupported MangaUpdates order field: "
+                    f"{order_by}."
+                )
+            )
+
+        request_body: dict[str, Any] = {
+            "page": page,
+            "perpage": per_page,
+            "orderby": order_by,
+        }
+
+        optional_values: tuple[
+            tuple[str, str | tuple[str, ...] | None],
+            ...,
+        ] = (
+            ("search", normalized_query),
+            ("type", normalized_types or None),
+            ("year", normalized_year),
+            ("genre", normalized_genres or None),
+            (
+                "exclude_genre",
+                normalized_excluded_genres or None,
+            ),
+            ("filters", normalized_filters or None),
+        )
+
+        for key, value in optional_values:
+            if value is not None:
+                request_body[key] = value
+
+        return await self._request(
+            "POST",
+            "series/search",
+            json_body=request_body,
+        )
+
     async def get_series(
         self,
         series_id: int,
@@ -261,6 +425,47 @@ class MangaUpdatesClient:
             )
 
         return payload
+
+    @staticmethod
+    def _optional_text(
+        value: str | None,
+        *,
+        field_name: str,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        if not isinstance(value, str):
+            raise ValueError(
+                f"{field_name} must be a string or null."
+            )
+
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError(f"{field_name} cannot be blank.")
+
+        return normalized
+
+    @classmethod
+    def _text_values(
+        cls,
+        values: Sequence[str],
+        *,
+        field_name: str,
+    ) -> tuple[str, ...]:
+        normalized: list[str] = []
+
+        for value in values:
+            item = cls._optional_text(
+                value,
+                field_name=field_name,
+            )
+
+            if item not in normalized:
+                normalized.append(item)
+
+        return tuple(normalized)
 
     async def _wait_for_request_slot(self) -> None:
         async with self._request_lock:

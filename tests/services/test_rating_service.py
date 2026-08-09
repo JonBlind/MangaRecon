@@ -15,7 +15,7 @@ from backend.utils.domain_exceptions import NotFoundError
 def make_rating(
     *,
     manga_id: int = 10,
-    personal_rating: float = 8.5,
+    personal_rating: float = 8.0,
 ):
     return SimpleNamespace(
         manga_id=manga_id,
@@ -42,7 +42,7 @@ async def test_create_or_update_rating_returns_validated_rating(
 
     stored_rating = make_rating(
         manga_id=15,
-        personal_rating=8.5,
+        personal_rating=8.0,
     )
 
     manga_exists = AsyncMock(return_value=True)
@@ -69,14 +69,14 @@ async def test_create_or_update_rating_returns_validated_rating(
         user_id=user_id,
         payload=RatingCreate(
             manga_id=15,
-            personal_rating=Decimal("8.5"),
+            personal_rating=Decimal("8.0"),
         ),
         user_db=user_db,
         manga_db=manga_db,
     )
 
     assert result.manga_id == 15
-    assert result.personal_rating == 8.5
+    assert result.personal_rating == 8.0
     assert result.created_at == stored_rating.created_at
 
     manga_exists.assert_awaited_once_with(
@@ -88,7 +88,7 @@ async def test_create_or_update_rating_returns_validated_rating(
         user_db,
         user_id=user_id,
         manga_id=15,
-        score=8.5,
+        score=8.0,
     )
 
     invalidate.assert_awaited_once_with(
@@ -235,7 +235,7 @@ async def test_update_existing_rating_raises_when_rating_missing(
             user_id=uuid.uuid4(),
             payload=RatingCreate(
                 manga_id=25,
-                personal_rating=Decimal("6.5"),
+                personal_rating=Decimal("6.0"),
             ),
             user_db=db,
         )
@@ -428,7 +428,7 @@ async def test_get_user_ratings_page_returns_paginated_ratings(
     ratings = [
         make_rating(
             manga_id=1,
-            personal_rating=7.5,
+            personal_rating=7.0,
         ),
         make_rating(
             manga_id=2,
@@ -464,7 +464,7 @@ async def test_get_user_ratings_page_returns_paginated_ratings(
     assert [
         item.personal_rating
         for item in result["items"]
-    ] == [7.5, 9.0]
+    ] == [7.0, 9.0]
 
     count_ratings.assert_awaited_once_with(
         db,

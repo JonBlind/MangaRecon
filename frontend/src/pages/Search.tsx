@@ -11,6 +11,7 @@ import CollectionPickerModal from "../components/CollectionPickerModal";
 import AuthRequiredModal from "../components/AuthRequiredModal";
 import { useMangaSelection } from "../hooks/useMangaSelection";
 import { useMe } from "../hooks/useMe";
+import { recommendationKeys } from "../hooks/useRecommendations";
 
 export default function Search() {
   const nav = useNavigate();
@@ -76,6 +77,12 @@ export default function Search() {
       await qc.invalidateQueries({ queryKey: ["collections", "detail", collectionId] });
       await qc.invalidateQueries({ queryKey: ["collections", "mangas", collectionId] });
 
+      if (result.added_count > 0) {
+        await qc.invalidateQueries({
+          queryKey: recommendationKeys.collections,
+        });
+      }
+
       setIsCollectionModalOpen(false);
 
       if (result.added_count > 0) {
@@ -83,15 +90,15 @@ export default function Search() {
       }
 
       const alreadyExistsCount = result.failed.filter(
-        (failure) => failure.reason === "ALREADY_EXISTS"
+        (failure) => failure.reason === "ALREADY_EXISTS",
       ).length;
 
       const collectionMissingCount = result.failed.filter(
-        (failure) => failure.reason === "COLLECTION_NOT_FOUND"
+        (failure) => failure.reason === "COLLECTION_NOT_FOUND",
       ).length;
 
       const unknownFailureCount = result.failed.filter(
-        (failure) => failure.reason === "UNKNOWN"
+        (failure) => failure.reason === "UNKNOWN",
       ).length;
 
       const summaryParts: string[] = [];
@@ -101,17 +108,16 @@ export default function Search() {
       }
 
       if (collectionMissingCount > 0) {
-        summaryParts.push(`${collectionMissingCount} failed because the collection was not found`);
+        summaryParts.push(
+          `${collectionMissingCount} failed because the collection was not found`,
+        );
       }
 
       if (unknownFailureCount > 0) {
         summaryParts.push(`${unknownFailureCount} failed for another reason`);
       }
 
-      const summaryDetail =
-        summaryParts.length > 0
-          ? ` ${summaryParts.join("; ")}.`
-          : "";
+      const summaryDetail = summaryParts.length > 0 ? ` ${summaryParts.join("; ")}.` : "";
 
       if (result.added_count > 0 && result.failed_count === 0) {
         setBulkAddFeedback(`${result.added_count} manga added to collection.`);
@@ -120,7 +126,7 @@ export default function Search() {
 
       if (result.added_count > 0 && result.failed_count > 0) {
         setBulkAddFeedback(
-          `${result.added_count} manga added, ${result.failed_count} failed.${summaryDetail}`
+          `${result.added_count} manga added, ${result.failed_count} failed.${summaryDetail}`,
         );
         return;
       }
@@ -174,7 +180,7 @@ export default function Search() {
       order_by: "title" as const,
       order_dir: "asc" as const,
     }),
-    [title, page, genreId, tagId, demoId]
+    [title, page, genreId, tagId, demoId],
   );
 
   const mangaQ = useQuery<MangaSearchResponse>({
@@ -189,13 +195,10 @@ export default function Search() {
 
   return (
     <div className="space-y-6">
-
       {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold">Search</h1>
-        <p className="mt-1 text-sm opacity-80">
-          Browse manga by title and filters.
-        </p>
+        <p className="mt-1 text-sm opacity-80">Browse manga by title and filters.</p>
       </div>
 
       {/* Selection Summary Bar */}
@@ -230,7 +233,6 @@ export default function Search() {
 
       {/* Filters */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-
         <div className="md:col-span-2">
           <label className="mb-1 block text-sm">Title</label>
           <input
@@ -318,9 +320,7 @@ export default function Search() {
         <div className="text-sm opacity-80">Loading filters…</div>
       )}
 
-      {mangaQ.isLoading && (
-        <div className="text-sm opacity-80">Loading results…</div>
-      )}
+      {mangaQ.isLoading && <div className="text-sm opacity-80">Loading results…</div>}
 
       {mangaQ.isError && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -330,7 +330,6 @@ export default function Search() {
 
       {/* Results Section */}
       <div className="space-y-2">
-
         <div className="flex items-center justify-between text-sm opacity-80">
           <span>
             {total.toLocaleString()} result{total === 1 ? "" : "s"}

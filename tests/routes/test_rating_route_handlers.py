@@ -23,7 +23,7 @@ def user():
 def payload():
     return RatingCreate(
         manga_id=25,
-        personal_rating=Decimal("8.5"),
+        personal_rating=Decimal("8.0"),
     )
 
 
@@ -64,7 +64,7 @@ async def test_rating_write_routes_forward_payload(
 
     validated = {
         "manga_id": 25,
-        "personal_rating": 8.5,
+        "personal_rating": 8.0,
     }
 
     service = AsyncMock(return_value=validated)
@@ -149,7 +149,7 @@ async def test_get_user_ratings_uses_single_rating_service_when_id_given(
     db = MagicMock()
     single = {
         "manga_id": 25,
-        "personal_rating": 8.5,
+        "personal_rating": 8.0,
     }
 
     get_single = AsyncMock(return_value=single)
