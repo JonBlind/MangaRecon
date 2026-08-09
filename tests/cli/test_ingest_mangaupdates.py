@@ -1,53 +1,130 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import argparse
+import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-import backend.cli.ingest_mangaupdates as cli
+from backend.cli import ingest_mangaupdates as cli
 from backend.services.ingestion_service import (
     MangaIngestionResult,
 )
 
 
-@pytest.mark.asyncio
-async def test_run_series_ingestion_wires_resources(
-    monkeypatch: pytest.MonkeyPatch,
+class _ClientContext:
+    def __init__(self, client) -> None:
+        self.client = client
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(
+        self,
+        exc_type,
+        exc_value,
+        traceback,
+    ) -> None:
+        return None
+
+
+def _result(
+    manga_id: int,
+    *,
+    created: bool = False,
+    changed: bool = False,
+) -> MangaIngestionResult:
+    return MangaIngestionResult(
+        manga_id=manga_id,
+        created=created,
+        changed=changed,
+    )
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-1"])
+def test_series_id_rejects_invalid_values(
+    value: str,
 ) -> None:
-    manga_db = MagicMock()
-    provider_closed = False
+    with pytest.raises(argparse.ArgumentTypeError):
+        cli._series_id(value)
 
-    async def provide_manga_db():
-        nonlocal provider_closed
 
-        try:
-            yield manga_db
-        finally:
-            provider_closed = True
+@pytest.mark.parametrize(
+    "value",
+    ["-0.1", "nan", "inf", "not-a-number"],
+)
+def test_request_interval_rejects_invalid_values(
+    value: str,
+) -> None:
+    with pytest.raises(argparse.ArgumentTypeError):
+        cli._request_interval(value)
 
-    client = MagicMock()
-    client.__aenter__ = AsyncMock(
-        return_value=client
-    )
-    client.__aexit__ = AsyncMock(
-        return_value=None
+
+def test_load_series_ids_supports_comments_and_bom(
+    tmp_path,
+) -> None:
+    input_file = tmp_path / "series.txt"
+    input_file.write_text(
+        "\ufeff# sample\n17360452316\n\n15180124327 # note\n",
+        encoding="utf-8",
     )
 
-    client_factory = MagicMock(
-        return_value=client
+    assert cli._load_series_ids(input_file) == [
+        17360452316,
+        15180124327,
+    ]
+
+
+def test_load_series_ids_reports_invalid_line(
+    tmp_path,
+) -> None:
+    input_file = tmp_path / "series.txt"
+    input_file.write_text("1\ninvalid\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"series\.txt:2: series ID must be an integer",
+    ):
+        cli._load_series_ids(input_file)
+
+
+def test_collect_series_ids_deduplicates_in_first_seen_order(
+    tmp_path,
+) -> None:
+    input_file = tmp_path / "series.txt"
+    input_file.write_text("2\n3\n1\n", encoding="utf-8")
+
+    assert cli._collect_series_ids(
+        [1, 2, 1],
+        input_file,
+    ) == (1, 2, 3)
+
+
+def test_run_batch_ingestion_isolates_failures_and_reuses_resources(
+    monkeypatch,
+) -> None:
+    manga_db = object()
+    client = object()
+
+    async def database_provider():
+        yield manga_db
+
+    client_factory = Mock(
+        return_value=_ClientContext(client)
     )
-    expected = MangaIngestionResult(
-        manga_id=17,
-        created=True,
-        changed=True,
+    ingest = AsyncMock(
+        side_effect=[
+            _result(10, created=True, changed=True),
+            RuntimeError("bad payload"),
+            _result(12),
+        ]
     )
-    ingest = AsyncMock(return_value=expected)
     dispose = AsyncMock()
 
     monkeypatch.setattr(
         cli,
         "get_manga_write_db",
-        provide_manga_db,
+        database_provider,
     )
     monkeypatch.setattr(
         cli,
@@ -65,61 +142,43 @@ async def test_run_series_ingestion_wires_resources(
         dispose,
     )
 
-    result = await cli.run_series_ingestion(42)
+    attempts = asyncio.run(
+        cli.run_batch_ingestion(
+            [10, 11, 12],
+            min_request_interval_seconds=0.25,
+        )
+    )
 
-    assert result == expected
-    assert provider_closed is True
-
-    client_factory.assert_called_once_with()
-    client.__aenter__.assert_awaited_once_with()
-    client.__aexit__.assert_awaited_once()
-
-    ingest.assert_awaited_once_with(
-        manga_db,
-        client=client,
-        series_id=42,
+    assert [attempt.series_id for attempt in attempts] == [
+        10,
+        11,
+        12,
+    ]
+    assert attempts[0].result == _result(
+        10,
+        created=True,
+        changed=True,
+    )
+    assert attempts[1].error == "bad payload"
+    assert attempts[2].result == _result(12)
+    assert ingest.await_count == 3
+    client_factory.assert_called_once_with(
+        min_request_interval_seconds=0.25
     )
     dispose.assert_awaited_once_with()
 
 
-@pytest.mark.parametrize(
-    ("result", "status"),
-    [
-        (
-            MangaIngestionResult(
-                manga_id=17,
-                created=True,
-                changed=True,
-            ),
-            "created",
-        ),
-        (
-            MangaIngestionResult(
-                manga_id=17,
-                created=False,
-                changed=True,
-            ),
-            "updated",
-        ),
-        (
-            MangaIngestionResult(
-                manga_id=17,
-                created=False,
-                changed=False,
-            ),
-            "unchanged",
-        ),
-    ],
-)
-def test_main_reports_successful_outcome(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    result: MangaIngestionResult,
-    status: str,
+def test_main_preserves_single_series_output(
+    monkeypatch,
+    capsys,
 ) -> None:
-    validate = MagicMock()
-    run_ingestion = AsyncMock(
-        return_value=result
+    validate = Mock()
+    ingest = AsyncMock(
+        return_value=_result(
+            8,
+            created=True,
+            changed=True,
+        )
     )
 
     monkeypatch.setattr(
@@ -130,75 +189,64 @@ def test_main_reports_successful_outcome(
     monkeypatch.setattr(
         cli,
         "run_series_ingestion",
-        run_ingestion,
+        ingest,
     )
 
-    exit_code = cli.main(["42"])
-
-    captured = capsys.readouterr()
+    exit_code = cli.main(["17360452316"])
 
     assert exit_code == 0
-    assert captured.err == ""
-    assert captured.out == (
-        f"MangaUpdates series 42 {status}; "
-        "manga_id=17.\n"
+    assert capsys.readouterr().out == (
+        "MangaUpdates series 17360452316 created; "
+        "manga_id=8.\n"
+    )
+    validate.assert_called_once_with()
+    ingest.assert_awaited_once_with(17360452316)
+
+
+def test_main_reports_batch_summary_and_failure_exit_code(
+    monkeypatch,
+    capsys,
+) -> None:
+    validate = Mock()
+    ingest = AsyncMock(
+        return_value=(
+            cli.MangaIngestionAttempt(
+                series_id=1,
+                result=_result(
+                    8,
+                    created=True,
+                    changed=True,
+                ),
+            ),
+            cli.MangaIngestionAttempt(
+                series_id=2,
+                error="not found",
+            ),
+        )
     )
 
-    validate.assert_called_once_with()
-    run_ingestion.assert_awaited_once_with(42)
-
-
-def test_main_returns_one_on_ingestion_failure(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
     monkeypatch.setattr(
         cli,
         "validate_database_config",
-        MagicMock(),
+        validate,
     )
     monkeypatch.setattr(
         cli,
-        "run_series_ingestion",
-        AsyncMock(
-            side_effect=RuntimeError(
-                "upstream unavailable"
-            )
-        ),
+        "run_batch_ingestion",
+        ingest,
     )
 
-    exit_code = cli.main(["42"])
-
+    exit_code = cli.main(["1", "1", "2"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert captured.out == ""
+    assert captured.out == (
+        "MangaUpdates series 1 created; manga_id=8.\n"
+        "Summary: total=2; created=1; updated=0; "
+        "unchanged=0; failed=1.\n"
+    )
     assert captured.err == (
-        "Ingestion failed: upstream unavailable\n"
+        "MangaUpdates series 2 failed: not found\n"
     )
-
-
-@pytest.mark.parametrize(
-    "invalid_value",
-    [
-        "0",
-        "not-an-id",
-    ],
-)
-def test_main_rejects_invalid_series_id(
-    monkeypatch: pytest.MonkeyPatch,
-    invalid_value: str,
-) -> None:
-    run_ingestion = AsyncMock()
-
-    monkeypatch.setattr(
-        cli,
-        "run_series_ingestion",
-        run_ingestion,
-    )
-
-    with pytest.raises(SystemExit) as exc_info:
-        cli.main([invalid_value])
-
-    assert exc_info.value.code == 2
-    run_ingestion.assert_not_awaited()
+    validate.assert_called_once_with()
+    ingest.assert_awaited_once_with((1, 2))

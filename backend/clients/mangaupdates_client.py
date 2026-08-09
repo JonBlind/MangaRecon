@@ -282,17 +282,26 @@ class MangaUpdatesClient:
             self._last_request_started_at = now
 
 
-def create_mangaupdates_client() -> MangaUpdatesClient:
+def create_mangaupdates_client(
+    *,
+    min_request_interval_seconds: float | None = None,
+) -> MangaUpdatesClient:
     """
     Create a MangaUpdates client from application settings.
+
+    The optional interval override is intended for controlled CLI jobs.
     """
+    request_interval = (
+        settings.mangaupdates_min_request_interval_seconds
+        if min_request_interval_seconds is None
+        else min_request_interval_seconds
+    )
+
     return MangaUpdatesClient(
         base_url=settings.mangaupdates_base_url,
         timeout_seconds=(
             settings.mangaupdates_timeout_seconds
         ),
-        min_request_interval_seconds=(
-            settings.mangaupdates_min_request_interval_seconds
-        ),
+        min_request_interval_seconds=request_interval,
         user_agent=settings.mangaupdates_user_agent,
     )
