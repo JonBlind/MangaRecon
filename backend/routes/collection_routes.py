@@ -9,7 +9,7 @@ from typing import Literal
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request
-from backend.auth.dependencies import current_active_user as current_user
+from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.db.models.user import User
 from backend.dependencies import (

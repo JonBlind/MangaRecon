@@ -295,6 +295,21 @@ async def test_rate_limit_handler_returns_standard_429_response(
                 "exists."
             ),
         ),
+        (
+            "VERIFY_USER_BAD_TOKEN",
+            400,
+            "AUTH_VERIFY_INVALID",
+            (
+                "This verification link is invalid or "
+                "expired."
+            ),
+        ),
+        (
+            "VERIFY_USER_ALREADY_VERIFIED",
+            409,
+            "AUTH_ALREADY_VERIFIED",
+            "This email address is already verified.",
+        ),
     ],
 )
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from backend.db.client_db import ClientWriteDatabase, ClientReadDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
-from backend.auth.dependencies import current_active_user as current_user
+from backend.auth.dependencies import current_active_verified_user as current_user
 from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword
 from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success

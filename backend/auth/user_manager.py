@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models.user import User
 from backend.dependencies import get_async_user_write_session
 from backend.auth.config import settings
+from backend.auth.email import EmailDeliveryError, send_verification_email
 
 import logging
 
@@ -65,6 +66,14 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             None
         '''
         logger.info("User %s registered.", user.id)
+
+        try:
+            await self.request_verify(user, request)
+        except EmailDeliveryError:
+            logger.exception(
+                "Automatic verification email delivery failed for user %s.",
+                user.id,
+            )
     
     # What to do after a user "forgets password"
     async def on_after_forgot_password(self, user, token, request = None):
@@ -94,7 +103,15 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         Returns:
             None
         '''
+        await send_verification_email(
+            recipient=user.email,
+            token=token,
+        )
         logger.info("Email verification requested for user %s.", user.id)
+
+    async def on_after_verify(self, user, request = None):
+        """Log successful ownership verification without exposing token data."""
+        logger.info("Email verified for user %s.", user.id)
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):

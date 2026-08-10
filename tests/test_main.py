@@ -238,6 +238,7 @@ def test_create_app_configures_application_in_test_environment(
     register_errors = MagicMock()
     validate_database = MagicMock()
     validate_config = MagicMock()
+    validate_email = MagicMock()
     register_limiter = MagicMock()
 
     monkeypatch.setattr(
@@ -262,6 +263,11 @@ def test_create_app_configures_application_in_test_environment(
     )
     monkeypatch.setattr(
         main,
+        "validate_email_config",
+        validate_email,
+    )
+    monkeypatch.setattr(
+        main,
         "register_rate_limiter",
         register_limiter,
     )
@@ -280,6 +286,7 @@ def test_create_app_configures_application_in_test_environment(
     register_errors.assert_called_once_with(app)
     validate_database.assert_called_once_with()
     validate_config.assert_called_once_with()
+    validate_email.assert_called_once_with()
     register_limiter.assert_not_called()
 
     app.add_middleware.assert_called_once_with(
@@ -382,6 +389,13 @@ def test_create_app_validates_rate_limit_config_before_registering_limiter(
     )
     monkeypatch.setattr(
         main,
+        "validate_email_config",
+        lambda: events.append(
+            "email"
+        ),
+    )
+    monkeypatch.setattr(
+        main,
         "register_rate_limiter",
         lambda _app: events.append(
             "limiter"
@@ -395,6 +409,7 @@ def test_create_app_validates_rate_limit_config_before_registering_limiter(
         "exceptions",
         "database",
         "rate-limit",
+        "email",
         "limiter",
     ]
 

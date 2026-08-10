@@ -35,8 +35,17 @@ export default function Register() {
     setSubmitting(true);
 
     try {
-      await register({ email, password, username, displayname });
-      nav("/login");
+      const normalizedEmail = email.trim();
+
+      await register({
+        email: normalizedEmail,
+        password,
+        username,
+        displayname,
+      });
+      nav("/verify-email", {
+        state: { email: normalizedEmail },
+      });
     } catch (err: any) {
       const raw = err?.message ?? "Registration failed.";
       const pretty =

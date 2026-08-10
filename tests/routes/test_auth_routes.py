@@ -1,4 +1,4 @@
-from tests.routes.helpers import unique_user_payload
+from tests.routes.helpers import unique_user_payload, verify_registered_user
 
 
 def test_register_user_returns_created_user(client):
@@ -16,6 +16,7 @@ def test_register_user_returns_created_user(client):
     assert body["email"] == payload["email"]
     assert body["username"] == payload["username"]
     assert body["displayname"] == payload["displayname"]
+    assert body["is_verified"] is False
     assert "id" in body
     assert "hashed_password" not in body
 
@@ -52,6 +53,11 @@ def test_login_sets_auth_cookie(client):
         json=payload,
     )
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     response = client.post(
         "/auth/jwt/login",
@@ -79,6 +85,11 @@ def test_logged_in_user_can_read_profiles_me(client):
         json=payload,
     )
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     login_response = client.post(
         "/auth/jwt/login",
@@ -110,6 +121,11 @@ def test_logout_clears_auth_cookie(client):
         json=payload,
     )
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     login_response = client.post(
         "/auth/jwt/login",
@@ -161,6 +177,11 @@ def test_login_rejects_wrong_password(client):
         json=payload,
     )
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     response = client.post(
         "/auth/jwt/login",
@@ -171,6 +192,37 @@ def test_login_rejects_wrong_password(client):
     )
 
     assert response.status_code == 401
+
+
+def test_login_rejects_unverified_user(client):
+    payload = unique_user_payload()
+
+    register_response = client.post(
+        "/auth/register",
+        json=payload,
+    )
+    assert register_response.status_code == 201
+
+    response = client.post(
+        "/auth/jwt/login",
+        data={
+            "username": payload["email"],
+            "password": payload["password"],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "AUTH_NOT_VERIFIED"
+    assert "auth" not in response.cookies
+
+
+def test_request_verify_token_does_not_reveal_unknown_email(client):
+    response = client.post(
+        "/auth/request-verify-token",
+        json={"email": "unknown@example.com"},
+    )
+
+    assert response.status_code == 202
 
 
 def test_login_rejects_unknown_email(client):

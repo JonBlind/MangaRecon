@@ -1,10 +1,15 @@
-from tests.routes.helpers import unique_user_payload
+from tests.routes.helpers import unique_user_payload, verify_registered_user
 
 def register_and_login(client):
     payload = unique_user_payload()
 
     register_response = client.post("/auth/register", json=payload)
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     login_response = client.post(
         "/auth/jwt/login",

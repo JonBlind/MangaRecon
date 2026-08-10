@@ -5,7 +5,7 @@ export async function login(email: string, password: string) {
   const body = new URLSearchParams();
   body.set("username", email);
   body.set("password", password);
-  
+
   return apiFetch<void>("/auth/jwt/login", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -31,6 +31,20 @@ export async function register(payload: RegisterPayload) {
   return apiFetch<void>("/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function requestVerificationEmail(email: string) {
+  return apiFetch<void>("/auth/request-verify-token", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyEmail(token: string) {
+  return apiFetch<UserMe>("/auth/verify", {
+    method: "POST",
+    body: JSON.stringify({ token }),
   });
 }
 

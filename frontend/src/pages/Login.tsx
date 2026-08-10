@@ -51,6 +51,9 @@ export default function Login() {
       : mutation.error
         ? "Login failed"
         : null;
+  const needsVerification =
+    mutation.error instanceof ApiRequestError &&
+    mutation.error.errorCode === "AUTH_NOT_VERIFIED";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
@@ -97,7 +100,18 @@ export default function Login() {
           </div>
 
           {errorMsg ? (
-            <div className="rounded-xl border p-3 text-sm">{errorMsg}</div>
+            <div className="rounded-xl border p-3 text-sm">
+              <p>{errorMsg}</p>
+              {needsVerification ? (
+                <Link
+                  className="mt-2 inline-block underline"
+                  to="/verify-email"
+                  state={{ email: email.trim() }}
+                >
+                  Resend verification email
+                </Link>
+              ) : null}
+            </div>
           ) : null}
 
           <button

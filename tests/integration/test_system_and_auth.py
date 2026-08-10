@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .helpers import RegisteredUser, assert_error, register_and_login, register_user
+from .helpers import (
+    RegisteredUser,
+    assert_error,
+    register_and_login,
+    register_user,
+    verify_user,
+)
 
 
 def test_health_and_readiness_routes(client: TestClient) -> None:
@@ -31,6 +37,24 @@ def test_register_login_and_logout_cookie_flow(client: TestClient) -> None:
     assert created["email"] == user.email
     assert created["username"] == user.username
     assert created["displayname"] == user.displayname
+    assert created["is_verified"] is False
+
+    unverified_login = client.post(
+        "/auth/jwt/login",
+        data={"username": user.email, "password": user.password},
+    )
+    assert_error(
+        unverified_login,
+        status_code=403,
+        detail="AUTH_NOT_VERIFIED",
+    )
+
+    verified = verify_user(
+        client,
+        user,
+        user_id=created["id"],
+    )
+    assert verified["is_verified"] is True
 
     login = client.post(
         "/auth/jwt/login",

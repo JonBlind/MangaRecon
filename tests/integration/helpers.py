@@ -6,7 +6,10 @@ from uuid import uuid4
 
 from fastapi import Response
 from fastapi.testclient import TestClient
+from fastapi_users.jwt import generate_jwt
 from sqlalchemy import Engine, text
+
+from backend.auth.user_manager import UserManager
 
 
 DEFAULT_PASSWORD = "ValidPass123!"
@@ -128,6 +131,29 @@ def register_user(
     return response.json()
 
 
+def verify_user(
+    client: TestClient,
+    user: RegisteredUser,
+    *,
+    user_id: str,
+) -> dict[str, Any]:
+    token = generate_jwt(
+        {
+            "sub": user_id,
+            "email": user.email,
+            "aud": UserManager.verification_token_audience,
+        },
+        UserManager.verification_token_secret,
+        UserManager.verification_token_lifetime_seconds,
+    )
+    response = client.post(
+        "/auth/verify",
+        json={"token": token},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def login_user(
     client: TestClient,
     user: RegisteredUser,
@@ -159,7 +185,12 @@ def register_and_login(
         suffix=suffix,
         password=password,
     )
-    register_user(client, user)
+    created = register_user(client, user)
+    verify_user(
+        client,
+        user,
+        user_id=created["id"],
+    )
     login_user(client, user)
     return user
 

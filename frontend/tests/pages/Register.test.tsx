@@ -4,6 +4,20 @@ import Register from "../../src/pages/Register";
 import { renderWithProviders } from "../testUtils";
 import * as authApi from "../../src/api/auth";
 
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}));
+
+vi.mock("react-router-dom", async () => {
+  const actual =
+    await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+
+  return {
+    ...actual,
+    useNavigate: () => mocks.navigate,
+  };
+});
+
 vi.mock("../../src/hooks/useMe", () => ({
   useMe: () => ({
     data: null,
@@ -15,17 +29,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const registerMock = vi
-  .spyOn(authApi, "register")
-  .mockResolvedValue({} as any);
+const registerMock = vi.spyOn(authApi, "register").mockResolvedValue({} as any);
 
 describe("Register Page", () => {
   test("renders register form", () => {
     renderWithProviders(<Register />);
 
-    expect(
-      screen.getByRole("button", { name: /create account/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
   });
 
   test("calls register on submit", async () => {
@@ -51,9 +61,7 @@ describe("Register Page", () => {
       target: { value: "password123" },
     });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create account/i })
-    );
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
 
     await waitFor(() => {
       expect(registerMock).toHaveBeenCalledWith({
@@ -62,6 +70,9 @@ describe("Register Page", () => {
         displayname: "Test User",
         password: "password123",
       });
+      expect(mocks.navigate).toHaveBeenCalledWith("/verify-email", {
+        state: { email: "test@example.com" },
+      });
     });
   });
 
@@ -69,65 +80,61 @@ describe("Register Page", () => {
     renderWithProviders(<Register />);
 
     fireEvent.change(screen.getByLabelText(/email/i), {
-        target: { value: "test@example.com" },
+      target: { value: "test@example.com" },
     });
 
     fireEvent.change(screen.getByLabelText(/username/i), {
-        target: { value: "testuser" },
+      target: { value: "testuser" },
     });
 
     fireEvent.change(screen.getByLabelText(/display name/i), {
-        target: { value: "Test User" },
+      target: { value: "Test User" },
     });
 
     fireEvent.change(screen.getByLabelText(/^password/i), {
-        target: { value: "password123" },
+      target: { value: "password123" },
     });
 
     fireEvent.change(screen.getByLabelText(/confirm password/i), {
-        target: { value: "different123" },
+      target: { value: "different123" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
 
-    expect(
-        await screen.findByText(/passwords do not match/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/passwords do not match/i)).toBeInTheDocument();
 
     expect(registerMock).not.toHaveBeenCalled();
   });
 
   test("shows friendly error when account already exists", async () => {
-    registerMock.mockRejectedValueOnce(
-        new Error("REGISTER_USER_ALREADY_EXISTS")
-    );
+    registerMock.mockRejectedValueOnce(new Error("REGISTER_USER_ALREADY_EXISTS"));
 
     renderWithProviders(<Register />);
 
     fireEvent.change(screen.getByLabelText(/email/i), {
-        target: { value: "test@example.com" },
+      target: { value: "test@example.com" },
     });
 
     fireEvent.change(screen.getByLabelText(/username/i), {
-        target: { value: "testuser" },
+      target: { value: "testuser" },
     });
 
     fireEvent.change(screen.getByLabelText(/display name/i), {
-        target: { value: "Test User" },
+      target: { value: "Test User" },
     });
 
     fireEvent.change(screen.getByLabelText(/^password/i), {
-        target: { value: "password123" },
+      target: { value: "password123" },
     });
 
     fireEvent.change(screen.getByLabelText(/confirm password/i), {
-        target: { value: "password123" },
+      target: { value: "password123" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
 
     expect(
-        await screen.findByText(/an account with that email already exists/i)
+      await screen.findByText(/an account with that email already exists/i),
     ).toBeInTheDocument();
   });
 });

@@ -4,6 +4,8 @@ import subprocess
 import sys
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.auth import config
 
 
@@ -24,9 +26,24 @@ def run_isolated_config_import(
     """
     env = os.environ.copy()
 
-    env.pop("AUTH_SECRET", None)
-    env.pop("DEBUG", None)
-    env.pop("MANGARECON_ENV", None)
+    for name in (
+        "AUTH_SECRET",
+        "DEBUG",
+        "MANGARECON_ENV",
+        "FRONTEND_URL",
+        "EMAIL_DELIVERY_MODE",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USERNAME",
+        "SMTP_PASSWORD",
+        "SMTP_FROM_EMAIL",
+        "SMTP_FROM_NAME",
+        "SMTP_STARTTLS",
+        "SMTP_USE_SSL",
+        "SMTP_TIMEOUT_SECONDS",
+    ):
+        env.pop(name, None)
+        env.pop(name.lower(), None)
 
     env.update(environment)
 
@@ -249,3 +266,125 @@ def test_debug_environment_disables_secure_cookie(
         f"stderr:\n{result.stderr}"
     )
     assert "debug-cookie-ok" in result.stdout
+
+
+def test_test_environment_disables_email_delivery_by_default():
+    assert config._ENV == "test"
+    assert config.settings.email_delivery_mode == "disabled"
+
+
+def test_validate_email_config_rejects_non_smtp_production_mode(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "_ENV", "prod")
+    monkeypatch.setattr(
+        config.settings,
+        "email_delivery_mode",
+        "disabled",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires EMAIL_DELIVERY_MODE=smtp",
+    ):
+        config.validate_email_config()
+
+
+def test_validate_email_config_accepts_complete_smtp_settings(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "_ENV", "prod")
+    monkeypatch.setattr(
+        config.settings,
+        "email_delivery_mode",
+        "smtp",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "frontend_url",
+        "https://mangarecon.example",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_host",
+        "smtp.example.com",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_from_email",
+        "noreply@mangarecon.example",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_username",
+        "smtp-user",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_password",
+        "smtp-password",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_starttls",
+        True,
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_use_ssl",
+        False,
+    )
+
+    assert config.validate_email_config() is None
+
+
+def test_validate_email_config_rejects_conflicting_tls_modes(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "_ENV", "dev")
+    monkeypatch.setattr(
+        config.settings,
+        "email_delivery_mode",
+        "smtp",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "frontend_url",
+        "http://localhost:5173",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_host",
+        "smtp.example.com",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_from_email",
+        "noreply@mangarecon.example",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_username",
+        None,
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_password",
+        None,
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_starttls",
+        True,
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "smtp_use_ssl",
+        True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="cannot both be true",
+    ):
+        config.validate_email_config()

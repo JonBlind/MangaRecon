@@ -1,6 +1,6 @@
 import uuid
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -14,7 +14,8 @@ def fake_user():
         id=uuid.uuid4(),
         email="original@example.com",
         displayname="Original Name",
-        is_verified=True,
+        is_active=True,
+        is_verified=False,
     )
 
 
@@ -87,11 +88,17 @@ async def test_on_after_register_logs_user_registration(
     fake_user,
 ):
     log_info = MagicMock()
+    request_verify = AsyncMock()
 
     monkeypatch.setattr(
         user_manager.logger,
         "info",
         log_info,
+    )
+    monkeypatch.setattr(
+        manager,
+        "request_verify",
+        request_verify,
     )
 
     result = await manager.on_after_register(
@@ -104,6 +111,10 @@ async def test_on_after_register_logs_user_registration(
         "User %s registered.",
         fake_user.id,
     )
+    request_verify.assert_awaited_once_with(
+        fake_user,
+        None,
+    )
 
 
 @pytest.mark.asyncio
@@ -113,12 +124,18 @@ async def test_on_after_register_accepts_request(
     fake_user,
 ):
     log_info = MagicMock()
+    request_verify = AsyncMock()
     request = MagicMock()
 
     monkeypatch.setattr(
         user_manager.logger,
         "info",
         log_info,
+    )
+    monkeypatch.setattr(
+        manager,
+        "request_verify",
+        request_verify,
     )
 
     result = await manager.on_after_register(
@@ -130,6 +147,43 @@ async def test_on_after_register_accepts_request(
 
     log_info.assert_called_once_with(
         "User %s registered.",
+        fake_user.id,
+    )
+    request_verify.assert_awaited_once_with(
+        fake_user,
+        request,
+    )
+
+
+@pytest.mark.asyncio
+async def test_on_after_register_keeps_created_account_when_email_delivery_fails(
+    monkeypatch,
+    manager,
+    fake_user,
+):
+    request_verify = AsyncMock(
+        side_effect=user_manager.EmailDeliveryError(
+            "delivery failed"
+        )
+    )
+    log_exception = MagicMock()
+
+    monkeypatch.setattr(
+        manager,
+        "request_verify",
+        request_verify,
+    )
+    monkeypatch.setattr(
+        user_manager.logger,
+        "exception",
+        log_exception,
+    )
+
+    result = await manager.on_after_register(fake_user)
+
+    assert result is None
+    log_exception.assert_called_once_with(
+        "Automatic verification email delivery failed for user %s.",
         fake_user.id,
     )
 
@@ -200,12 +254,18 @@ async def test_on_after_request_verify_logs_request_without_token(
     fake_user,
 ):
     log_info = MagicMock()
+    send_email = AsyncMock()
     token = "sensitive-verification-token"
 
     monkeypatch.setattr(
         user_manager.logger,
         "info",
         log_info,
+    )
+    monkeypatch.setattr(
+        user_manager,
+        "send_verification_email",
+        send_email,
     )
 
     result = await manager.on_after_request_verify(
@@ -221,6 +281,10 @@ async def test_on_after_request_verify_logs_request_without_token(
     )
 
     assert token not in repr(log_info.call_args)
+    send_email.assert_awaited_once_with(
+        recipient=fake_user.email,
+        token=token,
+    )
 
 
 @pytest.mark.asyncio
@@ -230,12 +294,18 @@ async def test_on_after_request_verify_accepts_request(
     fake_user,
 ):
     log_info = MagicMock()
+    send_email = AsyncMock()
     request = MagicMock()
 
     monkeypatch.setattr(
         user_manager.logger,
         "info",
         log_info,
+    )
+    monkeypatch.setattr(
+        user_manager,
+        "send_verification_email",
+        send_email,
     )
 
     result = await manager.on_after_request_verify(
@@ -248,6 +318,33 @@ async def test_on_after_request_verify_accepts_request(
 
     log_info.assert_called_once_with(
         "Email verification requested for user %s.",
+        fake_user.id,
+    )
+    send_email.assert_awaited_once_with(
+        recipient=fake_user.email,
+        token="sensitive-verification-token",
+    )
+
+
+@pytest.mark.asyncio
+async def test_on_after_verify_logs_user_id(
+    monkeypatch,
+    manager,
+    fake_user,
+):
+    log_info = MagicMock()
+
+    monkeypatch.setattr(
+        user_manager.logger,
+        "info",
+        log_info,
+    )
+
+    result = await manager.on_after_verify(fake_user)
+
+    assert result is None
+    log_info.assert_called_once_with(
+        "Email verified for user %s.",
         fake_user.id,
     )
 

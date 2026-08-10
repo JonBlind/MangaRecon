@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from backend.utils.errors import register_exception_handlers
 from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready, validate_rate_limit_config
 from backend.cache.redis import get_redis_cache
+from backend.auth.config import validate_email_config
 from backend.config.settings import ENV, settings, origins
 from backend.dependencies import dispose_database_engines, validate_database_config
 from dotenv import load_dotenv
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     validate_database_config()
     validate_rate_limit_config()
+    validate_email_config()
 
     # Rate limiting is disabled in tests
     if ENV != "test":

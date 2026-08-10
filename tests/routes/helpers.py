@@ -1,5 +1,7 @@
 from uuid import uuid4
+from fastapi_users.jwt import generate_jwt
 from sqlalchemy import create_engine, text
+from backend.auth.user_manager import UserManager
 from backend.dependencies import settings
 
 def unique_user_payload():
@@ -11,11 +13,34 @@ def unique_user_payload():
         "displayname": f"User {unique}",
     }
 
+
+def verify_registered_user(client, *, user_id, email):
+    token = generate_jwt(
+        {
+            "sub": str(user_id),
+            "email": email,
+            "aud": UserManager.verification_token_audience,
+        },
+        UserManager.verification_token_secret,
+        UserManager.verification_token_lifetime_seconds,
+    )
+    response = client.post(
+        "/auth/verify",
+        json={"token": token},
+    )
+    assert response.status_code == 200
+    return response.json()
+
 def register_and_login(client):
     payload = unique_user_payload()
 
     register_response = client.post("/auth/register", json=payload)
     assert register_response.status_code == 201
+    verify_registered_user(
+        client,
+        user_id=register_response.json()["id"],
+        email=payload["email"],
+    )
 
     login_response = client.post(
         "/auth/jwt/login",

@@ -22,6 +22,8 @@ HTTP_DETAIL_MAP: dict[str, tuple[int, str, str]] = {
     "LOGIN_BAD_CREDENTIALS": (401, "AUTH_INVALID_CREDENTIALS", "Invalid Email or Password."),
     "LOGIN_USER_NOT_VERIFIED": (403, "AUTH_NOT_VERIFIED", "Please verify your email before logging in."),
     "REGISTER_USER_ALREADY_EXISTS": (409, "AUTH_EMAIL_EXISTS", "An account with that email already exists."),
+    "VERIFY_USER_BAD_TOKEN": (400, "AUTH_VERIFY_INVALID", "This verification link is invalid or expired."),
+    "VERIFY_USER_ALREADY_VERIFIED": (409, "AUTH_ALREADY_VERIFIED", "This email address is already verified."),
 }
 
 def register_exception_handlers(app):
@@ -78,5 +80,3 @@ def register_exception_handlers(app):
     async def _unexpected(_req: Request, exc: Exception):
         logger.error("unhandled: %s", exc, exc_info=True)
         return JSONResponse(status_code=500, content=error("Internal server error", detail="INTERNAL_SERVER_ERROR"))
-    
-    

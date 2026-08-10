@@ -1,15 +1,21 @@
 import { vi } from "vitest";
 import { ApiRequestError } from "../../src/api/http";
-import { login, logout, me, register } from "../../src/api/auth";
+import {
+  login,
+  logout,
+  me,
+  register,
+  requestVerificationEmail,
+  verifyEmail,
+} from "../../src/api/auth";
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
 }));
 
 vi.mock("../../src/api/http", async () => {
-  const actual = await vi.importActual<typeof import("../../src/api/http")>(
-    "../../src/api/http"
-  );
+  const actual =
+    await vi.importActual<typeof import("../../src/api/http")>("../../src/api/http");
 
   return {
     ...actual,
@@ -68,6 +74,28 @@ describe("auth api", () => {
     });
   });
 
+  test("requests a verification email", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ data: undefined });
+
+    await requestVerificationEmail("test@example.com");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/request-verify-token", {
+      method: "POST",
+      body: JSON.stringify({ email: "test@example.com" }),
+    });
+  });
+
+  test("submits an email verification token", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ data: undefined });
+
+    await verifyEmail("verification-token");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ token: "verification-token" }),
+    });
+  });
+
   test("me returns current user data", async () => {
     const user = {
       id: "user-1",
@@ -87,7 +115,7 @@ describe("auth api", () => {
 
   test("me returns null on 401", async () => {
     mocks.apiFetch.mockRejectedValueOnce(
-      new ApiRequestError("Unauthorized", 401, undefined)
+      new ApiRequestError("Unauthorized", 401, undefined),
     );
 
     await expect(me()).resolves.toBeNull();
