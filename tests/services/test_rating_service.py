@@ -545,7 +545,7 @@ async def test_get_single_user_rating_returns_rating(
 
 
 @pytest.mark.asyncio
-async def test_get_single_user_rating_raises_when_missing(
+async def test_get_single_user_rating_returns_none_when_missing(
     monkeypatch,
 ):
     fetch_rating = AsyncMock(return_value=None)
@@ -555,12 +555,10 @@ async def test_get_single_user_rating_raises_when_missing(
         fetch_rating,
     )
 
-    with pytest.raises(NotFoundError) as exc_info:
-        await rating_service.get_single_user_rating(
-            user_id=uuid.uuid4(),
-            manga_id=44,
-            user_db=MagicMock(),
-        )
+    result = await rating_service.get_single_user_rating(
+        user_id=uuid.uuid4(),
+        manga_id=44,
+        user_db=MagicMock(),
+    )
 
-    assert exc_info.value.code == "RATING_NOT_FOUND"
-    assert exc_info.value.message == "Rating not found."
+    assert result is None

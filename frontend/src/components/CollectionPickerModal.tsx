@@ -18,7 +18,7 @@ export default function CollectionPickerModal({
   isSubmitting = false,
   selectedCount,
 }: CollectionPickerModalProps) {
-  const { data, isLoading, isError } = useCollections({ page: 1, size: 100 });
+  const { data, isLoading, isError } = useCollections({ page: 1, size: 100 }, open);
   const createCollectionMutation = useCreateCollection();
 
   const [mode, setMode] = useState<Mode>("existing");

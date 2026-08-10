@@ -28,7 +28,7 @@ export const collectionsKeys = {
     ["collections", "mangas", collectionId, params] as const,
 };
 
-export function useCollections(params: ListCollectionsParams = {}) {
+export function useCollections(params: ListCollectionsParams = {}, enabled = true) {
   const normalized = {
     page: params.page ?? 1,
     size: params.size ?? 20,
@@ -38,6 +38,7 @@ export function useCollections(params: ListCollectionsParams = {}) {
   return useQuery<CollectionPage>({
     queryKey: collectionsKeys.list(normalized),
     queryFn: () => listCollections(normalized),
+    enabled,
     retry: false,
     staleTime: 60_000,
   });

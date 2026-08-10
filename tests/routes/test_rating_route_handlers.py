@@ -191,6 +191,44 @@ async def test_get_user_ratings_uses_single_rating_service_when_id_given(
 
 
 @pytest.mark.asyncio
+async def test_get_user_ratings_returns_null_when_manga_is_unrated(
+    monkeypatch,
+    user,
+):
+    db = MagicMock()
+    get_single = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        rating_routes,
+        "get_single_user_rating",
+        get_single,
+    )
+
+    result = await handler(
+        rating_routes.get_user_ratings
+    )(
+        request=MagicMock(),
+        manga_id=25,
+        page=1,
+        size=20,
+        db=db,
+        user=user,
+    )
+
+    get_single.assert_awaited_once_with(
+        user_id=user.id,
+        manga_id=25,
+        user_db=db,
+    )
+    assert result == {
+        "status": "success",
+        "data": None,
+        "message": "Rating retrieved successfully",
+        "detail": None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_get_user_ratings_uses_page_service_without_id(
     monkeypatch,
     user,

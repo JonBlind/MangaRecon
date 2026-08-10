@@ -35,11 +35,12 @@ describe("ratings api", () => {
   });
 
   test("treats a missing personal rating as unrated", async () => {
-    mocks.apiFetch.mockRejectedValueOnce(
-      new ApiRequestError("Rating not found.", 404, "RATING_NOT_FOUND"),
-    );
+    mocks.apiFetch.mockResolvedValueOnce({ data: null });
 
     await expect(getRatingForManga(10)).resolves.toBeNull();
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/ratings?manga_id=10", {
+      method: "GET",
+    });
   });
 
   test("does not hide unrelated rating fetch failures", async () => {

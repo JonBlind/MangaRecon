@@ -114,11 +114,9 @@ async def get_single_user_rating(
     user_id,
     manga_id: int,
     user_db: ClientReadDatabase,
-) -> RatingRead:
+) -> RatingRead | None:
     """
-    Return a single rating for a user/manga pair.
+    Return a single rating for a user/manga pair, or None if it is unrated.
     """
     rating = await fetch_user_rating(user_db, user_id=user_id, manga_id=manga_id)
-    if not rating:
-        raise NotFoundError(code="RATING_NOT_FOUND", message="Rating not found.")
-    return RatingRead.model_validate(rating)
+    return RatingRead.model_validate(rating) if rating is not None else None

@@ -160,7 +160,7 @@ def test_rate_nonexistent_manga_returns_404(client):
     assert response.status_code == 404
 
 
-def test_get_missing_rating_returns_404(client):
+def test_get_missing_rating_returns_success_with_null_data(client):
     register_and_login(client)
     manga = create_test_manga()
 
@@ -169,7 +169,13 @@ def test_get_missing_rating_returns_404(client):
         params={"manga_id": manga["manga_id"]},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "success",
+        "data": None,
+        "message": "Rating retrieved successfully",
+        "detail": None,
+    }
 
 
 def test_delete_missing_rating_returns_404(client):

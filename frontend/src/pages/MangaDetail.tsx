@@ -32,16 +32,20 @@ export default function MangaDetail() {
 
   // auth + collections
   const meQ = useMe();
-  const collectionsQ = useCollections({
-    page: 1,
-    size: 100,
-  });
+  const isAuthenticated = Boolean(meQ.data);
+
+  const collectionsQ = useCollections(
+    {
+      page: 1,
+      size: 100,
+    },
+    isAuthenticated,
+  );
   const [selectedCollection, setSelectedCollection] = useState<number | "">("");
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const addM = useAddMangaToCollection(
     typeof selectedCollection === "number" ? selectedCollection : -1,
   );
-  const isAuthenticated = Boolean(meQ.data);
   const ratingQ = useRating(mangaId, isAuthenticated);
   const saveRatingM = useSaveRating(mangaId);
   const deleteRatingM = useDeleteRating(mangaId);

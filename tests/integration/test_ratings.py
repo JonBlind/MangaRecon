@@ -55,7 +55,8 @@ def test_rating_create_read_update_list_delete_persists_real_rows(
     assert deleted == {"manga_id": catalog.seed_manga_id}
 
     missing = client.get("/ratings", params={"manga_id": catalog.seed_manga_id})
-    assert_error(missing, status_code=404, detail="RATING_NOT_FOUND")
+    missing_body = assert_success(missing)
+    assert missing_body["data"] is None
 
 
 def test_rating_create_rejects_missing_manga_and_does_not_persist(

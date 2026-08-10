@@ -9,12 +9,17 @@ Provides small utilities to keep JSON envelopes consistent:
 from typing import Any, Optional
 
 
-def success(message:str, data: Optional[dict] = None) -> dict:
+_MISSING = object()
+
+
+def success(message: str, data: Any = _MISSING) -> dict:
     '''
     Wrapper for successful responses.
     Args:
         message (Str): Message to print/return indicating state of the response. Required since each official request should have an associated message.
-        data (Dict [Optional]): data/payload to return as a sign of success.
+        data (Any [Optional]): Data/payload to return as a sign of success.
+            Omitting this argument produces an empty dictionary. Passing None
+            explicitly preserves a JSON null value.
     Returns:
         dict: A dictionary containing response information based on the following keys:
             - 'status' (str) : 'success' representing state of response
@@ -28,7 +33,7 @@ def success(message:str, data: Optional[dict] = None) -> dict:
 
     return {
         "status" : "success",
-        "data" : data or {},
+        "data" : {} if data is _MISSING else data,
         "message" : message,
         "detail" : None
     }

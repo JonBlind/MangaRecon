@@ -22,7 +22,7 @@ def test_success_returns_expected_response_with_data():
     }
 
 
-def test_success_returns_empty_dict_when_data_is_none():
+def test_success_returns_empty_dict_when_data_is_omitted():
     result = success(
         message="Operation completed",
     )
@@ -35,22 +35,22 @@ def test_success_returns_empty_dict_when_data_is_none():
     }
 
 
-@pytest.mark.parametrize(
-    "falsy_data",
-    [
-        {},
-        None,
-    ],
-)
-def test_success_normalizes_falsy_data_to_empty_dict(
-    falsy_data,
-):
+def test_success_preserves_explicit_empty_dict():
     result = success(
         message="Operation completed",
-        data=falsy_data,
+        data={},
     )
 
     assert result["data"] == {}
+
+
+def test_success_preserves_explicit_none_as_null_data():
+    result = success(
+        message="Operation completed",
+        data=None,
+    )
+
+    assert result["data"] is None
 
 
 @pytest.mark.parametrize(
