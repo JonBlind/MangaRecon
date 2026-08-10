@@ -5,6 +5,7 @@ import { useMe } from "../hooks/useMe";
 import { useCollections, useAddMangaToCollection } from "../hooks/useCollections";
 import { useDeleteRating, useRating, useSaveRating } from "../hooks/useRatings";
 import type { FeedbackMessage, ReturnToLocationState } from "../types/ui";
+import MarkdownDescription from "../components/MarkdownDescription";
 
 const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
 
@@ -413,14 +414,25 @@ export default function MangaDetail() {
           )}
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-80">
-            {m.published_date ? <span>Published: {m.published_date}</span> : null}
+            {m.media_type ? <span>Type: {m.media_type}</span> : null}
 
-            {m.average_rating != null ? (
-              <span>User avg: {(m.average_rating / 2).toFixed(1)} / 5</span>
+            {m.publication_year != null ? (
+              <span>Published: {m.publication_year}</span>
             ) : null}
 
+            {m.average_rating != null ? (
+              <span>
+                Community Rating: {Number(m.average_rating).toFixed(1)}/10
+              </span>
+            ) : (
+              <span>Community Rating: Not rated yet</span>
+            )}
+
             {m.external_average_rating != null ? (
-              <span>External Rating: {m.external_average_rating} / 10</span>
+              <span>
+                MangaUpdates Rating:{" "}
+                {Number(m.external_average_rating).toFixed(1)}/10
+              </span>
             ) : null}
           </div>
 
@@ -532,9 +544,7 @@ export default function MangaDetail() {
             </h2>
 
             {m.description ? (
-              <p className="whitespace-pre-line leading-relaxed">
-                {m.description}
-              </p>
+              <MarkdownDescription>{m.description}</MarkdownDescription>
             ) : (
               <p className="opacity-70">No description available.</p>
             )}

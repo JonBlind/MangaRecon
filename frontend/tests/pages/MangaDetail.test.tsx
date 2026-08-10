@@ -33,7 +33,8 @@ vi.mock("../../src/hooks/useCollections", () => ({
 }));
 
 vi.mock("../../src/hooks/useRatings", () => ({
-  useRating: (mangaId: number, enabled: boolean) => mocks.useRating(mangaId, enabled),
+  useRating: (mangaId: number, enabled: boolean) =>
+    mocks.useRating(mangaId, enabled),
   useSaveRating: (mangaId: number) => mocks.useSaveRating(mangaId),
   useDeleteRating: (mangaId: number) => mocks.useDeleteRating(mangaId),
 }));
@@ -41,8 +42,10 @@ vi.mock("../../src/hooks/useRatings", () => ({
 const mangaDetail = {
   manga_id: 10,
   title: "Naruto",
-  description: "A ninja story.",
-  published_date: "1999-09-21",
+  description:
+    "**Dokia** was an *Average Office Worker*.\n\n(*Source: [LINE Webtoon](https://www.webtoons.com/example)*)",
+  publication_year: 2001,
+  media_type: "Manga",
   average_rating: 8.4,
   external_average_rating: 8.7,
   creator_credits: [
@@ -148,13 +151,28 @@ describe("MangaDetail Page", () => {
     expect(title).toBeInTheDocument();
     expect(title.parentElement).toContainElement(descriptionRegion);
 
-    expect(
-      within(descriptionRegion).getByText(/a ninja story/i),
-    ).toBeInTheDocument();
+    const boldText = within(descriptionRegion).getByText("Dokia");
+    expect(boldText.tagName).toBe("STRONG");
 
-    expect(screen.getByText(/published: 1999-09-21/i)).toBeInTheDocument();
-    expect(screen.getByText(/user avg: 4.2 \/ 5/i)).toBeInTheDocument();
-    expect(screen.getByText(/external rating: 8.7 \/ 10/i)).toBeInTheDocument();
+    const italicText = within(descriptionRegion).getByText(
+      "Average Office Worker",
+    );
+    expect(italicText.tagName).toBe("EM");
+
+    const sourceLink = within(descriptionRegion).getByRole("link", {
+      name: "LINE Webtoon",
+    });
+    expect(sourceLink).toHaveAttribute(
+      "href",
+      "https://www.webtoons.com/example",
+    );
+    expect(sourceLink).toHaveAttribute("target", "_blank");
+    expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    expect(screen.getByText("Type: Manga")).toBeInTheDocument();
+    expect(screen.getByText("Published: 2001")).toBeInTheDocument();
+    expect(screen.getByText("Community Rating: 8.4/10")).toBeInTheDocument();
+    expect(screen.getByText("MangaUpdates Rating: 8.7/10")).toBeInTheDocument();
 
     expect(screen.getByText(/shounen/i)).toBeInTheDocument();
     expect(screen.getByText(/action/i)).toBeInTheDocument();
@@ -199,10 +217,9 @@ describe("MangaDetail Page", () => {
   test("uses search as the default back link", () => {
     renderMangaDetail();
 
-    expect(screen.getByRole("link", { name: /back to results/i })).toHaveAttribute(
-      "href",
-      "/search",
-    );
+    expect(
+      screen.getByRole("link", { name: /back to results/i }),
+    ).toHaveAttribute("href", "/search");
   });
 
   test("uses returnTo state for the back link", () => {
@@ -213,18 +230,21 @@ describe("MangaDetail Page", () => {
       },
     });
 
-    expect(screen.getByRole("link", { name: /back to results/i })).toHaveAttribute(
-      "href",
-      "/recommendations?collectionId=1",
-    );
+    expect(
+      screen.getByRole("link", { name: /back to results/i }),
+    ).toHaveAttribute("href", "/recommendations?collectionId=1");
   });
 
   test("does not show collection controls when unauthenticated", () => {
     renderMangaDetail();
 
-    expect(screen.queryByDisplayValue(/add to collection/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue(/add to collection/i),
+    ).not.toBeInTheDocument();
 
-    expect(screen.queryByRole("button", { name: /^add$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^add$/i }),
+    ).not.toBeInTheDocument();
   });
 
   test("shows collection controls when authenticated", () => {
@@ -238,7 +258,9 @@ describe("MangaDetail Page", () => {
     expect(screen.getByDisplayValue(/add to collection/i)).toBeInTheDocument();
     expect(screen.getByText(/favorites/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^add$/i })).toBeDisabled();
-    expect(screen.getByRole("group", { name: /^your rating$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /^your rating$/i }),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole("radio")).toHaveLength(10);
     expect(
       screen.queryByRole("button", { name: /save rating/i }),
@@ -264,9 +286,13 @@ describe("MangaDetail Page", () => {
     renderMangaDetail();
 
     await waitFor(() => {
-      expect(screen.getByRole("radio", { name: /4.5 out of 5 stars/i })).toBeChecked();
+      expect(
+        screen.getByRole("radio", { name: /4.5 out of 5 stars/i }),
+      ).toBeChecked();
     });
-    expect(screen.getByRole("button", { name: /remove rating/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /remove rating/i }),
+    ).toBeInTheDocument();
   });
 
   test("saves a half-star selection immediately", async () => {
@@ -282,8 +308,12 @@ describe("MangaDetail Page", () => {
     await waitFor(() => {
       expect(mocks.saveRating).toHaveBeenCalledWith(9);
     });
-    expect(screen.getByRole("radio", { name: /4.5 out of 5 stars/i })).toBeChecked();
-    expect(await screen.findByText(/your rating was saved/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: /4.5 out of 5 stars/i }),
+    ).toBeChecked();
+    expect(
+      await screen.findByText(/your rating was saved/i),
+    ).toBeInTheDocument();
   });
 
   test("removes an existing personal rating", async () => {
@@ -304,12 +334,16 @@ describe("MangaDetail Page", () => {
 
     renderMangaDetail();
 
-    fireEvent.click(await screen.findByRole("button", { name: /remove rating/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /remove rating/i }),
+    );
 
     await waitFor(() => {
       expect(mocks.deleteRating).toHaveBeenCalledWith();
     });
-    expect(await screen.findByText(/your rating was removed/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/your rating was removed/i),
+    ).toBeInTheDocument();
   });
 
   test("adds manga to selected collection", async () => {
@@ -330,7 +364,9 @@ describe("MangaDetail Page", () => {
       expect(mocks.mutateAsync).toHaveBeenCalledWith(10);
     });
 
-    expect(await screen.findByText(/manga added to collection/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/manga added to collection/i),
+    ).toBeInTheDocument();
   });
 
   test("shows add-to-collection error feedback", async () => {
@@ -339,7 +375,9 @@ describe("MangaDetail Page", () => {
       isPending: false,
     });
 
-    mocks.mutateAsync.mockRejectedValueOnce(new Error("Already in collection."));
+    mocks.mutateAsync.mockRejectedValueOnce(
+      new Error("Already in collection."),
+    );
 
     renderMangaDetail();
 
@@ -349,7 +387,9 @@ describe("MangaDetail Page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
-    expect(await screen.findByText(/already in collection/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/already in collection/i),
+    ).toBeInTheDocument();
   });
 
   test("shows empty collections message for authenticated user with no collections", () => {
@@ -370,7 +410,9 @@ describe("MangaDetail Page", () => {
 
     renderMangaDetail();
 
-    expect(screen.getByText(/you don't have any collections yet/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/you don't have any collections yet/i),
+    ).toBeInTheDocument();
   });
 
   test("shows fallback description when manga has no description", () => {
@@ -401,9 +443,7 @@ describe("MangaDetail Page", () => {
       name: /^tags$/i,
     });
 
-    expect(
-      within(demographicsRegion).getByText("Shounen"),
-    ).toBeInTheDocument();
+    expect(within(demographicsRegion).getByText("Shounen")).toBeInTheDocument();
 
     expect(within(genresRegion).getByText("Action")).toBeInTheDocument();
     expect(

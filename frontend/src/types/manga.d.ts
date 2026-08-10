@@ -26,7 +26,7 @@ export type MangaSearchParams = {
   tag_id?: number | null;
   demo_id?: number | null;
 
-  order_by?: "title" | "average_rating" | "external_average_rating" | "published_date";
+  order_by?: "title" | "average_rating" | "external_average_rating" | "published_year";
   order_dir?: "asc" | "desc";
 };
 
@@ -40,7 +40,8 @@ export type MangaDetail = {
   manga_id: number;
   title: string;
   description?: string | null;
-  published_date?: string | null;
+  publication_year?: number | null;
+  media_type?: string | null;
 
   external_average_rating?: number | null;
   average_rating?: number | null;
