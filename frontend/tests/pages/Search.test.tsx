@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import Search from "../../src/pages/Search";
 import { renderWithProviders } from "../testUtils";
@@ -158,24 +158,141 @@ describe("Search Page", () => {
     expect(screen.getByText(/loading results/i)).toBeInTheDocument();
   });
 
-  test("updates search when title input changes", async () => {
+  test("debounces title searches until typing pauses for 450 ms", async () => {
     renderWithProviders(<Search />);
 
-    fireEvent.change(screen.getByPlaceholderText(/e\.g\. naruto/i), {
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    });
+
+    vi.useFakeTimers();
+
+    const titleInput = screen.getByPlaceholderText(/e\.g\. naruto/i);
+
+    fireEvent.change(titleInput, {
+      target: { value: "B" },
+    });
+    fireEvent.change(titleInput, {
+      target: { value: "Bl" },
+    });
+    fireEvent.change(titleInput, {
       target: { value: "Bleach" },
     });
 
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(449);
+    });
+
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
+    expect(mocks.searchMangas).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: "Bleach",
+        page: 1,
+        size: 25,
+        order_by: "title",
+        order_dir: "asc",
+      }),
+      expect.anything(),
+    );
+
+    vi.useRealTimers();
+  });
+
+  test("searches immediately when Enter is pressed", async () => {
+    renderWithProviders(<Search />);
+
     await waitFor(() => {
-      expect(mocks.searchMangas).toHaveBeenCalledWith(
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    });
+
+    const titleInput = screen.getByPlaceholderText(/e\.g\. naruto/i);
+
+    fireEvent.change(titleInput, {
+      target: { value: "Monster" },
+    });
+    fireEvent.keyDown(titleInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          title: "Bleach",
+          title: "Monster",
           page: 1,
-          size: 25,
-          order_by: "title",
-          order_dir: "asc",
         }),
+        expect.anything(),
       );
     });
+  });
+
+  test("clears an active title search immediately", async () => {
+    mocks.searchMangas.mockImplementation((params) => {
+      if (params.title === "Monster") {
+        return Promise.resolve({
+          total_results: 1,
+          page: 1,
+          size: 25,
+          items: [
+            {
+              manga_id: 30,
+              title: "Monster",
+              cover_image_url: null,
+              external_average_rating: 4.7,
+              genres: [],
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve(mangaResults);
+    });
+
+    renderWithProviders(<Search />);
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    });
+
+    const titleInput = screen.getByPlaceholderText(/e\.g\. naruto/i);
+
+    fireEvent.change(titleInput, {
+      target: { value: "Monster" },
+    });
+    fireEvent.keyDown(titleInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByText(/^monster$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^naruto$/i)).not.toBeInTheDocument();
+
+    fireEvent.change(titleInput, {
+      target: { value: "" },
+    });
+
+    expect(titleInput).toHaveValue("");
+    expect(await screen.findByText(/^naruto$/i)).toBeInTheDocument();
+
+    // The blank search is still fresh, so React Query restores it immediately
+    // without sending a redundant third request.
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
+  });
+
+  test("passes React Query's abort signal to manga searches", async () => {
+    renderWithProviders(<Search />);
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalled();
+    });
+
+    expect(mocks.searchMangas.mock.calls[0][1]).toBeInstanceOf(AbortSignal);
   });
 
   test("selects a manga result", async () => {
@@ -361,6 +478,7 @@ describe("Search Page", () => {
           genre_id: 1,
           page: 1,
         }),
+        expect.anything(),
       );
     });
   });
@@ -382,6 +500,7 @@ describe("Search Page", () => {
           tag_id: 1,
           page: 1,
         }),
+        expect.anything(),
       );
     });
   });
@@ -403,6 +522,7 @@ describe("Search Page", () => {
           demo_id: 1,
           page: 1,
         }),
+        expect.anything(),
       );
     });
   });
@@ -423,6 +543,7 @@ describe("Search Page", () => {
         expect.objectContaining({
           genre_id: 1,
         }),
+        expect.anything(),
       );
     });
 
@@ -431,13 +552,11 @@ describe("Search Page", () => {
     });
 
     await waitFor(() => {
-      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          genre_id: null,
-          page: 1,
-        }),
-      );
+      expect(genreSelect).toHaveValue("");
     });
+
+    // Clearing restores the still-fresh unfiltered query from the cache.
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
   });
 
   test("shows metadata loading state", () => {
@@ -491,18 +610,18 @@ describe("Search Page", () => {
         expect.objectContaining({
           page: 2,
         }),
+        expect.anything(),
       );
     });
 
     fireEvent.click(screen.getByRole("button", { name: /prev/i }));
 
     await waitFor(() => {
-      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          page: 1,
-        }),
-      );
+      expect(screen.getByText(/page 1 \/ 3/i)).toBeInTheDocument();
     });
+
+    // Page 1 remains fresh in the cache, so going back does not refetch it.
+    expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
   });
 
   test("disables pagination while results are loading", () => {

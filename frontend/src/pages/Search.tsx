@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
@@ -13,6 +13,8 @@ import { useMangaSelection } from "../hooks/useMangaSelection";
 import { useMe } from "../hooks/useMe";
 import { recommendationKeys } from "../hooks/useRecommendations";
 
+const SEARCH_DEBOUNCE_MS = 450;
+
 export default function Search() {
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -25,6 +27,7 @@ export default function Search() {
   const [bulkAddFeedback, setBulkAddFeedback] = useState<string | null>(null);
 
   const title = searchParams.get("title") ?? "";
+  const [titleInput, setTitleInput] = useState(title);
   const genreId = searchParams.get("genre") ? Number(searchParams.get("genre")) : "";
   const tagId = searchParams.get("tag") ? Number(searchParams.get("tag")) : "";
   const demoId = searchParams.get("demo") ? Number(searchParams.get("demo")) : "";
@@ -137,19 +140,47 @@ export default function Search() {
     }
   }
 
-  function updateParams(updates: Record<string, string | number | null | undefined>) {
-    const next = new URLSearchParams(searchParams);
+  const updateParams = useCallback(
+    (
+      updates: Record<string, string | number | null | undefined>,
+      options: { replace?: boolean } = {},
+    ) => {
+      const next = new URLSearchParams(searchParams);
 
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === null || value === undefined || value === "") {
-        next.delete(key);
-      } else {
-        next.set(key, String(value));
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || value === undefined || value === "") {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
       }
-    }
 
-    setSearchParams(next);
-  }
+      setSearchParams(next, { replace: options.replace ?? false });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  useEffect(() => {
+    setTitleInput(title);
+  }, [title]);
+
+  useEffect(() => {
+    const nextTitle = titleInput.trim();
+
+    if (nextTitle === title.trim()) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateParams(
+        {
+          title: nextTitle || null,
+          page: 1,
+        },
+        { replace: true },
+      );
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [title, titleInput, updateParams]);
 
   const genresQ = useQuery({
     queryKey: ["genres"],
@@ -185,8 +216,9 @@ export default function Search() {
 
   const mangaQ = useQuery<MangaSearchResponse>({
     queryKey: ["mangas", params],
-    queryFn: () => searchMangas(params),
+    queryFn: ({ signal }) => searchMangas(params, signal),
     placeholderData: keepPreviousData,
+    staleTime: 60_000,
   });
 
   const total = mangaQ.data?.total_results ?? 0;
@@ -238,13 +270,33 @@ export default function Search() {
           <input
             className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
             placeholder="e.g. Naruto"
-            value={title}
-            onChange={(e) =>
-              updateParams({
-                title: e.target.value || null,
-                page: 1,
-              })
-            }
+            value={titleInput}
+            onChange={(e) => {
+              const nextTitle = e.target.value;
+              setTitleInput(nextTitle);
+
+              if (!nextTitle.trim()) {
+                updateParams(
+                  {
+                    title: null,
+                    page: 1,
+                  },
+                  { replace: true },
+                );
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+
+              e.preventDefault();
+              updateParams(
+                {
+                  title: titleInput.trim() || null,
+                  page: 1,
+                },
+                { replace: true },
+              );
+            }}
           />
         </div>
 

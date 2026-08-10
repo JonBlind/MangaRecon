@@ -420,7 +420,7 @@ export default function MangaDetail() {
             ) : null}
 
             {m.external_average_rating != null ? (
-              <span>External: {m.external_average_rating} / 10</span>
+              <span>External Rating: {m.external_average_rating} / 10</span>
             ) : null}
           </div>
 

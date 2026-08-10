@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, exists, or_
 
 from backend.db.client_db import ClientReadDatabase
 from backend.db.models.manga import Manga
@@ -11,6 +11,7 @@ from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
 from backend.db.models.creator import Creator
 from backend.db.models.manga_creator import MangaCreator
+from backend.db.models.manga_alternate_title import MangaAlternateTitle
 from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic
 from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 
@@ -99,7 +100,17 @@ def build_filter_stmt(
     )
 
     if title:
-        stmt = stmt.where(Manga.title.ilike(f"%{title}%"))
+        pattern = f"%{title.strip()}%"
+
+        stmt = stmt.where(
+            or_(
+                Manga.title.ilike(pattern),
+                exists().where(
+                    MangaAlternateTitle.manga_id == Manga.manga_id,
+                    MangaAlternateTitle.title.ilike(pattern),
+                ),
+            )
+        )
 
     if genre_ids:
         stmt = stmt.join(manga_genre).where(manga_genre.c.genre_id.in_(genre_ids))

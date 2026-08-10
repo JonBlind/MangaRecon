@@ -154,7 +154,7 @@ describe("MangaDetail Page", () => {
 
     expect(screen.getByText(/published: 1999-09-21/i)).toBeInTheDocument();
     expect(screen.getByText(/user avg: 4.2 \/ 5/i)).toBeInTheDocument();
-    expect(screen.getByText(/external: 8.7 \/ 10/i)).toBeInTheDocument();
+    expect(screen.getByText(/external rating: 8.7 \/ 10/i)).toBeInTheDocument();
 
     expect(screen.getByText(/shounen/i)).toBeInTheDocument();
     expect(screen.getByText(/action/i)).toBeInTheDocument();

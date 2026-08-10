@@ -228,4 +228,24 @@ describe("manga api", () => {
       "/mangas/?title=Naruto&page=2&size=25&order_by=external_average_rating&order_dir=desc&genre_ids=1&tag_ids=2&demo_ids=3"
     );
   });
+
+  test("searchMangas forwards an abort signal", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({
+      data: {
+        total_results: 0,
+        page: 1,
+        size: 50,
+        items: [],
+      },
+    });
+
+    const controller = new AbortController();
+
+    await searchMangas({ title: "Naruto" }, controller.signal);
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/mangas/?title=Naruto&page=1&size=50",
+      { signal: controller.signal },
+    );
+  });
 });

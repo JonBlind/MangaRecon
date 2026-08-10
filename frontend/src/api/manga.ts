@@ -7,7 +7,7 @@ export async function getMangaById(mangaId: number): Promise<MangaDetail> {
   return res.data;
 }
 
-export async function searchMangas(params: MangaSearchParams): Promise<MangaSearchResponse> {
+export async function searchMangas(params: MangaSearchParams, signal?: AbortSignal): Promise<MangaSearchResponse> {
   const sp = new URLSearchParams();
 
   if (params.title?.trim()) sp.set("title", params.title.trim());
@@ -21,6 +21,10 @@ export async function searchMangas(params: MangaSearchParams): Promise<MangaSear
   if (params.tag_id) sp.append("tag_ids", String(params.tag_id));
   if (params.demo_id) sp.append("demo_ids", String(params.demo_id));
 
-  const res = await apiFetch<MangaSearchResponse>(`/mangas/?${sp}`);
+  const path = `/mangas/?${sp}`;
+  const res = signal
+    ? await apiFetch<MangaSearchResponse>(path, { signal })
+    : await apiFetch<MangaSearchResponse>(path);
+
   return res.data;
 }
