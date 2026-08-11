@@ -10,12 +10,19 @@ from math import isfinite
 from pathlib import Path
 
 from backend.clients.mangaupdates_client import (
+    MangaUpdatesRateLimitError,
     create_mangaupdates_client,
 )
 from backend.dependencies import (
     dispose_database_engines,
     get_manga_write_db,
     validate_database_config,
+)
+from backend.ingestion.mangaupdates_parser import (
+    MANGAUPDATES_PROVIDER_KEY,
+)
+from backend.repositories.ingestion_repo import (
+    find_existing_catalog_external_ids,
 )
 from backend.services.ingestion_service import (
     MangaIngestionResult,
@@ -38,6 +45,17 @@ class MangaIngestionAttempt:
             raise ValueError(
                 "Exactly one of result or error must be set."
             )
+
+
+@dataclass(frozen=True, slots=True)
+class MangaBatchIngestionReport:
+    """
+    Batch results, including IDs skipped before any API request.
+    """
+
+    input_series_ids: tuple[int, ...]
+    skipped_existing_series_ids: tuple[int, ...]
+    attempts: tuple[MangaIngestionAttempt, ...]
 
 
 def _series_id(value: str) -> int:
@@ -107,6 +125,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Override the configured minimum delay between API "
             "request start times for this job."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-existing",
+        action="store_true",
+        help=(
+            "Fetch and upsert IDs already present in the catalog. "
+            "By default, existing MangaUpdates IDs are skipped "
+            "before any detail API request."
         ),
     )
     return parser
@@ -214,19 +241,25 @@ async def run_batch_ingestion(
     series_ids: Sequence[int],
     *,
     min_request_interval_seconds: float | None = None,
-) -> tuple[MangaIngestionAttempt, ...]:
+    refresh_existing: bool = False,
+) -> MangaBatchIngestionReport:
     """
     Ingest a batch while isolating individual series failures.
 
     The database provider and HTTP client are reused for the entire job.
     The ingestion service owns the transaction boundary for each series.
+    Existing provider IDs are skipped before client creation unless an
+    explicit refresh is requested. A rate-limit response stops the job.
     """
-    if not series_ids:
+    input_series_ids = _deduplicate_series_ids(series_ids)
+
+    if not input_series_ids:
         raise ValueError(
             "series_ids must contain at least one series ID."
         )
 
     attempts: list[MangaIngestionAttempt] = []
+    skipped_existing_series_ids: tuple[int, ...] = ()
 
     try:
         async with aclosing(
@@ -234,41 +267,79 @@ async def run_batch_ingestion(
         ) as database_provider:
             manga_db = await anext(database_provider)
 
-            async with create_mangaupdates_client(
-                **_client_options(
-                    min_request_interval_seconds
-                )
-            ) as client:
-                for series_id in series_ids:
-                    try:
-                        result = await ingest_mangaupdates_series(
-                            manga_db,
-                            client=client,
-                            series_id=series_id,
-                        )
-                    except Exception as exc:
-                        error = str(exc).strip()
+            pending_series_ids = input_series_ids
 
-                        attempts.append(
-                            MangaIngestionAttempt(
-                                series_id=series_id,
-                                error=(
-                                    error
-                                    or type(exc).__name__
-                                ),
+            if not refresh_existing:
+                existing_external_ids = (
+                    await find_existing_catalog_external_ids(
+                        manga_db,
+                        provider_key=MANGAUPDATES_PROVIDER_KEY,
+                        external_ids=tuple(
+                            str(series_id)
+                            for series_id in input_series_ids
+                        ),
+                    )
+                )
+
+                skipped_existing_series_ids = tuple(
+                    series_id
+                    for series_id in input_series_ids
+                    if str(series_id) in existing_external_ids
+                )
+                pending_series_ids = tuple(
+                    series_id
+                    for series_id in input_series_ids
+                    if str(series_id) not in existing_external_ids
+                )
+
+            if pending_series_ids:
+                async with create_mangaupdates_client(
+                    **_client_options(
+                        min_request_interval_seconds
+                    )
+                ) as client:
+                    for series_id in pending_series_ids:
+                        try:
+                            result = (
+                                await ingest_mangaupdates_series(
+                                    manga_db,
+                                    client=client,
+                                    series_id=series_id,
+                                )
                             )
-                        )
-                    else:
-                        attempts.append(
-                            MangaIngestionAttempt(
-                                series_id=series_id,
-                                result=result,
+                        except MangaUpdatesRateLimitError:
+                            # A rate limit applies to the job, not one title.
+                            # Stop instead of sending the remaining requests.
+                            raise
+                        except Exception as exc:
+                            error = str(exc).strip()
+
+                            attempts.append(
+                                MangaIngestionAttempt(
+                                    series_id=series_id,
+                                    error=(
+                                        error
+                                        or type(exc).__name__
+                                    ),
+                                )
                             )
-                        )
+                        else:
+                            attempts.append(
+                                MangaIngestionAttempt(
+                                    series_id=series_id,
+                                    result=result,
+                                )
+                            )
     finally:
         await dispose_database_engines()
 
-    return tuple(attempts)
+    return MangaBatchIngestionReport(
+        input_series_ids=input_series_ids,
+        skipped_existing_series_ids=(
+            skipped_existing_series_ids
+        ),
+        attempts=tuple(attempts),
+    )
 
 
 def _result_status(
@@ -297,7 +368,7 @@ def _print_success(
 
 
 def _print_batch_results(
-    attempts: Sequence[MangaIngestionAttempt],
+    report: MangaBatchIngestionReport,
 ) -> int:
     counts = {
         "created": 0,
@@ -306,7 +377,7 @@ def _print_batch_results(
         "failed": 0,
     }
 
-    for attempt in attempts:
+    for attempt in report.attempts:
         if attempt.result is None:
             counts["failed"] += 1
             print(
@@ -328,7 +399,10 @@ def _print_batch_results(
 
     print(
         (
-            f"Summary: total={len(attempts)}; "
+            f"Summary: input={len(report.input_series_ids)}; "
+            "skipped_existing="
+            f"{len(report.skipped_existing_series_ids)}; "
+            f"fetched={len(report.attempts)}; "
             f"created={counts['created']}; "
             f"updated={counts['updated']}; "
             f"unchanged={counts['unchanged']}; "
@@ -339,6 +413,37 @@ def _print_batch_results(
     if counts["failed"]:
         return 1
 
+    return 0
+
+
+def _print_single_result(
+    report: MangaBatchIngestionReport,
+) -> int:
+    series_id = report.input_series_ids[0]
+
+    if report.skipped_existing_series_ids:
+        print(
+            (
+                f"MangaUpdates series {series_id} skipped; "
+                "already present. Use --refresh-existing to "
+                "fetch it again."
+            )
+        )
+        return 0
+
+    attempt = report.attempts[0]
+
+    if attempt.result is None:
+        print(
+            (
+                f"MangaUpdates series {series_id} failed: "
+                f"{attempt.error}"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    _print_success(series_id, attempt.result)
     return 0
 
 
@@ -356,9 +461,6 @@ def main(
     except ValueError as exc:
         parser.error(str(exc))
 
-    run_options = _client_options(
-        arguments.min_request_interval_seconds
-    )
     single_series_mode = (
         arguments.input_file is None
         and len(arguments.series_ids) == 1
@@ -366,21 +468,31 @@ def main(
 
     try:
         validate_database_config()
-
-        if single_series_mode:
-            result = asyncio.run(
-                run_series_ingestion(
-                    series_ids[0],
-                    **run_options,
-                )
+        report = asyncio.run(
+            run_batch_ingestion(
+                series_ids,
+                min_request_interval_seconds=(
+                    arguments.min_request_interval_seconds
+                ),
+                refresh_existing=arguments.refresh_existing,
             )
-        else:
-            attempts = asyncio.run(
-                run_batch_ingestion(
-                    series_ids,
-                    **run_options,
-                )
-            )
+        )
+    except MangaUpdatesRateLimitError as exc:
+        retry_after = (
+            f" Retry-After={exc.retry_after}."
+            if exc.retry_after
+            else ""
+        )
+        print(
+            (
+                "Ingestion stopped after MangaUpdates returned "
+                f"HTTP 429; no further requests were sent."
+                f"{retry_after} Rerun later to resume with "
+                "existing IDs skipped."
+            ),
+            file=sys.stderr,
+        )
+        return 1
     except Exception as exc:
         print(
             f"Ingestion failed: {exc}",
@@ -389,10 +501,9 @@ def main(
         return 1
 
     if single_series_mode:
-        _print_success(series_ids[0], result)
-        return 0
+        return _print_single_result(report)
 
-    return _print_batch_results(attempts)
+    return _print_batch_results(report)
 
 
 if __name__ == "__main__":  # pragma: no cover

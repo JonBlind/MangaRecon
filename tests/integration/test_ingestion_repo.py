@@ -298,6 +298,32 @@ async def test_initial_upsert_creates_complete_catalog_graph(
 
 
 @pytest.mark.asyncio
+async def test_existing_external_id_lookup_returns_only_provider_matches(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(external_id="100"),
+    )
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="300",
+            payload_hash="b" * 64,
+            title="Another Manga",
+        ),
+    )
+
+    result = await repository.find_existing_catalog_external_ids(
+        ingestion_db,
+        provider_key="mangaupdates",
+        external_ids=("100", "200", "300"),
+    )
+
+    assert result == {"100", "300"}
+
+
+@pytest.mark.asyncio
 async def test_same_payload_hash_is_idempotent(
     ingestion_db: ClientWriteDatabase,
 ) -> None:

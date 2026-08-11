@@ -100,7 +100,7 @@ def test_collect_series_ids_deduplicates_in_first_seen_order(
     ) == (1, 2, 3)
 
 
-def test_run_batch_ingestion_isolates_failures_and_reuses_resources(
+def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources(
     monkeypatch,
 ) -> None:
     manga_db = object()
@@ -116,9 +116,10 @@ def test_run_batch_ingestion_isolates_failures_and_reuses_resources(
         side_effect=[
             _result(10, created=True, changed=True),
             RuntimeError("bad payload"),
-            _result(12),
+            _result(13),
         ]
     )
+    find_existing = AsyncMock(return_value={"11"})
     dispose = AsyncMock()
 
     monkeypatch.setattr(
@@ -138,33 +139,209 @@ def test_run_batch_ingestion_isolates_failures_and_reuses_resources(
     )
     monkeypatch.setattr(
         cli,
+        "find_existing_catalog_external_ids",
+        find_existing,
+    )
+    monkeypatch.setattr(
+        cli,
         "dispose_database_engines",
         dispose,
     )
 
-    attempts = asyncio.run(
+    report = asyncio.run(
         cli.run_batch_ingestion(
-            [10, 11, 12],
+            [10, 11, 12, 13],
             min_request_interval_seconds=0.25,
         )
     )
 
-    assert [attempt.series_id for attempt in attempts] == [
+    assert report.input_series_ids == (10, 11, 12, 13)
+    assert report.skipped_existing_series_ids == (11,)
+    assert [
+        attempt.series_id for attempt in report.attempts
+    ] == [
         10,
-        11,
         12,
+        13,
     ]
-    assert attempts[0].result == _result(
+    assert report.attempts[0].result == _result(
         10,
         created=True,
         changed=True,
     )
-    assert attempts[1].error == "bad payload"
-    assert attempts[2].result == _result(12)
+    assert report.attempts[1].error == "bad payload"
+    assert report.attempts[2].result == _result(13)
     assert ingest.await_count == 3
+    find_existing.assert_awaited_once_with(
+        manga_db,
+        provider_key="mangaupdates",
+        external_ids=("10", "11", "12", "13"),
+    )
     client_factory.assert_called_once_with(
         min_request_interval_seconds=0.25
     )
+    dispose.assert_awaited_once_with()
+
+
+def test_run_batch_ingestion_does_not_open_client_when_all_ids_exist(
+    monkeypatch,
+) -> None:
+    manga_db = object()
+
+    async def database_provider():
+        yield manga_db
+
+    client_factory = Mock()
+    ingest = AsyncMock()
+    dispose = AsyncMock()
+
+    monkeypatch.setattr(
+        cli,
+        "get_manga_write_db",
+        database_provider,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_existing_catalog_external_ids",
+        AsyncMock(return_value={"10", "11"}),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_mangaupdates_client",
+        client_factory,
+    )
+    monkeypatch.setattr(
+        cli,
+        "ingest_mangaupdates_series",
+        ingest,
+    )
+    monkeypatch.setattr(
+        cli,
+        "dispose_database_engines",
+        dispose,
+    )
+
+    report = asyncio.run(
+        cli.run_batch_ingestion([10, 11, 10])
+    )
+
+    assert report == cli.MangaBatchIngestionReport(
+        input_series_ids=(10, 11),
+        skipped_existing_series_ids=(10, 11),
+        attempts=(),
+    )
+    client_factory.assert_not_called()
+    ingest.assert_not_awaited()
+    dispose.assert_awaited_once_with()
+
+
+def test_run_batch_ingestion_refresh_existing_fetches_every_id(
+    monkeypatch,
+) -> None:
+    manga_db = object()
+    client = object()
+
+    async def database_provider():
+        yield manga_db
+
+    find_existing = AsyncMock()
+    ingest = AsyncMock(
+        side_effect=[_result(10), _result(11)]
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "get_manga_write_db",
+        database_provider,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_existing_catalog_external_ids",
+        find_existing,
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_mangaupdates_client",
+        Mock(return_value=_ClientContext(client)),
+    )
+    monkeypatch.setattr(
+        cli,
+        "ingest_mangaupdates_series",
+        ingest,
+    )
+    monkeypatch.setattr(
+        cli,
+        "dispose_database_engines",
+        AsyncMock(),
+    )
+
+    report = asyncio.run(
+        cli.run_batch_ingestion(
+            [10, 11],
+            refresh_existing=True,
+        )
+    )
+
+    assert report.skipped_existing_series_ids == ()
+    assert [
+        attempt.series_id for attempt in report.attempts
+    ] == [10, 11]
+    find_existing.assert_not_awaited()
+    assert ingest.await_count == 2
+
+
+def test_run_batch_ingestion_stops_after_rate_limit(
+    monkeypatch,
+) -> None:
+    manga_db = object()
+    client = object()
+
+    async def database_provider():
+        yield manga_db
+
+    ingest = AsyncMock(
+        side_effect=[
+            _result(10, created=True, changed=True),
+            cli.MangaUpdatesRateLimitError(
+                retry_after="30"
+            ),
+            _result(12),
+        ]
+    )
+    dispose = AsyncMock()
+
+    monkeypatch.setattr(
+        cli,
+        "get_manga_write_db",
+        database_provider,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_existing_catalog_external_ids",
+        AsyncMock(return_value=set()),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_mangaupdates_client",
+        Mock(return_value=_ClientContext(client)),
+    )
+    monkeypatch.setattr(
+        cli,
+        "ingest_mangaupdates_series",
+        ingest,
+    )
+    monkeypatch.setattr(
+        cli,
+        "dispose_database_engines",
+        dispose,
+    )
+
+    with pytest.raises(cli.MangaUpdatesRateLimitError):
+        asyncio.run(
+            cli.run_batch_ingestion([10, 11, 12])
+        )
+
+    assert ingest.await_count == 2
     dispose.assert_awaited_once_with()
 
 
@@ -174,53 +351,18 @@ def test_main_preserves_single_series_output(
 ) -> None:
     validate = Mock()
     ingest = AsyncMock(
-        return_value=_result(
-            8,
-            created=True,
-            changed=True,
-        )
-    )
-
-    monkeypatch.setattr(
-        cli,
-        "validate_database_config",
-        validate,
-    )
-    monkeypatch.setattr(
-        cli,
-        "run_series_ingestion",
-        ingest,
-    )
-
-    exit_code = cli.main(["17360452316"])
-
-    assert exit_code == 0
-    assert capsys.readouterr().out == (
-        "MangaUpdates series 17360452316 created; "
-        "manga_id=8.\n"
-    )
-    validate.assert_called_once_with()
-    ingest.assert_awaited_once_with(17360452316)
-
-
-def test_main_reports_batch_summary_and_failure_exit_code(
-    monkeypatch,
-    capsys,
-) -> None:
-    validate = Mock()
-    ingest = AsyncMock(
-        return_value=(
-            cli.MangaIngestionAttempt(
-                series_id=1,
-                result=_result(
-                    8,
-                    created=True,
-                    changed=True,
+        return_value=cli.MangaBatchIngestionReport(
+            input_series_ids=(17360452316,),
+            skipped_existing_series_ids=(),
+            attempts=(
+                cli.MangaIngestionAttempt(
+                    series_id=17360452316,
+                    result=_result(
+                        8,
+                        created=True,
+                        changed=True,
+                    ),
                 ),
-            ),
-            cli.MangaIngestionAttempt(
-                series_id=2,
-                error="not found",
             ),
         )
     )
@@ -236,17 +378,176 @@ def test_main_reports_batch_summary_and_failure_exit_code(
         ingest,
     )
 
-    exit_code = cli.main(["1", "1", "2"])
+    exit_code = cli.main(["17360452316"])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == (
+        "MangaUpdates series 17360452316 created; "
+        "manga_id=8.\n"
+    )
+    validate.assert_called_once_with()
+    ingest.assert_awaited_once_with(
+        (17360452316,),
+        min_request_interval_seconds=None,
+        refresh_existing=False,
+    )
+
+
+def test_main_reports_single_existing_series_as_skipped(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_batch_ingestion",
+        AsyncMock(
+            return_value=cli.MangaBatchIngestionReport(
+                input_series_ids=(42,),
+                skipped_existing_series_ids=(42,),
+                attempts=(),
+            )
+        ),
+    )
+
+    assert cli.main(["42"]) == 0
+    assert capsys.readouterr().out == (
+        "MangaUpdates series 42 skipped; already present. "
+        "Use --refresh-existing to fetch it again.\n"
+    )
+
+
+def test_main_reports_batch_summary_and_failure_exit_code(
+    monkeypatch,
+    capsys,
+) -> None:
+    validate = Mock()
+    ingest = AsyncMock(
+        return_value=cli.MangaBatchIngestionReport(
+            input_series_ids=(1, 2, 3),
+            skipped_existing_series_ids=(2,),
+            attempts=(
+                cli.MangaIngestionAttempt(
+                    series_id=1,
+                    result=_result(
+                        8,
+                        created=True,
+                        changed=True,
+                    ),
+                ),
+                cli.MangaIngestionAttempt(
+                    series_id=3,
+                    error="not found",
+                ),
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        validate,
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_batch_ingestion",
+        ingest,
+    )
+
+    exit_code = cli.main(["1", "2", "3"])
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert captured.out == (
         "MangaUpdates series 1 created; manga_id=8.\n"
-        "Summary: total=2; created=1; updated=0; "
+        "Summary: input=3; skipped_existing=1; fetched=2; "
+        "created=1; updated=0; "
         "unchanged=0; failed=1.\n"
     )
     assert captured.err == (
-        "MangaUpdates series 2 failed: not found\n"
+        "MangaUpdates series 3 failed: not found\n"
     )
     validate.assert_called_once_with()
-    ingest.assert_awaited_once_with((1, 2))
+    ingest.assert_awaited_once_with(
+        (1, 2, 3),
+        min_request_interval_seconds=None,
+        refresh_existing=False,
+    )
+
+
+def test_main_forwards_refresh_and_interval_options(
+    monkeypatch,
+) -> None:
+    ingest = AsyncMock(
+        return_value=cli.MangaBatchIngestionReport(
+            input_series_ids=(1, 2),
+            skipped_existing_series_ids=(),
+            attempts=(
+                cli.MangaIngestionAttempt(
+                    series_id=1,
+                    result=_result(1),
+                ),
+                cli.MangaIngestionAttempt(
+                    series_id=2,
+                    result=_result(2),
+                ),
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_batch_ingestion",
+        ingest,
+    )
+
+    assert cli.main(
+        [
+            "1",
+            "2",
+            "--refresh-existing",
+            "--min-request-interval-seconds",
+            "0.5",
+        ]
+    ) == 0
+    ingest.assert_awaited_once_with(
+        (1, 2),
+        min_request_interval_seconds=0.5,
+        refresh_existing=True,
+    )
+
+
+def test_main_reports_rate_limit_and_resume_guidance(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_batch_ingestion",
+        AsyncMock(
+            side_effect=cli.MangaUpdatesRateLimitError(
+                retry_after="30"
+            )
+        ),
+    )
+
+    assert cli.main(["1", "2"]) == 1
+    assert capsys.readouterr().err == (
+        "Ingestion stopped after MangaUpdates returned HTTP 429; "
+        "no further requests were sent. Retry-After=30. Rerun "
+        "later to resume with existing IDs skipped.\n"
+    )

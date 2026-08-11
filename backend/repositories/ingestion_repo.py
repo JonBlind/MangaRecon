@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -7,7 +8,10 @@ from typing import Any, TypeVar
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from backend.db.client_db import ClientWriteDatabase
+from backend.db.client_db import (
+    ClientReadDatabase,
+    ClientWriteDatabase,
+)
 from backend.db.models.creator import Creator
 from backend.db.models.creator_external_source import CreatorExternalSource
 from backend.db.models.data_provider import DataProvider
@@ -26,6 +30,8 @@ from backend.ingestion.records import (
 
 _EntityT = TypeVar("_EntityT")
 
+_EXTERNAL_ID_LOOKUP_BATCH_SIZE = 5_000
+
 
 @dataclass(frozen=True, slots=True)
 class CatalogUpsertOutcome:
@@ -38,6 +44,52 @@ class CatalogUpsertOutcome:
     manga: Manga
     created: bool
     changed: bool
+
+
+async def find_existing_catalog_external_ids(
+    user_db: ClientReadDatabase,
+    *,
+    provider_key: str,
+    external_ids: Sequence[str],
+) -> set[str]:
+    """
+    Return provider external IDs already present in the catalog.
+
+    Large input sets are queried in bounded batches so PostgreSQL is never
+    asked to bind an unbounded number of values in one statement.
+    """
+    requested_ids = tuple(dict.fromkeys(external_ids))
+
+    if not requested_ids:
+        return set()
+
+    existing_ids: set[str] = set()
+
+    for offset in range(
+        0,
+        len(requested_ids),
+        _EXTERNAL_ID_LOOKUP_BATCH_SIZE,
+    ):
+        batch = requested_ids[
+            offset : offset + _EXTERNAL_ID_LOOKUP_BATCH_SIZE
+        ]
+        stmt = (
+            select(MangaExternalSource.external_id)
+            .join(
+                DataProvider,
+                DataProvider.provider_id
+                == MangaExternalSource.provider_id,
+            )
+            .where(
+                DataProvider.provider_key == provider_key,
+                MangaExternalSource.external_id.in_(batch),
+            )
+        )
+        existing_ids.update(
+            await user_db.scalars_all(stmt)
+        )
+
+    return existing_ids
 
 
 async def upsert_catalog_manga(
