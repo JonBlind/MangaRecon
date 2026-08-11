@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
@@ -121,6 +121,7 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
     )
     find_existing = AsyncMock(return_value={"11"})
     dispose = AsyncMock()
+    progress = Mock()
 
     monkeypatch.setattr(
         cli,
@@ -152,6 +153,8 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
         cli.run_batch_ingestion(
             [10, 11, 12, 13],
             min_request_interval_seconds=0.25,
+            progress_callback=progress,
+            progress_interval=2,
         )
     )
 
@@ -180,7 +183,47 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
     client_factory.assert_called_once_with(
         min_request_interval_seconds=0.25
     )
+    assert progress.call_args_list == [
+        call(
+            cli.MangaBatchIngestionProgress(
+                input_count=4,
+                skipped_existing=1,
+                total_to_process=3,
+                processed=0,
+                created=0,
+                updated=0,
+                unchanged=0,
+                failed=0,
+            )
+        ),
+        call(
+            cli.MangaBatchIngestionProgress(
+                input_count=4,
+                skipped_existing=1,
+                total_to_process=3,
+                processed=2,
+                created=1,
+                updated=0,
+                unchanged=0,
+                failed=1,
+            )
+        ),
+    ]
     dispose.assert_awaited_once_with()
+
+
+def test_run_batch_ingestion_rejects_invalid_progress_interval(
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="progress_interval must be greater than zero",
+    ):
+        asyncio.run(
+            cli.run_batch_ingestion(
+                [10],
+                progress_interval=0,
+            )
+        )
 
 
 def test_run_batch_ingestion_does_not_open_client_when_all_ids_exist(
@@ -390,6 +433,7 @@ def test_main_preserves_single_series_output(
         (17360452316,),
         min_request_interval_seconds=None,
         refresh_existing=False,
+        progress_callback=None,
     )
 
 
@@ -476,6 +520,7 @@ def test_main_reports_batch_summary_and_failure_exit_code(
         (1, 2, 3),
         min_request_interval_seconds=None,
         refresh_existing=False,
+        progress_callback=cli._print_batch_progress,
     )
 
 
@@ -523,6 +568,7 @@ def test_main_forwards_refresh_and_interval_options(
         (1, 2),
         min_request_interval_seconds=0.5,
         refresh_existing=True,
+        progress_callback=cli._print_batch_progress,
     )
 
 
@@ -550,4 +596,72 @@ def test_main_reports_rate_limit_and_resume_guidance(
         "Ingestion stopped after MangaUpdates returned HTTP 429; "
         "no further requests were sent. Retry-After=30. Rerun "
         "later to resume with existing IDs skipped.\n"
+    )
+
+
+def test_print_batch_progress_flushes_compact_updates(
+    monkeypatch,
+) -> None:
+    output = Mock()
+    monkeypatch.setattr("builtins.print", output)
+
+    cli._print_batch_progress(
+        cli.MangaBatchIngestionProgress(
+            input_count=10000,
+            skipped_existing=100,
+            total_to_process=9900,
+            processed=0,
+            created=0,
+            updated=0,
+            unchanged=0,
+            failed=0,
+        )
+    )
+    cli._print_batch_progress(
+        cli.MangaBatchIngestionProgress(
+            input_count=10000,
+            skipped_existing=100,
+            total_to_process=9900,
+            processed=100,
+            created=98,
+            updated=0,
+            unchanged=1,
+            failed=1,
+        )
+    )
+
+    assert output.call_args_list == [
+        call(
+            "Starting batch: input=10000; "
+            "skipped_existing=100; to_process=9900.",
+            flush=True,
+        ),
+        call(
+            "Progress: processed=100/9900; created=98; "
+            "updated=0; unchanged=1; failed=1.",
+            flush=True,
+        ),
+    ]
+
+
+def test_main_handles_keyboard_interrupt_cleanly(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_batch_ingestion",
+        AsyncMock(side_effect=KeyboardInterrupt),
+    )
+
+    assert cli.main(["1", "2"]) == 130
+    assert capsys.readouterr().err == (
+        "Ingestion interrupted by user. Already completed "
+        "records remain committed; rerun the same command "
+        "to resume with existing IDs skipped.\n"
     )

@@ -7,19 +7,19 @@ from backend.utils.ordering import get_ordering_clause
 @pytest.mark.parametrize(
     ("field", "direction", "expected_sql"),
     [
-        ("title", "asc", "manga.title ASC"),
-        ("title", "desc", "manga.title DESC"),
-        ("publication_year", "asc", "manga.publication_year ASC"),
-        ("publication_year", "desc", "manga.publication_year DESC"),
+        ("title", "asc", "manga.title ASC NULLS LAST"),
+        ("title", "desc", "manga.title DESC NULLS LAST"),
+        ("publication_year", "asc", "manga.publication_year ASC NULLS LAST"),
+        ("publication_year", "desc", "manga.publication_year DESC NULLS LAST"),
         (
             "external_average_rating",
             "asc",
-            "manga.external_average_rating ASC",
+            "manga.external_average_rating ASC NULLS LAST",
         ),
         (
             "external_average_rating",
             "desc",
-            "manga.external_average_rating DESC",
+            "manga.external_average_rating DESC NULLS LAST",
         ),
     ],
 )

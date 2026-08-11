@@ -32,8 +32,8 @@ def get_ordering_clause(field: MangaOrderField, direction: OrderDirection) -> Co
         raise ValueError(f"Unsupported sort field: {field}")
 
     if direction == "asc":
-        return asc(column)
+        return asc(column).nulls_last()
     if direction == "desc":
-        return desc(column)
+        return desc(column).nulls_last()
 
     raise ValueError(f"Unsupported sort direction: {direction}")

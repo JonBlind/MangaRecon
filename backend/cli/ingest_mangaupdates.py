@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from math import isfinite
@@ -28,6 +28,9 @@ from backend.services.ingestion_service import (
     MangaIngestionResult,
     ingest_mangaupdates_series,
 )
+
+
+_DEFAULT_PROGRESS_INTERVAL = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +59,28 @@ class MangaBatchIngestionReport:
     input_series_ids: tuple[int, ...]
     skipped_existing_series_ids: tuple[int, ...]
     attempts: tuple[MangaIngestionAttempt, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MangaBatchIngestionProgress:
+    """
+    Cumulative progress for a running batch ingestion job.
+    """
+
+    input_count: int
+    skipped_existing: int
+    total_to_process: int
+    processed: int
+    created: int
+    updated: int
+    unchanged: int
+    failed: int
+
+
+MangaBatchProgressCallback = Callable[
+    [MangaBatchIngestionProgress],
+    None,
+]
 
 
 def _series_id(value: str) -> int:
@@ -242,6 +267,8 @@ async def run_batch_ingestion(
     *,
     min_request_interval_seconds: float | None = None,
     refresh_existing: bool = False,
+    progress_callback: MangaBatchProgressCallback | None = None,
+    progress_interval: int = _DEFAULT_PROGRESS_INTERVAL,
 ) -> MangaBatchIngestionReport:
     """
     Ingest a batch while isolating individual series failures.
@@ -258,8 +285,19 @@ async def run_batch_ingestion(
             "series_ids must contain at least one series ID."
         )
 
+    if progress_interval < 1:
+        raise ValueError(
+            "progress_interval must be greater than zero."
+        )
+
     attempts: list[MangaIngestionAttempt] = []
     skipped_existing_series_ids: tuple[int, ...] = ()
+    progress_counts = {
+        "created": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "failed": 0,
+    }
 
     try:
         async with aclosing(
@@ -290,6 +328,22 @@ async def run_batch_ingestion(
                     series_id
                     for series_id in input_series_ids
                     if str(series_id) not in existing_external_ids
+                )
+
+            if progress_callback is not None:
+                progress_callback(
+                    MangaBatchIngestionProgress(
+                        input_count=len(input_series_ids),
+                        skipped_existing=len(
+                            skipped_existing_series_ids
+                        ),
+                        total_to_process=len(pending_series_ids),
+                        processed=0,
+                        created=0,
+                        updated=0,
+                        unchanged=0,
+                        failed=0,
+                    )
                 )
 
             if pending_series_ids:
@@ -323,11 +377,48 @@ async def run_batch_ingestion(
                                     ),
                                 )
                             )
+                            progress_counts["failed"] += 1
                         else:
                             attempts.append(
                                 MangaIngestionAttempt(
                                     series_id=series_id,
                                     result=result,
+                                )
+                            )
+                            progress_counts[
+                                _result_status(result)
+                            ] += 1
+
+                        processed = len(attempts)
+
+                        if (
+                            progress_callback is not None
+                            and processed % progress_interval == 0
+                        ):
+                            progress_callback(
+                                MangaBatchIngestionProgress(
+                                    input_count=len(
+                                        input_series_ids
+                                    ),
+                                    skipped_existing=len(
+                                        skipped_existing_series_ids
+                                    ),
+                                    total_to_process=len(
+                                        pending_series_ids
+                                    ),
+                                    processed=processed,
+                                    created=progress_counts[
+                                        "created"
+                                    ],
+                                    updated=progress_counts[
+                                        "updated"
+                                    ],
+                                    unchanged=progress_counts[
+                                        "unchanged"
+                                    ],
+                                    failed=progress_counts[
+                                        "failed"
+                                    ],
                                 )
                             )
     finally:
@@ -364,6 +455,34 @@ def _print_success(
             f"{_result_status(result)}; "
             f"manga_id={result.manga_id}."
         )
+    )
+
+
+def _print_batch_progress(
+    progress: MangaBatchIngestionProgress,
+) -> None:
+    if progress.processed == 0:
+        print(
+            (
+                f"Starting batch: input={progress.input_count}; "
+                "skipped_existing="
+                f"{progress.skipped_existing}; "
+                f"to_process={progress.total_to_process}."
+            ),
+            flush=True,
+        )
+        return
+
+    print(
+        (
+            f"Progress: processed={progress.processed}/"
+            f"{progress.total_to_process}; "
+            f"created={progress.created}; "
+            f"updated={progress.updated}; "
+            f"unchanged={progress.unchanged}; "
+            f"failed={progress.failed}."
+        ),
+        flush=True,
     )
 
 
@@ -475,8 +594,24 @@ def main(
                     arguments.min_request_interval_seconds
                 ),
                 refresh_existing=arguments.refresh_existing,
+                progress_callback=(
+                    None
+                    if single_series_mode
+                    else _print_batch_progress
+                ),
             )
         )
+    except KeyboardInterrupt:
+        print(
+            (
+                "Ingestion interrupted by user. Already "
+                "completed records remain committed; rerun "
+                "the same command to resume with existing "
+                "IDs skipped."
+            ),
+            file=sys.stderr,
+        )
+        return 130
     except MangaUpdatesRateLimitError as exc:
         retry_after = (
             f" Retry-After={exc.retry_after}."
