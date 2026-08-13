@@ -209,7 +209,12 @@ async def test_collection_recommendations_cache_hit(
         return_value="recommendations:user-1:10"
     )
     cache_get = AsyncMock(
-        return_value=items
+        return_value={
+            "items": items,
+            "seed_total": 6,
+            "seed_used": 6,
+            "seed_truncated": False,
+        }
     )
     cache_set = AsyncMock()
     generator = AsyncMock()
@@ -226,12 +231,12 @@ async def test_collection_recommendations_cache_hit(
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
+        "cache_get_recommendations",
         cache_get,
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_set_items",
+        "cache_set_recommendations",
         cache_set,
     )
     monkeypatch.setattr(
@@ -287,6 +292,9 @@ async def test_collection_recommendations_cache_hit(
                 "external_average_rating": 9.1,
             },
         ],
+        "seed_total": 6,
+        "seed_used": 6,
+        "seed_truncated": False,
     }
 
 
@@ -330,12 +338,12 @@ async def test_collection_recommendations_cache_miss_generates_and_caches(
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
+        "cache_get_recommendations",
         cache_get,
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_set_items",
+        "cache_set_recommendations",
         cache_set,
     )
     monkeypatch.setattr(
@@ -366,7 +374,12 @@ async def test_collection_recommendations_cache_miss_generates_and_caches(
     cache_set.assert_awaited_once_with(
         redis_cache,
         cache_key="recommendations:user-1:10",
-        items=generated_items,
+        payload={
+            "items": generated_items,
+            "seed_total": 20,
+            "seed_used": 15,
+            "seed_truncated": True,
+        },
     )
 
     assert result == {
@@ -394,9 +407,10 @@ async def test_collection_recommendations_cache_miss_generates_and_caches(
 
 
 @pytest.mark.asyncio
-async def test_collection_recommendations_omits_seed_metadata_when_generator_does_not_return_it(
+async def test_collection_recommendations_requires_generator_seed_metadata(
     monkeypatch,
 ):
+    cache_set = AsyncMock()
     monkeypatch.setattr(
         recommendation_service,
         "assert_owned_collection",
@@ -409,13 +423,13 @@ async def test_collection_recommendations_omits_seed_metadata_when_generator_doe
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
+        "cache_get_recommendations",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_set_items",
-        AsyncMock(),
+        "cache_set_recommendations",
+        cache_set,
     )
     monkeypatch.setattr(
         recommendation_service,
@@ -427,28 +441,20 @@ async def test_collection_recommendations_omits_seed_metadata_when_generator_doe
         ),
     )
 
-    result = await recommendation_service.get_recommendations_for_collection_page(
-        user_id="user-1",
-        collection_id=10,
-        order_by="score",
-        order_dir="desc",
-        page=1,
-        size=20,
-        user_db=MagicMock(),
-        manga_db=MagicMock(),
-        redis_cache=MagicMock(),
-    )
+    with pytest.raises(KeyError, match="seed_total"):
+        await recommendation_service.get_recommendations_for_collection_page(
+            user_id="user-1",
+            collection_id=10,
+            order_by="score",
+            order_dir="desc",
+            page=1,
+            size=20,
+            user_db=MagicMock(),
+            manga_db=MagicMock(),
+            redis_cache=MagicMock(),
+        )
 
-    assert result == {
-        "total_results": 0,
-        "page": 1,
-        "size": 20,
-        "items": [],
-    }
-
-    assert "seed_total" not in result
-    assert "seed_used" not in result
-    assert "seed_truncated" not in result
+    cache_set.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -475,8 +481,15 @@ async def test_collection_recommendations_returns_later_page(
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
-        AsyncMock(return_value=items),
+        "cache_get_recommendations",
+        AsyncMock(
+            return_value={
+                "items": items,
+                "seed_total": 6,
+                "seed_used": 6,
+                "seed_truncated": False,
+            }
+        ),
     )
 
     result = await recommendation_service.get_recommendations_for_collection_page(
@@ -516,8 +529,15 @@ async def test_collection_recommendations_returns_empty_out_of_range_page(
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
-        AsyncMock(return_value=make_items()),
+        "cache_get_recommendations",
+        AsyncMock(
+            return_value={
+                "items": make_items(),
+                "seed_total": 3,
+                "seed_used": 3,
+                "seed_truncated": False,
+            }
+        ),
     )
 
     result = await recommendation_service.get_recommendations_for_collection_page(
@@ -583,7 +603,7 @@ async def test_collection_recommendations_propagates_generator_error(
     )
     monkeypatch.setattr(
         recommendation_service,
-        "cache_get_items",
+        "cache_get_recommendations",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(

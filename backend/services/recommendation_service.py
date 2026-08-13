@@ -6,8 +6,8 @@ from backend.db.client_db import ClientReadDatabase
 from backend.repositories.recommendation_repo import (
     assert_owned_collection,
     build_recommendations_cache_key,
-    cache_get_items,
-    cache_set_items,
+    cache_get_recommendations,
+    cache_set_recommendations,
 )
 from backend.recommendation.generator import generate_recommendations_for_collection, generate_recommendations_for_list
 from backend.utils.domain_exceptions import BadRequestError
@@ -47,24 +47,25 @@ async def get_recommendations_for_collection_page(
     await assert_owned_collection(user_db, user_id=user_id, collection_id=collection_id)
 
     cache_key = build_recommendations_cache_key(user_id=user_id, collection_id=collection_id)
-    cached_items = await cache_get_items(redis_cache, cache_key=cache_key)
+    cached_payload = await cache_get_recommendations(redis_cache, cache_key=cache_key)
 
-    # seed metadata is only known when we run generator (cache miss)
-    seed_total = None
-    seed_used = None
-    seed_truncated = None
-
-    if cached_items is None:
+    if cached_payload is None:
         result = await generate_recommendations_for_collection(user_id, collection_id, user_db, manga_db)
-        items = result["items"]
-
-        seed_total = result.get("seed_total")
-        seed_used = result.get("seed_used")
-        seed_truncated = result.get("seed_truncated")
-
-        await cache_set_items(redis_cache, cache_key=cache_key, items=items)
+        payload = {
+            "items": result["items"],
+            "seed_total": result["seed_total"],
+            "seed_used": result["seed_used"],
+            "seed_truncated": result["seed_truncated"],
+        }
+        await cache_set_recommendations(
+            redis_cache,
+            cache_key=cache_key,
+            payload=payload,
+        )
     else:
-        items = cached_items
+        payload = cached_payload
+
+    items = payload["items"]
 
     _sort_items(items, order_by=order_by, order_dir=order_dir)
 
@@ -72,18 +73,14 @@ async def get_recommendations_for_collection_page(
     paginated = items[offset : offset + size]
 
     data = {
+        "seed_total": payload["seed_total"],
+        "seed_used": payload["seed_used"],
+        "seed_truncated": payload["seed_truncated"],
         "total_results": len(items),
         "page": page,
         "size": size,
         "items": paginated,
     }
-
-    if seed_total is not None:
-        data.update({
-            "seed_total": seed_total,
-            "seed_used": seed_used,
-            "seed_truncated": seed_truncated,
-        })
 
     return data
 

@@ -1,4 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
+from decimal import Decimal
+import json
 import uuid
 
 import pytest
@@ -127,43 +129,91 @@ def test_build_recommendations_cache_key_preserves_string_user_id():
 
 
 @pytest.mark.asyncio
-async def test_cache_get_items_returns_cached_items():
-    items = [
-        {
-            "manga_id": 1,
-            "score": 9.5,
-        },
-        {
-            "manga_id": 2,
-            "score": 8.5,
-        },
-    ]
-
+async def test_recommendation_cache_round_trip_preserves_payload():
+    payload = {
+        "items": [
+            {
+                "manga_id": 1,
+                "title": "Berserk",
+                "external_average_rating": Decimal("9.10"),
+                "score": 9.5,
+            }
+        ],
+        "seed_total": 6,
+        "seed_used": 6,
+        "seed_truncated": False,
+    }
     cache = MagicMock()
-    cache.get = AsyncMock(
-        return_value=items
+    cache.set = AsyncMock()
+
+    await recommendation_repo.cache_set_recommendations(
+        cache,
+        cache_key="recommendations:user:5",
+        payload=payload,
     )
 
-    result = await recommendation_repo.cache_get_items(
+    encoded = cache.set.await_args.args[1]
+    assert encoded.startswith("z1:")
+
+    cache.get = AsyncMock(return_value=encoded)
+    result = await recommendation_repo.cache_get_recommendations(
         cache,
         cache_key="recommendations:user:5",
     )
 
-    assert result == items
+    assert result == {
+        "items": [
+            {
+                "manga_id": 1,
+                "title": "Berserk",
+                "external_average_rating": 9.1,
+                "score": 9.5,
+            }
+        ],
+        "seed_total": 6,
+        "seed_used": 6,
+        "seed_truncated": False,
+    }
+    cache.get.assert_awaited_once_with("recommendations:user:5")
 
-    cache.get.assert_awaited_once_with(
-        "recommendations:user:5"
-    )
+
+def test_recommendation_cache_compresses_large_payload():
+    payload = {
+        "items": [
+            {
+                "manga_id": manga_id,
+                "title": f"Manga {manga_id}",
+                "external_average_rating": 8.25,
+                "cover_image_url": f"https://example.com/covers/{manga_id}.jpg",
+                "score": 42.5,
+                "details": {
+                    "genre_score": 10,
+                    "tag_score": 15,
+                    "demo_score": 2.5,
+                    "creator_score": 3,
+                    "rating_score": 4,
+                    "year_score": 4,
+                },
+            }
+            for manga_id in range(1, 1_001)
+        ],
+        "seed_total": 6,
+        "seed_used": 6,
+        "seed_truncated": False,
+    }
+
+    encoded = recommendation_repo._encode_recommendations_cache(payload)
+    uncompressed = json.dumps(payload, default=str)
+
+    assert len(encoded) < len(uncompressed) * 0.25
 
 
 @pytest.mark.asyncio
-async def test_cache_get_items_returns_none_for_cache_miss():
+async def test_cache_get_recommendations_returns_none_for_cache_miss():
     cache = MagicMock()
-    cache.get = AsyncMock(
-        return_value=None
-    )
+    cache.get = AsyncMock(return_value=None)
 
-    result = await recommendation_repo.cache_get_items(
+    result = await recommendation_repo.cache_get_recommendations(
         cache,
         cache_key="missing",
     )
@@ -172,7 +222,49 @@ async def test_cache_get_items_returns_none_for_cache_miss():
 
 
 @pytest.mark.asyncio
-async def test_cache_get_items_propagates_cache_error():
+async def test_cache_get_recommendations_treats_legacy_item_list_as_miss():
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value=[{"manga_id": 1}])
+
+    result = await recommendation_repo.cache_get_recommendations(
+        cache,
+        cache_key="legacy",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_cache_get_recommendations_treats_malformed_payload_as_miss():
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value="z1:not-valid-base64")
+
+    result = await recommendation_repo.cache_get_recommendations(
+        cache,
+        cache_key="malformed",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_cache_get_recommendations_rejects_incomplete_envelope():
+    encoded = recommendation_repo._encode_recommendations_cache(
+        {"items": []}
+    )
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value=encoded)
+
+    result = await recommendation_repo.cache_get_recommendations(
+        cache,
+        cache_key="invalid-envelope",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_cache_get_recommendations_propagates_cache_error():
     cache = MagicMock()
     cache.get = AsyncMock(
         side_effect=RuntimeError("cache unavailable")
@@ -182,59 +274,36 @@ async def test_cache_get_items_propagates_cache_error():
         RuntimeError,
         match="cache unavailable",
     ):
-        await recommendation_repo.cache_get_items(
+        await recommendation_repo.cache_get_recommendations(
             cache,
             cache_key="key",
         )
 
 
 @pytest.mark.asyncio
-async def test_cache_set_items_stores_items():
-    items = [
-        {
-            "manga_id": 1,
-            "score": 9.5,
-        }
-    ]
-
+async def test_cache_set_recommendations_accepts_empty_items():
     cache = MagicMock()
     cache.set = AsyncMock()
+    payload = {
+        "items": [],
+        "seed_total": 1,
+        "seed_used": 1,
+        "seed_truncated": False,
+    }
 
-    result = await recommendation_repo.cache_set_items(
+    result = await recommendation_repo.cache_set_recommendations(
         cache,
         cache_key="recommendations:user:5",
-        items=items,
+        payload=payload,
     )
 
     assert result is None
-
-    cache.set.assert_awaited_once_with(
-        "recommendations:user:5",
-        items,
-    )
+    encoded = cache.set.await_args.args[1]
+    assert recommendation_repo._decode_recommendations_cache(encoded) == payload
 
 
 @pytest.mark.asyncio
-async def test_cache_set_items_accepts_empty_list():
-    cache = MagicMock()
-    cache.set = AsyncMock()
-
-    result = await recommendation_repo.cache_set_items(
-        cache,
-        cache_key="recommendations:user:5",
-        items=[],
-    )
-
-    assert result is None
-
-    cache.set.assert_awaited_once_with(
-        "recommendations:user:5",
-        [],
-    )
-
-
-@pytest.mark.asyncio
-async def test_cache_set_items_propagates_cache_error():
+async def test_cache_set_recommendations_propagates_cache_error():
     cache = MagicMock()
     cache.set = AsyncMock(
         side_effect=RuntimeError("cache unavailable")
@@ -244,8 +313,8 @@ async def test_cache_set_items_propagates_cache_error():
         RuntimeError,
         match="cache unavailable",
     ):
-        await recommendation_repo.cache_set_items(
+        await recommendation_repo.cache_set_recommendations(
             cache,
             cache_key="key",
-            items=[],
+            payload={"items": []},
         )

@@ -26,9 +26,9 @@ export type RecommendationPage = {
   size: number;
   items: RecommendationItem[];
 
-  seed_total?: number;
-  seed_used?: number;
-  seed_truncated?: boolean;
+  seed_total: number;
+  seed_used: number;
+  seed_truncated: boolean;
 };
 
 export type RecommendationParams = {

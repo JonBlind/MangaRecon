@@ -36,4 +36,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+if ENV == "prod" and settings.debug:
+    raise RuntimeError("MANGARECON_ENV=prod requires DEBUG=false.")
+
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]

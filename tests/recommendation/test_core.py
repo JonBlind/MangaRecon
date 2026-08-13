@@ -1,4 +1,5 @@
 from collections import Counter
+from decimal import Decimal
 from unittest.mock import AsyncMock
 import uuid
 
@@ -201,19 +202,15 @@ async def test_get_candidate_manga_returns_mapping_rows():
         {
             "manga_id": 10,
             "title": "Candidate One",
-            "description": "Description one",
             "publication_year": 2020,
             "external_average_rating": 8.4,
-            "average_rating": 7.9,
             "cover_image_url": "one.jpg",
         },
         {
             "manga_id": 20,
             "title": "Candidate Two",
-            "description": "Description two",
             "publication_year": 2018,
             "external_average_rating": 7.8,
-            "average_rating": 7.0,
             "cover_image_url": "two.jpg",
         },
     ]
@@ -227,13 +224,24 @@ async def test_get_candidate_manga_returns_mapping_rows():
         demo_ids=[5],
         creator_ids=[500],
         db=db,
-        max_candidates=50,
     )
 
     assert result == candidate_rows
     assert result[0]["manga_id"] == 10
     assert result[1]["title"] == "Candidate Two"
     db.execute.assert_awaited_once()
+
+    stmt = db.execute.await_args.args[0]
+    sql = str(stmt.compile()).upper()
+
+    assert "LIMIT" not in sql
+    assert list(stmt.selected_columns.keys()) == [
+        "manga_id",
+        "title",
+        "publication_year",
+        "external_average_rating",
+        "cover_image_url",
+    ]
 
 
 @pytest.mark.asyncio
@@ -308,14 +316,14 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
         {
             "manga_id": 101,
             "title": "Strong Match",
-            "external_average_rating": 8.0,
+            "external_average_rating": Decimal("8.00"),
             "publication_year": 2004,
             "cover_image_url": "strong.jpg",
         },
         {
             "manga_id": 102,
             "title": "Weak Match",
-            "external_average_rating": 5.0,
+            "external_average_rating": Decimal("5.00"),
             "publication_year": 1990,
             "cover_image_url": "weak.jpg",
         },
@@ -326,7 +334,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
         "tags": Counter({10: 2}),
         "demographics": Counter({100: 1}),
         "creators": {500},
-        "external_ratings": [8.0, 6.0],
+        "external_ratings": [Decimal("8.00"), Decimal("6.00")],
         "years": [2000, 2004],
     }
 
@@ -342,6 +350,7 @@ async def test_scored_recommendations_calculates_breakdown_and_sorts():
 
     assert strong["title"] == "Strong Match"
     assert strong["external_average_rating"] == 8.0
+    assert type(strong["external_average_rating"]) is float
     assert strong["cover_image_url"] == "strong.jpg"
 
     assert strong["details"] == {

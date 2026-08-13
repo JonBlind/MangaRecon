@@ -1,4 +1,6 @@
 from tests.routes.helpers import register_and_login, create_collection, create_test_manga
+from backend.config.limits import MAX_QUERY_LIST_SEEDS
+from backend.dependencies import get_public_read_db
 
 
 def add_manga_to_collection(client, collection_id: int, manga_id: int):
@@ -145,5 +147,31 @@ def test_query_list_recommendations_invalid_size_returns_422(client):
         params={"size": 101},
         json={"manga_ids": [manga["manga_id"]]},
     )
+
+    assert response.status_code == 422
+
+
+def test_query_list_recommendations_too_many_seeds_returns_422(client):
+    async def override_public_read_db():
+        yield None
+
+    client.app.dependency_overrides[
+        get_public_read_db
+    ] = override_public_read_db
+
+    try:
+        response = client.post(
+            "/recommendations/query-list",
+            json={
+                "manga_ids": list(
+                    range(1, MAX_QUERY_LIST_SEEDS + 2)
+                )
+            },
+        )
+    finally:
+        client.app.dependency_overrides.pop(
+            get_public_read_db,
+            None,
+        )
 
     assert response.status_code == 422

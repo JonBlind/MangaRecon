@@ -189,7 +189,7 @@ def test_settings_accept_lowercase_environment_names(
     result = run_isolated_settings_import(
         tmp_path=tmp_path,
         environment={
-            "MANGARECON_ENV": "prod",
+            "MANGARECON_ENV": "dev",
             "frontend_origins": (
                 "http://lowercase.example"
             ),
@@ -220,7 +220,7 @@ def test_settings_accept_uppercase_environment_names(
     result = run_isolated_settings_import(
         tmp_path=tmp_path,
         environment={
-            "MANGARECON_ENV": "prod",
+            "MANGARECON_ENV": "dev",
             "FRONTEND_ORIGINS": (
                 "http://uppercase.example"
             ),
@@ -379,6 +379,30 @@ def test_debug_defaults_to_false(
     )
 
     assert "debug-default-ok" in result.stdout
+
+
+def test_production_environment_rejects_debug_mode(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "DEBUG": "true",
+        },
+        code=(
+            "from backend.config import settings"
+        ),
+    )
+
+    assert result.returncode != 0
+    assert (
+        "MANGARECON_ENV=prod requires DEBUG=false."
+        in result.stderr
+    )
 
 
 def test_import_fails_when_frontend_origins_is_missing(

@@ -5,7 +5,7 @@ from pydantic import AliasChoices, EmailStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi_users.authentication import CookieTransport, JWTStrategy, AuthenticationBackend
 
-_ENV = os.getenv("MANGARECON_ENV", "dev").lower().strip()
+_ENV = os.getenv("MANGARECON_ENV", "prod").lower().strip()
 
 
 def _default_email_delivery_mode() -> str:

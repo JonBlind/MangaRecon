@@ -148,16 +148,25 @@ def test_collection_recommendation_full_http_and_database_flow(
         )
     )
 
-    data = assert_success(
+    first_data = assert_success(
         client.get(
             f"/recommendations/{collection_id}",
             params={"order_by": "score", "order_dir": "desc", "page": 1, "size": 10},
         )
     )["data"]
 
-    assert data["seed_total"] == 1
-    assert data["seed_used"] == 1
-    ids = [item["manga_id"] for item in data["items"]]
+    second_data = assert_success(
+        client.get(
+            f"/recommendations/{collection_id}",
+            params={"order_by": "score", "order_dir": "desc", "page": 1, "size": 10},
+        )
+    )["data"]
+
+    assert first_data["seed_total"] == 1
+    assert first_data["seed_used"] == 1
+    assert first_data["seed_truncated"] is False
+    assert second_data == first_data
+    ids = [item["manga_id"] for item in first_data["items"]]
     assert catalog.seed_manga_id not in ids
     assert catalog.similar_manga_id in ids
 

@@ -149,7 +149,6 @@ async def get_candidate_manga(
     demo_ids: List[int],
     creator_ids: List[int],
     db: ClientReadDatabase,
-    max_candidates: int = 2000,
 ) -> List[Dict[str, Any]]:
     """
     Fetch candidate manga that share at least one relevant metadata value with
@@ -204,10 +203,8 @@ async def get_candidate_manga(
             select(
                 Manga.manga_id,
                 Manga.title,
-                Manga.description,
                 Manga.publication_year,
                 Manga.external_average_rating,
-                Manga.average_rating,
                 Manga.cover_image_url,
             )
             .where(
@@ -216,7 +213,6 @@ async def get_candidate_manga(
                 Manga.external_average_rating.is_not(None),
             )
             .distinct()
-            .limit(max_candidates)
         )
 
         result = await db.execute(stmt)
@@ -323,7 +319,14 @@ async def get_scored_recommendations(
         scored.append({
             "manga_id": manga["manga_id"],
             "title": manga["title"],
-            "external_average_rating": manga["external_average_rating"],
+            # SQLAlchemy returns NUMERIC values as Decimal. Normalize the API
+            # value before it reaches FastAPI or Redis so cold and cached
+            # responses both expose the number expected by the frontend.
+            "external_average_rating": (
+                float(manga["external_average_rating"])
+                if manga["external_average_rating"] is not None
+                else None
+            ),
             "cover_image_url": manga["cover_image_url"],
             "score": round(score, 2),
             "details": {

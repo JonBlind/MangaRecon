@@ -191,6 +191,32 @@ def test_environment_name_is_normalized(
     assert "normalized-ok" in result.stdout
 
 
+def test_default_environment_is_prod(
+    tmp_path,
+):
+    result = run_isolated_config_import(
+        tmp_path=tmp_path,
+        environment={
+            "AUTH_SECRET": "production-test-secret",
+        },
+        code=(
+            "from backend.auth import config; "
+            "assert config._ENV == 'prod'; "
+            "assert config.settings.email_delivery_mode "
+            "== 'smtp'; "
+            "assert config.cookie_transport.cookie_secure "
+            "is True; "
+            "print('default-prod-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "default-prod-ok" in result.stdout
+
+
 def test_missing_secret_outside_test_environment_raises(
     tmp_path,
 ):
