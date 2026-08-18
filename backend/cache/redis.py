@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 
 from redis.asyncio import Redis
 
+from backend.config.settings import settings as app_settings
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
@@ -78,7 +80,17 @@ class RedisCache:
                 if scheme not in SUPPORTED_REDIS_SCHEMES:
                     raise RuntimeError("Redis URL must use the redis:// or rediss:// scheme.")
 
-            self._client = Redis.from_url(url, decode_responses=True)
+            self._client = Redis.from_url(
+                url,
+                decode_responses=True,
+                socket_connect_timeout=(
+                    app_settings.redis_connect_timeout_seconds
+                ),
+                socket_timeout=(
+                    app_settings.redis_operation_timeout_seconds
+                ),
+                max_connections=app_settings.redis_max_connections,
+            )
         return self._client
     
     def _resolve_ttl(self, ttl: int | None) -> int | None:
@@ -159,11 +171,16 @@ class RedisCache:
         except Exception as e:
             logger.warning(f"Redis DELETE_MULTIPLE error for {keys[:3]}... : {e}", exc_info=True)
 
-    async def ping(self, timeout: float = 0.25) -> bool:
+    async def ping(self, timeout: float | None = None) -> bool:
+        resolved_timeout = (
+            app_settings.redis_ready_timeout_seconds
+            if timeout is None
+            else timeout
+        )
         try:
             result = await asyncio.wait_for(
                 self._get_client().ping(),
-                timeout=timeout,
+                timeout=resolved_timeout,
             )
             return bool(result)
         except Exception:

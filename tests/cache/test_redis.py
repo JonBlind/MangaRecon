@@ -120,6 +120,15 @@ def test_get_client_creates_redis_client_from_environment(
     from_url.assert_called_once_with(
         "rediss://user:secret@redis.internal:6380/4",
         decode_responses=True,
+        socket_connect_timeout=(
+            redis_module.app_settings.redis_connect_timeout_seconds
+        ),
+        socket_timeout=(
+            redis_module.app_settings.redis_operation_timeout_seconds
+        ),
+        max_connections=(
+            redis_module.app_settings.redis_max_connections
+        ),
     )
 
 
@@ -148,6 +157,15 @@ def test_get_client_uses_local_default_when_url_is_missing(
     from_url.assert_called_once_with(
         "redis://localhost:6379/0",
         decode_responses=True,
+        socket_connect_timeout=(
+            redis_module.app_settings.redis_connect_timeout_seconds
+        ),
+        socket_timeout=(
+            redis_module.app_settings.redis_operation_timeout_seconds
+        ),
+        max_connections=(
+            redis_module.app_settings.redis_max_connections
+        ),
     )
 
 
@@ -181,6 +199,15 @@ def test_get_client_prefers_constructor_url_over_environment(
     from_url.assert_called_once_with(
         "rediss://configured-host:6381/2",
         decode_responses=True,
+        socket_connect_timeout=(
+            redis_module.app_settings.redis_connect_timeout_seconds
+        ),
+        socket_timeout=(
+            redis_module.app_settings.redis_operation_timeout_seconds
+        ),
+        max_connections=(
+            redis_module.app_settings.redis_max_connections
+        ),
     )
 
 
@@ -308,6 +335,40 @@ async def test_ping_returns_true_when_redis_responds(
 
     assert result is True
     redis_client.ping.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_ping_uses_configured_readiness_timeout(
+    monkeypatch,
+    redis_client,
+):
+    observed = {}
+
+    async def capture_wait_for(awaitable, *, timeout):
+        observed["timeout"] = timeout
+        return await awaitable
+
+    monkeypatch.setattr(
+        redis_module.app_settings,
+        "redis_ready_timeout_seconds",
+        4.25,
+    )
+    monkeypatch.setattr(
+        redis_module.asyncio,
+        "wait_for",
+        capture_wait_for,
+    )
+
+    redis_client.ping.return_value = True
+    cache = attach_client(
+        RedisCache(),
+        redis_client,
+    )
+
+    result = await cache.ping()
+
+    assert result is True
+    assert observed["timeout"] == 4.25
 
 
 @pytest.mark.asyncio

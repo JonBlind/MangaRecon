@@ -7,7 +7,8 @@ user-write session for `fastapi-users` integration.
 '''
 
 import asyncio
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Literal, Optional
+from uuid import uuid4
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,16 @@ from sqlalchemy.pool import NullPool
 from backend.config.settings import ENV
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 import backend.db.models # DO NOT REMOVE. This is to just ensure all models are loaded before used.
+
+
+def _default_database_pool_mode() -> Literal["queue", "null"]:
+    """Return the default pool mode for the current environment."""
+    return "null" if ENV in {"test", "prod"} else "queue"
+
+
+def _default_prepared_statement_cache_size() -> int:
+    """Return the default prepared-statement cache size."""
+    return 0 if ENV == "prod" else 100
 
 class Settings(BaseSettings):
     '''
@@ -44,6 +55,7 @@ class Settings(BaseSettings):
     '''
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         case_sensitive=False,
         extra="ignore")
 
@@ -52,17 +64,67 @@ class Settings(BaseSettings):
     manga_write: Optional[str] = Field(default=None, validation_alias="MangaWriterDB")
     manga_read: Optional[str] = Field(default=None, validation_alias="MangaReaderDB")
 
+    database_pool_mode: Literal["queue", "null"] = Field(
+        default_factory=_default_database_pool_mode,
+    )
+    database_pool_size: int = Field(default=5, ge=1)
+    database_max_overflow: int = Field(default=10, ge=0)
+    database_pool_timeout_seconds: float = Field(default=5.0, gt=0)
+    database_connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    database_command_timeout_seconds: float = Field(default=15.0, gt=0)
+    database_ready_timeout_seconds: float = Field(default=5.0, gt=0)
+    database_prepared_statement_cache_size: int = Field(
+        default_factory=_default_prepared_statement_cache_size,
+        ge=0,
+    )
+
 settings = Settings()
 
-engine_kwargs = {"pool_pre_ping": True}
-if ENV == "test":
-    engine_kwargs["poolclass"] = NullPool
+
+def _database_connect_args() -> dict:
+    """Build asyncpg options shared by every logical database engine."""
+    return {
+        "timeout": settings.database_connect_timeout_seconds,
+        "command_timeout": settings.database_command_timeout_seconds,
+        "prepared_statement_cache_size": (
+            settings.database_prepared_statement_cache_size
+        ),
+        # Use unique statement names across pooled connections.
+        "prepared_statement_name_func": (
+            lambda: f"__asyncpg_{uuid4()}__"
+        ),
+    }
+
+
+def _database_engine_kwargs() -> dict:
+    """Return bounded SQLAlchemy engine options for this runtime."""
+    kwargs = {
+        "connect_args": _database_connect_args(),
+    }
+
+    if settings.database_pool_mode == "null":
+        kwargs["poolclass"] = NullPool
+        return kwargs
+
+    kwargs.update(
+        {
+            "pool_pre_ping": True,
+            "pool_size": settings.database_pool_size,
+            "max_overflow": settings.database_max_overflow,
+            "pool_timeout": settings.database_pool_timeout_seconds,
+        }
+    )
+    return kwargs
+
+
+def _create_database_engine(url: str) -> AsyncEngine:
+    return create_async_engine(url, **_database_engine_kwargs())
 
 # Create async engines (if the corresponding DSN is not provided, the engine remains None).
-_engine_user_write = create_async_engine(settings.user_write, **engine_kwargs) if settings.user_write else None
-_engine_user_read = create_async_engine(settings.user_read, **engine_kwargs) if settings.user_read else None
-_engine_manga_write = create_async_engine(settings.manga_write, **engine_kwargs) if settings.manga_write else None
-_engine_manga_read = create_async_engine(settings.manga_read, **engine_kwargs) if settings.manga_read else None
+_engine_user_write = _create_database_engine(settings.user_write) if settings.user_write else None
+_engine_user_read = _create_database_engine(settings.user_read) if settings.user_read else None
+_engine_manga_write = _create_database_engine(settings.manga_write) if settings.manga_write else None
+_engine_manga_read = _create_database_engine(settings.manga_read) if settings.manga_read else None
 
 
 def validate_database_config() -> None:
@@ -113,10 +175,15 @@ async def _database_engine_ready(
         return False
 
 
-async def database_connections_ready(timeout: float = 0.5) -> bool:
+async def database_connections_ready(timeout: float | None = None) -> bool:
+    resolved_timeout = (
+        settings.database_ready_timeout_seconds
+        if timeout is None
+        else timeout
+    )
     results = await asyncio.gather(
         *(
-            _database_engine_ready(engine, timeout=timeout)
+            _database_engine_ready(engine, timeout=resolved_timeout)
             for _, engine in _database_engines()
         )
     )

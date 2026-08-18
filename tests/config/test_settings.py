@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import hashlib
 
 from backend.config import settings as settings_module
 
@@ -27,10 +28,17 @@ def run_isolated_settings_import(
         "MANGARECON_ENV",
         "FRONTEND_ORIGINS",
         "DEBUG",
+        "ORIGIN_VERIFY_HEADER_NAME",
+        "ORIGIN_VERIFY_SECRET_DIGEST",
+        "TRUSTED_CLIENT_ADDRESS_HEADER_NAME",
         "MANGAUPDATES_BASE_URL",
         "MANGAUPDATES_TIMEOUT_SECONDS",
         "MANGAUPDATES_MIN_REQUEST_INTERVAL_SECONDS",
         "MANGAUPDATES_USER_AGENT",
+        "REDIS_CONNECT_TIMEOUT_SECONDS",
+        "REDIS_OPERATION_TIMEOUT_SECONDS",
+        "REDIS_READY_TIMEOUT_SECONDS",
+        "REDIS_MAX_CONNECTIONS",
     ):
         env.pop(name, None)
         env.pop(name.lower(), None)
@@ -74,6 +82,60 @@ def test_settings_contains_frontend_origins():
         str,
     )
     assert settings_module.settings.frontend_origins
+
+
+def test_origin_verification_settings_load_as_secrets(
+    tmp_path,
+):
+    header_name = "X-Test-Origin"
+    secret_digest = hashlib.sha256(
+        b"test-only-origin-value"
+    ).hexdigest()
+    client_header_name = "X-Test-Client-Address"
+
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "ORIGIN_VERIFY_HEADER_NAME": header_name,
+            "ORIGIN_VERIFY_SECRET_DIGEST": secret_digest,
+            "TRUSTED_CLIENT_ADDRESS_HEADER_NAME": (
+                client_header_name
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured."
+            "origin_verify_header_name."
+            "get_secret_value() "
+            f"== '{header_name}'; "
+            "assert configured."
+            "origin_verify_secret_digest."
+            "get_secret_value() "
+            f"== '{secret_digest}'; "
+            "assert configured."
+            "trusted_client_address_header_name."
+            "get_secret_value() "
+            f"== '{client_header_name}'; "
+            f"assert '{header_name}' "
+            "not in repr(configured); "
+            f"assert '{secret_digest}' "
+            "not in repr(configured); "
+            f"assert '{client_header_name}' "
+            "not in repr(configured); "
+            "print('origin-settings-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "origin-settings-ok" in result.stdout
 
 
 def test_origins_are_split_and_trimmed():
@@ -421,6 +483,68 @@ def test_import_fails_when_frontend_origins_is_missing(
     assert result.returncode != 0
     assert "FRONTEND_ORIGINS" in result.stderr
 
+
+def test_redis_connection_settings_use_bounded_defaults(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.redis_connect_timeout_seconds == 3.0; "
+            "assert configured.redis_operation_timeout_seconds == 3.0; "
+            "assert configured.redis_ready_timeout_seconds == 5.0; "
+            "assert configured.redis_max_connections == 4; "
+            "print('redis-defaults-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "redis-defaults-ok" in result.stdout
+
+
+def test_redis_connection_settings_accept_environment_overrides(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "REDIS_CONNECT_TIMEOUT_SECONDS": "1.5",
+            "REDIS_OPERATION_TIMEOUT_SECONDS": "2.5",
+            "REDIS_READY_TIMEOUT_SECONDS": "4.5",
+            "REDIS_MAX_CONNECTIONS": "7",
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.redis_connect_timeout_seconds == 1.5; "
+            "assert configured.redis_operation_timeout_seconds == 2.5; "
+            "assert configured.redis_ready_timeout_seconds == 4.5; "
+            "assert configured.redis_max_connections == 7; "
+            "print('redis-overrides-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "redis-overrides-ok" in result.stdout
+
 def test_mangaupdates_settings_use_safe_defaults(
     tmp_path,
 ):
@@ -504,3 +628,56 @@ def test_mangaupdates_settings_accept_environment_overrides(
         "mangaupdates-overrides-ok"
         in result.stdout
     )
+
+def test_origin_verification_settings_load_as_secrets(
+    tmp_path,
+):
+    header_name = "X-Test-Origin"
+    secret_digest = hashlib.sha256(
+        b"test-only-origin-value"
+    ).hexdigest()
+    client_header_name = "X-Test-Client-Address"
+
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "ORIGIN_VERIFY_HEADER_NAME": header_name,
+            "ORIGIN_VERIFY_SECRET_DIGEST": secret_digest,
+            "TRUSTED_CLIENT_ADDRESS_HEADER_NAME": (
+                client_header_name
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured."
+            "origin_verify_header_name."
+            "get_secret_value() "
+            f"== '{header_name}'; "
+            "assert configured."
+            "origin_verify_secret_digest."
+            "get_secret_value() "
+            f"== '{secret_digest}'; "
+            "assert configured."
+            "trusted_client_address_header_name."
+            "get_secret_value() "
+            f"== '{client_header_name}'; "
+            f"assert '{header_name}' "
+            "not in repr(configured); "
+            f"assert '{secret_digest}' "
+            "not in repr(configured); "
+            f"assert '{client_header_name}' "
+            "not in repr(configured); "
+            "print('origin-settings-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "origin-settings-ok" in result.stdout

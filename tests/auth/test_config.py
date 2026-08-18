@@ -364,6 +364,53 @@ def test_validate_email_config_accepts_complete_smtp_settings(
     assert config.validate_email_config() is None
 
 
+def test_real_environment_parsing_accepts_production_resend_smtp(
+    tmp_path,
+):
+    """Validate production SMTP settings in a separate process."""
+    result = run_isolated_config_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "AUTH_SECRET": (
+                "production-test-secret-at-least-32-characters"
+            ),
+            "DEBUG": "false",
+            "FRONTEND_URL": "https://mangarecon.example",
+            "EMAIL_DELIVERY_MODE": "smtp",
+            "SMTP_HOST": "smtp.resend.com",
+            "SMTP_PORT": "587",
+            "SMTP_USERNAME": "resend",
+            "SMTP_PASSWORD": "re_fake_test_key",
+            "SMTP_FROM_EMAIL": (
+                "noreply@mangarecon.example"
+            ),
+            "SMTP_FROM_NAME": "MangaRecon",
+            "SMTP_STARTTLS": "true",
+            "SMTP_USE_SSL": "false",
+            "SMTP_TIMEOUT_SECONDS": "10",
+        },
+        code=(
+            "from backend.auth import config; "
+            "config.validate_email_config(); "
+            "assert config._ENV == 'prod'; "
+            "assert config.settings.email_delivery_mode == 'smtp'; "
+            "assert config.settings.smtp_host == 'smtp.resend.com'; "
+            "assert config.settings.smtp_port == 587; "
+            "assert config.settings.smtp_username == 'resend'; "
+            "assert config.settings.smtp_starttls is True; "
+            "assert config.settings.smtp_use_ssl is False; "
+            "print('production-smtp-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "production-smtp-ok" in result.stdout
+
+
 def test_validate_email_config_rejects_conflicting_tls_modes(
     monkeypatch,
 ):

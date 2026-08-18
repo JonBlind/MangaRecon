@@ -1,8 +1,10 @@
+import hashlib
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import SecretStr
 
 from backend.utils import rate_limit
 
@@ -14,6 +16,8 @@ def response_json(response):
 def make_request(
     path="/mangas",
     *,
+    headers=None,
+    client_host="127.0.0.1",
     ready=True,
     last_check=0.0,
     check_interval=15.0,
@@ -31,11 +35,56 @@ def make_request(
     return SimpleNamespace(
         url=SimpleNamespace(path=path),
         app=app,
+        headers=headers or {},
+        client=SimpleNamespace(host=client_host),
+        state=SimpleNamespace(),
     )
 
 
 def make_middleware(middleware_class):
     return middleware_class(MagicMock())
+
+
+def configure_origin_settings(
+    monkeypatch,
+    *,
+    origin_header="X-Test-Origin",
+    secret="test-origin-secret",
+    secret_digest=None,
+    client_header="X-Test-Client-Address",
+):
+    if secret_digest is None and secret is not None:
+        secret_digest = hashlib.sha256(
+            secret.encode("utf-8")
+        ).hexdigest()
+
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "origin_verify_header_name",
+        (
+            SecretStr(origin_header)
+            if origin_header is not None
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "origin_verify_secret_digest",
+        (
+            SecretStr(secret_digest)
+            if secret_digest is not None
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "trusted_client_address_header_name",
+        (
+            SecretStr(client_header)
+            if client_header is not None
+            else None
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -105,6 +154,50 @@ def test_get_storage_uri_rejects_missing_production_uri(
 
 @pytest.mark.parametrize(
     "environment",
+    ["dev", "test"],
+)
+def test_storage_options_are_empty_outside_production(
+    monkeypatch,
+    environment,
+):
+    monkeypatch.setattr(
+        rate_limit,
+        "ENV",
+        environment,
+    )
+
+    assert rate_limit._get_storage_options() == {}
+
+
+def test_storage_options_bound_production_redis_client(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "redis_connect_timeout_seconds",
+        2.5,
+    )
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "redis_operation_timeout_seconds",
+        3.5,
+    )
+    monkeypatch.setattr(
+        rate_limit.app_settings,
+        "redis_max_connections",
+        6,
+    )
+
+    assert rate_limit._get_storage_options() == {
+        "socket_connect_timeout": 2.5,
+        "socket_timeout": 3.5,
+        "max_connections": 6,
+    }
+
+
+@pytest.mark.parametrize(
+    "environment",
     [
         "dev",
         "test",
@@ -139,8 +232,81 @@ def test_validate_rate_limit_config_accepts_production_uri(
         "REDIS_URL",
         "rediss://redis.example:6380/0",
     )
+    configure_origin_settings(monkeypatch)
 
     assert rate_limit.validate_rate_limit_config() is None
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        None,
+        "invalid",
+        "g" * 64,
+        "F" * 64,
+        "f" * 63,
+        "f" * 65,
+    ],
+)
+def test_validate_rate_limit_config_rejects_invalid_origin_digest(
+    monkeypatch,
+    configured,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    monkeypatch.setenv(
+        "REDIS_URL",
+        "rediss://redis.example:6380/0",
+    )
+    configure_origin_settings(
+        monkeypatch,
+        secret=None,
+        secret_digest=configured,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Production origin verification "
+            "configuration is invalid"
+        ),
+    ):
+        rate_limit.validate_rate_limit_config()
+
+
+@pytest.mark.parametrize(
+    ("origin_header", "client_header"),
+    [
+        (None, "X-Test-Client-Address"),
+        ("invalid header", "X-Test-Client-Address"),
+        ("X-Test-Origin", None),
+        ("X-Test-Origin", "invalid header"),
+        ("X-Test-Origin", "x-test-origin"),
+    ],
+)
+def test_validate_rate_limit_config_rejects_invalid_header_settings(
+    monkeypatch,
+    origin_header,
+    client_header,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    monkeypatch.setenv(
+        "REDIS_URL",
+        "rediss://redis.example:6380/0",
+    )
+    configure_origin_settings(
+        monkeypatch,
+        origin_header=origin_header,
+        client_header=client_header,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Production origin verification "
+            "configuration is invalid"
+        ),
+    ):
+        rate_limit.validate_rate_limit_config()
 
 
 def test_validate_rate_limit_config_rejects_missing_production_uri(
@@ -164,6 +330,200 @@ def test_validate_rate_limit_config_rejects_missing_production_uri(
         ),
     ):
         rate_limit.validate_rate_limit_config()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("198.51.100.10:46532", "198.51.100.10"),
+        ("[2001:db8::1]:443", "2001:db8::1"),
+        ("2001:db8::1:443", "2001:db8::1"),
+        (None, None),
+        ("", None),
+        ("198.51.100.10", None),
+        ("198.51.100.10:0", None),
+        ("198.51.100.10:65536", None),
+        ("198.51.100.10:not-a-port", None),
+        ("not-an-ip:443", None),
+        ("[2001:db8::1]443", None),
+    ],
+)
+def test_parse_client_address(
+    value,
+    expected,
+):
+    assert (
+        rate_limit._parse_client_address(value)
+        == expected
+    )
+
+
+def test_rate_limit_key_uses_remote_address_outside_production(
+    monkeypatch,
+):
+    remote_address = MagicMock(
+        return_value="203.0.113.20"
+    )
+    request = make_request()
+
+    monkeypatch.setattr(rate_limit, "ENV", "dev")
+    monkeypatch.setattr(
+        rate_limit,
+        "get_remote_address",
+        remote_address,
+    )
+
+    assert rate_limit.get_rate_limit_key(request) == (
+        "203.0.113.20"
+    )
+    remote_address.assert_called_once_with(request)
+
+
+def test_limiter_uses_proxy_aware_key_function():
+    assert rate_limit.limiter._key_func is (
+        rate_limit.get_rate_limit_key
+    )
+
+
+def test_rate_limit_key_uses_validated_client_identity(
+    monkeypatch,
+):
+    request = make_request()
+    request.state.rate_limit_client_ip = "198.51.100.10"
+
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+
+    assert rate_limit.get_rate_limit_key(request) == (
+        "198.51.100.10"
+    )
+
+
+def test_rate_limit_key_fails_closed_without_validated_identity(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+
+    with pytest.raises(
+        rate_limit.RateLimitIdentityUnavailable
+    ):
+        rate_limit.get_rate_limit_key(make_request())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["dev", "test"])
+async def test_trusted_origin_middleware_is_disabled_outside_production(
+    monkeypatch,
+    environment,
+):
+    monkeypatch.setattr(rate_limit, "ENV", environment)
+    middleware = make_middleware(
+        rate_limit.TrustedOriginMiddleware
+    )
+    request = make_request()
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_trusted_origin_middleware_allows_health_probe(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    middleware = make_middleware(
+        rate_limit.TrustedOriginMiddleware
+    )
+    request = make_request(path="/healthz")
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_trusted_origin_middleware_rejects_unverified_origin(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    configure_origin_settings(monkeypatch)
+    middleware = make_middleware(
+        rate_limit.TrustedOriginMiddleware
+    )
+    request = make_request(
+        headers={"X-Test-Origin": "wrong"}
+    )
+    call_next = AsyncMock()
+
+    response = await middleware.dispatch(request, call_next)
+
+    assert response.status_code == 403
+    assert response_json(response)["detail"] == "FORBIDDEN"
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trusted_origin_middleware_requires_viewer_address(
+    monkeypatch,
+):
+    secret = "test-origin-secret"
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    configure_origin_settings(
+        monkeypatch,
+        secret=secret,
+    )
+    middleware = make_middleware(
+        rate_limit.TrustedOriginMiddleware
+    )
+    request = make_request(
+        headers={"X-Test-Origin": secret}
+    )
+    call_next = AsyncMock()
+
+    response = await middleware.dispatch(request, call_next)
+
+    assert response.status_code == 503
+    assert response_json(response)["detail"] == (
+        "TEMPORARILY_UNAVAILABLE"
+    )
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trusted_origin_middleware_sets_client_ip(
+    monkeypatch,
+):
+    secret = "test-origin-secret"
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    configure_origin_settings(
+        monkeypatch,
+        secret=secret,
+    )
+    middleware = make_middleware(
+        rate_limit.TrustedOriginMiddleware
+    )
+    request = make_request(
+        headers={
+            "X-Test-Origin": secret,
+            "X-Test-Client-Address": (
+                "[2001:db8::1]:46532"
+            ),
+        }
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    assert request.state.rate_limit_client_ip == "2001:db8::1"
+    call_next.assert_awaited_once_with(request)
 
 
 @pytest.mark.asyncio
@@ -291,6 +651,9 @@ async def test_storage_ready_pings_redis_and_closes_client(
         decode_responses=True,
         socket_connect_timeout=0.75,
         socket_timeout=0.75,
+        max_connections=(
+            rate_limit.app_settings.redis_max_connections
+        ),
     )
     client.ping.assert_awaited_once_with()
     client.aclose.assert_awaited_once_with()
@@ -741,6 +1104,27 @@ async def test_safe_middleware_converts_rate_limit_exception_to_429(
 
 
 @pytest.mark.asyncio
+async def test_safe_middleware_converts_missing_identity_to_503():
+    middleware = make_middleware(
+        rate_limit.SafeSlowAPIMiddleware
+    )
+
+    response = await middleware.dispatch(
+        make_request(),
+        AsyncMock(
+            side_effect=(
+                rate_limit.RateLimitIdentityUnavailable()
+            )
+        ),
+    )
+
+    assert response.status_code == 503
+    assert response_json(response)["detail"] == (
+        "TEMPORARILY_UNAVAILABLE"
+    )
+
+
+@pytest.mark.asyncio
 async def test_safe_middleware_converts_detail_attribute_crash_to_503(
     monkeypatch,
 ):
@@ -767,7 +1151,7 @@ async def test_safe_middleware_converts_detail_attribute_crash_to_503(
 
     assert response.status_code == 503
     assert response_json(response)["detail"] == (
-        "RATE_LIMIT_UNAVAILABLE"
+        "TEMPORARILY_UNAVAILABLE"
     )
     log_crash.assert_called_once_with(request)
 
@@ -802,7 +1186,7 @@ async def test_safe_middleware_converts_connection_error_to_503(
 
     assert response.status_code == 503
     assert response_json(response)["detail"] == (
-        "RATE_LIMIT_UNAVAILABLE"
+        "TEMPORARILY_UNAVAILABLE"
     )
     log_down.assert_called_once_with(request)
 
@@ -1114,6 +1498,7 @@ def test_register_rate_limiter_adds_all_production_middleware(
         rate_limit.SlowAPIMiddleware,
         rate_limit.MaintenanceModeMiddleware,
         rate_limit.SafeSlowAPIMiddleware,
+        rate_limit.TrustedOriginMiddleware,
     ]
 
     log_info.assert_called_once_with(

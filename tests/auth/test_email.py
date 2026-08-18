@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -125,6 +125,56 @@ async def test_console_delivery_logs_development_link(
     )
 
 
+@pytest.mark.asyncio
+async def test_smtp_delivery_builds_and_dispatches_message(
+    monkeypatch,
+):
+    to_thread = AsyncMock()
+
+    monkeypatch.setattr(
+        email.settings,
+        "email_delivery_mode",
+        "smtp",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "frontend_url",
+        "https://mangarecon.example",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "smtp_from_email",
+        "noreply@mangarecon.example",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "smtp_from_name",
+        "MangaRecon",
+    )
+    monkeypatch.setattr(
+        email.asyncio,
+        "to_thread",
+        to_thread,
+    )
+
+    await email.send_verification_email(
+        recipient="reader@example.com",
+        token="production-token",
+    )
+
+    to_thread.assert_awaited_once()
+    sender, message = to_thread.await_args.args
+
+    assert sender is email._send_smtp_message
+    assert message["To"] == "reader@example.com"
+    assert message["From"] == (
+        "MangaRecon <noreply@mangarecon.example>"
+    )
+    assert "production-token" in message.get_body(
+        preferencelist=("plain",)
+    ).get_content()
+
+
 def test_smtp_sender_uses_starttls_and_credentials(
     monkeypatch,
 ):
@@ -171,3 +221,28 @@ def test_smtp_sender_uses_starttls_and_credentials(
         "smtp-password",
     )
     smtp.send_message.assert_called_once_with(message)
+
+
+def test_smtp_sender_wraps_transport_failure(
+    monkeypatch,
+):
+    smtp_constructor = MagicMock(
+        side_effect=email.smtplib.SMTPException(
+            "provider unavailable"
+        )
+    )
+
+    monkeypatch.setattr(
+        email.settings,
+        "smtp_host",
+        "smtp.resend.com",
+    )
+    monkeypatch.setattr(email.settings, "smtp_port", 587)
+    monkeypatch.setattr(email.settings, "smtp_use_ssl", False)
+    monkeypatch.setattr(email.smtplib, "SMTP", smtp_constructor)
+
+    with pytest.raises(
+        email.EmailDeliveryError,
+        match="Verification email delivery failed",
+    ):
+        email._send_smtp_message(MagicMock())

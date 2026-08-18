@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_ENVIRONMENTS = {"dev", "test", "prod"}
@@ -28,6 +28,15 @@ class Settings(BaseSettings):
 
     frontend_origins: str = Field(..., validation_alias=AliasChoices("FRONTEND_ORIGINS"))
     debug: bool = False
+    origin_verify_header_name: SecretStr | None = None
+    origin_verify_secret_digest: SecretStr | None = None
+    trusted_client_address_header_name: SecretStr | None = None
+
+    # Redis connection limits.
+    redis_connect_timeout_seconds: float = Field(default=3.0, gt=0)
+    redis_operation_timeout_seconds: float = Field(default=3.0, gt=0)
+    redis_ready_timeout_seconds: float = Field(default=5.0, gt=0)
+    redis_max_connections: int = Field(default=4, ge=1)
 
     mangaupdates_base_url: str = ("https://api.mangaupdates.com/v1")
     mangaupdates_timeout_seconds: float = Field(default=10.0, gt=0)

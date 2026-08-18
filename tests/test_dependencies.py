@@ -96,6 +96,24 @@ async def exhaust_generator(generator):
         await anext(generator)
 
 
+def test_database_runtime_defaults_are_environment_aware(
+    monkeypatch,
+):
+    monkeypatch.setattr(dependencies, "ENV", "prod")
+    assert dependencies._default_database_pool_mode() == "null"
+    assert (
+        dependencies._default_prepared_statement_cache_size()
+        == 0
+    )
+
+    monkeypatch.setattr(dependencies, "ENV", "dev")
+    assert dependencies._default_database_pool_mode() == "queue"
+    assert (
+        dependencies._default_prepared_statement_cache_size()
+        == 100
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_user_read_db_yields_read_wrapper(
     monkeypatch,
@@ -628,6 +646,121 @@ def test_validate_database_config_lists_missing_production_urls(
         dependencies.validate_database_config()
 
 
+def test_database_engine_kwargs_use_null_pool_for_external_pooler(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_pool_mode",
+        "null",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_connect_timeout_seconds",
+        4.0,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_command_timeout_seconds",
+        12.0,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_prepared_statement_cache_size",
+        0,
+    )
+
+    kwargs = dependencies._database_engine_kwargs()
+
+    assert kwargs["poolclass"] is dependencies.NullPool
+    assert "pool_size" not in kwargs
+    assert "max_overflow" not in kwargs
+    assert "pool_timeout" not in kwargs
+    assert "pool_pre_ping" not in kwargs
+
+    connect_args = kwargs["connect_args"]
+    assert connect_args["timeout"] == 4.0
+    assert connect_args["command_timeout"] == 12.0
+    assert connect_args["prepared_statement_cache_size"] == 0
+
+    name_factory = connect_args[
+        "prepared_statement_name_func"
+    ]
+    first_name = name_factory()
+    second_name = name_factory()
+
+    assert first_name.startswith("__asyncpg_")
+    assert first_name.endswith("__")
+    assert second_name != first_name
+
+
+def test_database_engine_kwargs_bound_queue_pool(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_pool_mode",
+        "queue",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_pool_size",
+        2,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_max_overflow",
+        1,
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_pool_timeout_seconds",
+        6.0,
+    )
+
+    kwargs = dependencies._database_engine_kwargs()
+
+    assert kwargs["pool_pre_ping"] is True
+    assert kwargs["pool_size"] == 2
+    assert kwargs["max_overflow"] == 1
+    assert kwargs["pool_timeout"] == 6.0
+    assert "poolclass" not in kwargs
+
+
+def test_create_database_engine_passes_resolved_options(
+    monkeypatch,
+):
+    expected_engine = MagicMock()
+    create_engine = MagicMock(
+        return_value=expected_engine
+    )
+    expected_kwargs = {
+        "poolclass": dependencies.NullPool,
+        "connect_args": {"timeout": 5.0},
+    }
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_async_engine",
+        create_engine,
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engine_kwargs",
+        lambda: expected_kwargs,
+    )
+
+    result = dependencies._create_database_engine(
+        "postgresql+asyncpg://database"
+    )
+
+    assert result is expected_engine
+    create_engine.assert_called_once_with(
+        "postgresql+asyncpg://database",
+        **expected_kwargs,
+    )
+
+
 @pytest.mark.asyncio
 async def test_database_engine_ready_executes_select_one():
     engine, connection = make_engine()
@@ -706,6 +839,47 @@ async def test_database_connections_ready_requires_every_engine(
     assert probe.await_count == 4
     assert all(
         call.kwargs == {"timeout": 0.75}
+        for call in probe.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_database_connections_ready_uses_configured_timeout(
+    monkeypatch,
+):
+    engines = tuple(
+        (name, MagicMock())
+        for name in (
+            "user_writer",
+            "user_reader",
+            "manga_writer",
+            "manga_reader",
+        )
+    )
+    probe = AsyncMock(return_value=True)
+
+    monkeypatch.setattr(
+        dependencies.settings,
+        "database_ready_timeout_seconds",
+        4.5,
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engines",
+        lambda: engines,
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "_database_engine_ready",
+        probe,
+    )
+
+    result = await dependencies.database_connections_ready()
+
+    assert result is True
+    assert probe.await_count == 4
+    assert all(
+        call.kwargs == {"timeout": 4.5}
         for call in probe.await_args_list
     )
 
