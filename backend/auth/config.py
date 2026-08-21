@@ -1,7 +1,7 @@
 import os
 from typing import Literal
 
-from pydantic import AliasChoices, EmailStr, Field
+from pydantic import AliasChoices, EmailStr, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi_users.authentication import CookieTransport, JWTStrategy, AuthenticationBackend
 
@@ -13,7 +13,7 @@ def _default_email_delivery_mode() -> str:
         return "disabled"
     if _ENV == "dev":
         return "console"
-    return "smtp"
+    return "resend"
 
 
 class Settings(BaseSettings):
@@ -41,48 +41,31 @@ class Settings(BaseSettings):
         None,
         validation_alias=AliasChoices("FRONTEND_URL"),
     )
-    email_delivery_mode: Literal["console", "smtp", "disabled"] = Field(
+    email_delivery_mode: Literal["console", "resend", "disabled"] = Field(
         default_factory=_default_email_delivery_mode,
         validation_alias=AliasChoices("EMAIL_DELIVERY_MODE"),
     )
-    smtp_host: str | None = Field(
+    resend_api_key: SecretStr | None = Field(
         None,
-        validation_alias=AliasChoices("SMTP_HOST"),
+        validation_alias=AliasChoices("RESEND_API_KEY"),
     )
-    smtp_port: int = Field(
-        587,
-        ge=1,
-        le=65535,
-        validation_alias=AliasChoices("SMTP_PORT"),
-    )
-    smtp_username: str | None = Field(
+    resend_from_email: EmailStr | None = Field(
         None,
-        validation_alias=AliasChoices("SMTP_USERNAME"),
+        validation_alias=AliasChoices("RESEND_FROM_EMAIL"),
     )
-    smtp_password: str | None = Field(
-        None,
-        validation_alias=AliasChoices("SMTP_PASSWORD"),
-    )
-    smtp_from_email: EmailStr | None = Field(
-        None,
-        validation_alias=AliasChoices("SMTP_FROM_EMAIL"),
-    )
-    smtp_from_name: str = Field(
+    resend_from_name: str = Field(
         "MangaRecon",
-        validation_alias=AliasChoices("SMTP_FROM_NAME"),
+        validation_alias=AliasChoices("RESEND_FROM_NAME"),
     )
-    smtp_starttls: bool = Field(
-        True,
-        validation_alias=AliasChoices("SMTP_STARTTLS"),
+    resend_api_base_url: str = Field(
+        "https://api.resend.com",
+        min_length=1,
+        validation_alias=AliasChoices("RESEND_API_BASE_URL"),
     )
-    smtp_use_ssl: bool = Field(
-        False,
-        validation_alias=AliasChoices("SMTP_USE_SSL"),
-    )
-    smtp_timeout_seconds: float = Field(
+    resend_timeout_seconds: float = Field(
         10.0,
         gt=0,
-        validation_alias=AliasChoices("SMTP_TIMEOUT_SECONDS"),
+        validation_alias=AliasChoices("RESEND_TIMEOUT_SECONDS"),
     )
 
 settings = Settings()
@@ -95,9 +78,9 @@ if not settings.auth_secret:
 
 def validate_email_config() -> None:
     """Validate settings needed to produce and deliver verification links."""
-    if _ENV == "prod" and settings.email_delivery_mode != "smtp":
+    if _ENV == "prod" and settings.email_delivery_mode != "resend":
         raise RuntimeError(
-            "MANGARECON_ENV=prod requires EMAIL_DELIVERY_MODE=smtp."
+            "MANGARECON_ENV=prod requires EMAIL_DELIVERY_MODE=resend."
         )
 
     if settings.email_delivery_mode == "disabled":
@@ -108,32 +91,22 @@ def validate_email_config() -> None:
             "FRONTEND_URL is required when email verification delivery is enabled."
         )
 
-    if settings.email_delivery_mode != "smtp":
+    if settings.email_delivery_mode != "resend":
         return
 
     missing = [
         name
         for name, value in (
-            ("SMTP_HOST", settings.smtp_host),
-            ("SMTP_FROM_EMAIL", settings.smtp_from_email),
+            ("RESEND_API_KEY", settings.resend_api_key),
+            ("RESEND_FROM_EMAIL", settings.resend_from_email),
         )
         if not value
     ]
     if missing:
         raise RuntimeError(
-            "EMAIL_DELIVERY_MODE=smtp requires: "
+            "EMAIL_DELIVERY_MODE=resend requires: "
             + ", ".join(missing)
             + "."
-        )
-
-    if bool(settings.smtp_username) != bool(settings.smtp_password):
-        raise RuntimeError(
-            "SMTP_USERNAME and SMTP_PASSWORD must either both be set or both be omitted."
-        )
-
-    if settings.smtp_starttls and settings.smtp_use_ssl:
-        raise RuntimeError(
-            "SMTP_STARTTLS and SMTP_USE_SSL cannot both be true."
         )
 
 # Cookie transport for auth flows; uses secure flags unless DEBUG=true.

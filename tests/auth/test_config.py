@@ -4,6 +4,7 @@ import subprocess
 import sys
 from unittest.mock import MagicMock
 
+from pydantic import SecretStr
 import pytest
 
 from backend.auth import config
@@ -32,15 +33,11 @@ def run_isolated_config_import(
         "MANGARECON_ENV",
         "FRONTEND_URL",
         "EMAIL_DELIVERY_MODE",
-        "SMTP_HOST",
-        "SMTP_PORT",
-        "SMTP_USERNAME",
-        "SMTP_PASSWORD",
-        "SMTP_FROM_EMAIL",
-        "SMTP_FROM_NAME",
-        "SMTP_STARTTLS",
-        "SMTP_USE_SSL",
-        "SMTP_TIMEOUT_SECONDS",
+        "RESEND_API_KEY",
+        "RESEND_FROM_EMAIL",
+        "RESEND_FROM_NAME",
+        "RESEND_API_BASE_URL",
+        "RESEND_TIMEOUT_SECONDS",
     ):
         env.pop(name, None)
         env.pop(name.lower(), None)
@@ -203,7 +200,7 @@ def test_default_environment_is_prod(
             "from backend.auth import config; "
             "assert config._ENV == 'prod'; "
             "assert config.settings.email_delivery_mode "
-            "== 'smtp'; "
+            "== 'resend'; "
             "assert config.cookie_transport.cookie_secure "
             "is True; "
             "print('default-prod-ok')"
@@ -299,7 +296,7 @@ def test_test_environment_disables_email_delivery_by_default():
     assert config.settings.email_delivery_mode == "disabled"
 
 
-def test_validate_email_config_rejects_non_smtp_production_mode(
+def test_validate_email_config_rejects_non_resend_production_mode(
     monkeypatch,
 ):
     monkeypatch.setattr(config, "_ENV", "prod")
@@ -311,19 +308,19 @@ def test_validate_email_config_rejects_non_smtp_production_mode(
 
     with pytest.raises(
         RuntimeError,
-        match="requires EMAIL_DELIVERY_MODE=smtp",
+        match="requires EMAIL_DELIVERY_MODE=resend",
     ):
         config.validate_email_config()
 
 
-def test_validate_email_config_accepts_complete_smtp_settings(
+def test_validate_email_config_accepts_complete_resend_settings(
     monkeypatch,
 ):
     monkeypatch.setattr(config, "_ENV", "prod")
     monkeypatch.setattr(
         config.settings,
         "email_delivery_mode",
-        "smtp",
+        "resend",
     )
     monkeypatch.setattr(
         config.settings,
@@ -332,42 +329,22 @@ def test_validate_email_config_accepts_complete_smtp_settings(
     )
     monkeypatch.setattr(
         config.settings,
-        "smtp_host",
-        "smtp.example.com",
+        "resend_api_key",
+        SecretStr("re_fake_test_key"),
     )
     monkeypatch.setattr(
         config.settings,
-        "smtp_from_email",
+        "resend_from_email",
         "noreply@mangarecon.example",
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_username",
-        "smtp-user",
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_password",
-        "smtp-password",
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_starttls",
-        True,
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_use_ssl",
-        False,
     )
 
     assert config.validate_email_config() is None
 
 
-def test_real_environment_parsing_accepts_production_resend_smtp(
+def test_real_environment_parsing_accepts_production_resend_api(
     tmp_path,
 ):
-    """Validate production SMTP settings in a separate process."""
+    """Validate production Resend API settings in a separate process."""
     result = run_isolated_config_import(
         tmp_path=tmp_path,
         environment={
@@ -377,30 +354,28 @@ def test_real_environment_parsing_accepts_production_resend_smtp(
             ),
             "DEBUG": "false",
             "FRONTEND_URL": "https://mangarecon.example",
-            "EMAIL_DELIVERY_MODE": "smtp",
-            "SMTP_HOST": "smtp.resend.com",
-            "SMTP_PORT": "587",
-            "SMTP_USERNAME": "resend",
-            "SMTP_PASSWORD": "re_fake_test_key",
-            "SMTP_FROM_EMAIL": (
+            "EMAIL_DELIVERY_MODE": "resend",
+            "RESEND_API_KEY": "re_fake_test_key",
+            "RESEND_FROM_EMAIL": (
                 "noreply@mangarecon.example"
             ),
-            "SMTP_FROM_NAME": "MangaRecon",
-            "SMTP_STARTTLS": "true",
-            "SMTP_USE_SSL": "false",
-            "SMTP_TIMEOUT_SECONDS": "10",
+            "RESEND_FROM_NAME": "MangaRecon",
+            "RESEND_API_BASE_URL": "https://api.resend.com",
+            "RESEND_TIMEOUT_SECONDS": "10",
         },
         code=(
             "from backend.auth import config; "
             "config.validate_email_config(); "
             "assert config._ENV == 'prod'; "
-            "assert config.settings.email_delivery_mode == 'smtp'; "
-            "assert config.settings.smtp_host == 'smtp.resend.com'; "
-            "assert config.settings.smtp_port == 587; "
-            "assert config.settings.smtp_username == 'resend'; "
-            "assert config.settings.smtp_starttls is True; "
-            "assert config.settings.smtp_use_ssl is False; "
-            "print('production-smtp-ok')"
+            "assert config.settings.email_delivery_mode == 'resend'; "
+            "assert config.settings.resend_api_key.get_secret_value() "
+            "== 're_fake_test_key'; "
+            "assert str(config.settings.resend_from_email) "
+            "== 'noreply@mangarecon.example'; "
+            "assert config.settings.resend_api_base_url "
+            "== 'https://api.resend.com'; "
+            "assert config.settings.resend_timeout_seconds == 10; "
+            "print('production-resend-ok')"
         ),
     )
 
@@ -408,17 +383,17 @@ def test_real_environment_parsing_accepts_production_resend_smtp(
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
-    assert "production-smtp-ok" in result.stdout
+    assert "production-resend-ok" in result.stdout
 
 
-def test_validate_email_config_rejects_conflicting_tls_modes(
+def test_validate_email_config_requires_resend_credentials(
     monkeypatch,
 ):
     monkeypatch.setattr(config, "_ENV", "dev")
     monkeypatch.setattr(
         config.settings,
         "email_delivery_mode",
-        "smtp",
+        "resend",
     )
     monkeypatch.setattr(
         config.settings,
@@ -427,37 +402,48 @@ def test_validate_email_config_rejects_conflicting_tls_modes(
     )
     monkeypatch.setattr(
         config.settings,
-        "smtp_host",
-        "smtp.example.com",
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_from_email",
-        "noreply@mangarecon.example",
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_username",
+        "resend_api_key",
         None,
     )
     monkeypatch.setattr(
         config.settings,
-        "smtp_password",
+        "resend_from_email",
         None,
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_starttls",
-        True,
-    )
-    monkeypatch.setattr(
-        config.settings,
-        "smtp_use_ssl",
-        True,
     )
 
     with pytest.raises(
         RuntimeError,
-        match="cannot both be true",
+        match=(
+            "EMAIL_DELIVERY_MODE=resend requires: "
+            "RESEND_API_KEY, RESEND_FROM_EMAIL"
+        ),
     ):
         config.validate_email_config()
+
+
+def test_validate_email_config_allows_console_mode_without_resend(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "_ENV", "dev")
+    monkeypatch.setattr(
+        config.settings,
+        "email_delivery_mode",
+        "console",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "frontend_url",
+        "http://localhost:5173",
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "resend_api_key",
+        None,
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "resend_from_email",
+        None,
+    )
+
+    assert config.validate_email_config() is None

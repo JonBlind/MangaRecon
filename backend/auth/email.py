@@ -1,15 +1,15 @@
-"""Verification-email creation and delivery."""
+"""Verification-email creation and delivery through Resend."""
 
 from __future__ import annotations
 
-import asyncio
-from email.message import EmailMessage
 from email.utils import formataddr
+from hashlib import sha256
 from html import escape
 import logging
-import smtplib
-import ssl
+from typing import Any
 from urllib.parse import urlencode
+
+import httpx2
 
 from backend.auth.config import settings
 
@@ -30,25 +30,16 @@ def build_verification_url(token: str) -> str:
     return f"{base_url}/verify-email?{urlencode({'token': token})}"
 
 
-def build_verification_message(
+def build_verification_email(
     *,
     recipient: str,
     verification_url: str,
-) -> EmailMessage:
-    """Create the plain-text and HTML verification message."""
-    if not settings.smtp_from_email:
-        raise EmailDeliveryError("SMTP_FROM_EMAIL is not configured.")
+) -> dict[str, Any]:
+    """Create the JSON payload accepted by Resend's send-email API."""
+    if not settings.resend_from_email:
+        raise EmailDeliveryError("RESEND_FROM_EMAIL is not configured.")
 
-    message = EmailMessage()
-    message["Subject"] = "Verify your MangaRecon email"
-    message["From"] = formataddr(
-        (
-            settings.smtp_from_name,
-            str(settings.smtp_from_email),
-        )
-    )
-    message["To"] = recipient
-    message.set_content(
+    plain_text = (
         "Welcome to MangaRecon.\n\n"
         "Verify your email address by opening this link:\n"
         f"{verification_url}\n\n"
@@ -56,45 +47,107 @@ def build_verification_message(
         "account, you can ignore this email."
     )
     safe_url = escape(verification_url, quote=True)
-    message.add_alternative(
+    html = (
         "<!doctype html>"
         "<html><body>"
         "<p>Welcome to MangaRecon.</p>"
         f'<p><a href="{safe_url}">Verify your email address</a></p>'
         "<p>This link expires in 3 days. If you did not create a "
         "MangaRecon account, you can ignore this email.</p>"
-        "</body></html>",
-        subtype="html",
+        "</body></html>"
     )
-    return message
+
+    return {
+        "from": formataddr(
+            (
+                settings.resend_from_name,
+                str(settings.resend_from_email),
+            )
+        ),
+        "to": [recipient],
+        "subject": "Verify your MangaRecon email",
+        "text": plain_text,
+        "html": html,
+    }
 
 
-def _send_smtp_message(message: EmailMessage) -> None:
-    if not settings.smtp_host:
-        raise EmailDeliveryError("SMTP_HOST is not configured.")
+def build_verification_idempotency_key(
+    *,
+    recipient: str,
+    token: str,
+) -> str:
+    """Build a stable, opaque Resend idempotency key for one verify token."""
+    digest = sha256(
+        f"{recipient.casefold()}\0{token}".encode("utf-8")
+    ).hexdigest()
+    return f"mangarecon-verification-{digest}"
 
-    smtp_class = smtplib.SMTP_SSL if settings.smtp_use_ssl else smtplib.SMTP
+
+async def _send_resend_email(
+    payload: dict[str, Any],
+    *,
+    idempotency_key: str,
+    transport: httpx2.AsyncBaseTransport | None = None,
+) -> str:
+    """Submit one message to Resend and return its provider email ID."""
+    if not settings.resend_api_key:
+        raise EmailDeliveryError("RESEND_API_KEY is not configured.")
+
+    api_base_url = settings.resend_api_base_url.strip().rstrip("/")
+    if not api_base_url:
+        raise EmailDeliveryError("RESEND_API_BASE_URL is not configured.")
+
+    headers = {
+        "Accept": "application/json",
+        "Authorization": (
+            "Bearer "
+            + settings.resend_api_key.get_secret_value()
+        ),
+        "Idempotency-Key": idempotency_key,
+        "User-Agent": "MangaRecon/0.1",
+    }
 
     try:
-        with smtp_class(
-            settings.smtp_host,
-            settings.smtp_port,
-            timeout=settings.smtp_timeout_seconds,
-        ) as smtp:
-            if settings.smtp_starttls:
-                smtp.starttls(context=ssl.create_default_context())
-
-            if settings.smtp_username and settings.smtp_password:
-                smtp.login(
-                    settings.smtp_username,
-                    settings.smtp_password,
-                )
-
-            smtp.send_message(message)
-    except (OSError, smtplib.SMTPException) as exc:
+        async with httpx2.AsyncClient(
+            timeout=settings.resend_timeout_seconds,
+            transport=transport,
+        ) as client:
+            response = await client.post(
+                f"{api_base_url}/emails",
+                headers=headers,
+                json=payload,
+            )
+    except httpx2.RequestError as exc:
         raise EmailDeliveryError(
-            "Verification email delivery failed."
+            "Could not reach the email provider."
         ) from exc
+
+    if not 200 <= response.status_code < 300:
+        logger.error(
+            "Resend rejected verification email (status=%s, request_id=%s).",
+            response.status_code,
+            response.headers.get("x-request-id"),
+        )
+        raise EmailDeliveryError("Verification email delivery failed.")
+
+    try:
+        response_payload = response.json()
+    except ValueError as exc:
+        raise EmailDeliveryError(
+            "The email provider returned an invalid response."
+        ) from exc
+
+    email_id = (
+        response_payload.get("id")
+        if isinstance(response_payload, dict)
+        else None
+    )
+    if not isinstance(email_id, str) or not email_id.strip():
+        raise EmailDeliveryError(
+            "The email provider returned an invalid response."
+        )
+
+    return email_id
 
 
 async def send_verification_email(
@@ -102,7 +155,7 @@ async def send_verification_email(
     recipient: str,
     token: str,
 ) -> None:
-    """Deliver a verification link using the configured development or SMTP mode."""
+    """Deliver a verification link in disabled, console, or Resend mode."""
     if settings.email_delivery_mode == "disabled":
         return
 
@@ -116,8 +169,18 @@ async def send_verification_email(
         )
         return
 
-    message = build_verification_message(
+    payload = build_verification_email(
         recipient=recipient,
         verification_url=verification_url,
     )
-    await asyncio.to_thread(_send_smtp_message, message)
+    email_id = await _send_resend_email(
+        payload,
+        idempotency_key=build_verification_idempotency_key(
+            recipient=recipient,
+            token=token,
+        ),
+    )
+    logger.info(
+        "Verification email accepted by Resend (email_id=%s).",
+        email_id,
+    )
