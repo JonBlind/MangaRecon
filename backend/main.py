@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from backend.utils.errors import register_exception_handlers
+from backend.maintenance.middleware import MaintenanceModeMiddleware
 from backend.rate_limit.middleware import (
     rate_limit_storage_ready,
     register_rate_limiter,
@@ -83,6 +84,8 @@ def create_app() -> FastAPI:
     # Rate limiting is disabled in tests
     if ENV != "test":
         register_rate_limiter(app)
+
+    app.add_middleware(MaintenanceModeMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

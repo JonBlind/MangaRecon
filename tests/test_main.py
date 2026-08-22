@@ -289,13 +289,18 @@ def test_create_app_configures_application_in_test_environment(
     validate_email.assert_called_once_with()
     register_limiter.assert_not_called()
 
-    app.add_middleware.assert_called_once_with(
-        main.CORSMiddleware,
-        allow_origins=main.origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    assert app.add_middleware.call_args_list == [
+        ((main.MaintenanceModeMiddleware,), {}),
+        (
+            (main.CORSMiddleware,),
+            {
+                "allow_origins": main.origins,
+                "allow_credentials": True,
+                "allow_methods": ["*"],
+                "allow_headers": ["*"],
+            },
+        ),
+    ]
 
     expected_routers = [
         main.auth_routes.router,
@@ -352,6 +357,9 @@ def test_create_app_registers_rate_limiter_outside_test(
 
     assert result is app
     register_limiter.assert_called_once_with(app)
+    app.add_middleware.assert_any_call(
+        main.MaintenanceModeMiddleware
+    )
 
 
 def test_create_app_validates_rate_limit_config_before_registering_limiter(

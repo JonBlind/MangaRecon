@@ -31,6 +31,8 @@ def run_isolated_settings_import(
         "ORIGIN_VERIFY_HEADER_NAME",
         "ORIGIN_VERIFY_SECRET_DIGEST",
         "TRUSTED_CLIENT_ADDRESS_HEADER_NAME",
+        "MAINTENANCE_MODE",
+        "MAINTENANCE_RETRY_AFTER_SECONDS",
         "MANGAUPDATES_BASE_URL",
         "MANGAUPDATES_TIMEOUT_SECONDS",
         "MANGAUPDATES_MIN_REQUEST_INTERVAL_SECONDS",
@@ -471,6 +473,81 @@ def test_production_environment_rejects_debug_mode(
         "MANGARECON_ENV=prod requires DEBUG=false."
         in result.stderr
     )
+
+
+def test_maintenance_settings_use_safe_defaults(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.maintenance_mode is False; "
+            "assert configured.maintenance_retry_after_seconds == 300; "
+            "print('maintenance-defaults-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "maintenance-defaults-ok" in result.stdout
+
+
+def test_maintenance_settings_accept_environment_overrides(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "MAINTENANCE_MODE": "true",
+            "MAINTENANCE_RETRY_AFTER_SECONDS": "900",
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.maintenance_mode is True; "
+            "assert configured.maintenance_retry_after_seconds == 900; "
+            "print('maintenance-overrides-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "maintenance-overrides-ok" in result.stdout
+
+
+def test_maintenance_retry_after_rejects_zero(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": (
+                "https://mangarecon.example"
+            ),
+            "MAINTENANCE_RETRY_AFTER_SECONDS": "0",
+        },
+        code="from backend.config import settings",
+    )
+
+    assert result.returncode != 0
+    assert "maintenance_retry_after_seconds" in result.stderr
 
 
 def test_import_fails_when_frontend_origins_is_missing(

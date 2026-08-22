@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     origin_verify_secret_digest: SecretStr | None = None
     trusted_client_address_header_name: SecretStr | None = None
 
+    # Intentional application maintenance mode.
+    maintenance_mode: bool = False
+    maintenance_retry_after_seconds: int = Field(default=300, ge=1)
+
     # Redis connection limits.
     redis_connect_timeout_seconds: float = Field(default=3.0, gt=0)
     redis_operation_timeout_seconds: float = Field(default=3.0, gt=0)

@@ -344,12 +344,15 @@ def test_validate_rate_limit_config_rejects_missing_production_uri(
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
+        ("198.51.100.10", "198.51.100.10"),
+        ("2001:db8::1", "2001:db8::1"),
         ("198.51.100.10:46532", "198.51.100.10"),
         ("[2001:db8::1]:443", "2001:db8::1"),
-        ("2001:db8::1:443", "2001:db8::1"),
+        ("2001:db8::1:443", "2001:db8::1:443"),
         (None, None),
         ("", None),
-        ("198.51.100.10", None),
+        ("198.51.100.10, 203.0.113.7", None),
+        ("fe80::1%eth0", None),
         ("198.51.100.10:0", None),
         ("198.51.100.10:65536", None),
         ("198.51.100.10:not-a-port", None),
@@ -520,9 +523,7 @@ async def test_trusted_origin_middleware_sets_client_ip(
     request = make_request(
         headers={
             "X-Test-Origin": secret,
-            "X-Test-Client-Address": (
-                "[2001:db8::1]:46532"
-            ),
+            "X-Test-Client-Address": "2001:db8::1",
         }
     )
     expected = MagicMock()
@@ -1006,7 +1007,7 @@ async def test_storage_ready_returns_false_when_client_creation_fails(
         "test",
     ],
 )
-async def test_maintenance_middleware_bypasses_checks_in_non_production(
+async def test_storage_guard_bypasses_checks_in_non_production(
     monkeypatch,
     environment,
 ):
@@ -1017,7 +1018,7 @@ async def test_maintenance_middleware_bypasses_checks_in_non_production(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         ready=False
@@ -1037,7 +1038,7 @@ async def test_maintenance_middleware_bypasses_checks_in_non_production(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_health_endpoint_always_returns_200(
+async def test_storage_guard_health_endpoint_always_returns_200(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1047,7 +1048,7 @@ async def test_maintenance_health_endpoint_always_returns_200(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         "/healthz",
@@ -1068,7 +1069,7 @@ async def test_maintenance_health_endpoint_always_returns_200(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_allows_ready_probe_to_reach_route(
+async def test_storage_guard_allows_ready_probe_to_reach_route(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1078,7 +1079,7 @@ async def test_maintenance_allows_ready_probe_to_reach_route(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         "/readyz",
@@ -1099,7 +1100,7 @@ async def test_maintenance_allows_ready_probe_to_reach_route(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_allows_normal_request_when_ready(
+async def test_storage_guard_allows_normal_request_when_ready(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1109,7 +1110,7 @@ async def test_maintenance_allows_normal_request_when_ready(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         ready=True
@@ -1129,7 +1130,7 @@ async def test_maintenance_allows_normal_request_when_ready(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_blocks_normal_request_when_unready(
+async def test_storage_guard_blocks_normal_request_when_unready(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1144,7 +1145,7 @@ async def test_maintenance_blocks_normal_request_when_unready(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         ready=False,
@@ -1167,7 +1168,7 @@ async def test_maintenance_blocks_normal_request_when_unready(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_rechecks_storage_after_interval_and_recovers(
+async def test_storage_guard_rechecks_storage_after_interval_and_recovers(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1191,7 +1192,7 @@ async def test_maintenance_rechecks_storage_after_interval_and_recovers(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         ready=False,
@@ -1223,7 +1224,7 @@ async def test_maintenance_rechecks_storage_after_interval_and_recovers(
 
 
 @pytest.mark.asyncio
-async def test_maintenance_rechecks_storage_and_remains_unready(
+async def test_storage_guard_rechecks_storage_and_remains_unready(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -1247,7 +1248,7 @@ async def test_maintenance_rechecks_storage_and_remains_unready(
     )
 
     middleware = make_middleware(
-        rate_limit.MaintenanceModeMiddleware
+        rate_limit.RateLimitStorageGuardMiddleware
     )
     request = make_request(
         ready=False,
@@ -1757,7 +1758,7 @@ def test_register_rate_limiter_adds_all_production_middleware(
     ] == [
         rate_limit.SlowAPIMiddleware,
         rate_limit.AccountAuthRateLimitMiddleware,
-        rate_limit.MaintenanceModeMiddleware,
+        rate_limit.RateLimitStorageGuardMiddleware,
         rate_limit.SafeSlowAPIMiddleware,
         rate_limit.TrustedOriginMiddleware,
     ]

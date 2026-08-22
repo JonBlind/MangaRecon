@@ -105,6 +105,16 @@ def _parse_client_address(value: str | None) -> str | None:
         return None
 
     address = value.strip()
+    if not address or "," in address or "%" in address:
+        return None
+
+    # Cloudflare's CF-Connecting-IP contains one bare IPv4 or IPv6 address.
+    try:
+        return ipaddress.ip_address(address).compressed
+    except ValueError:
+        pass
+
+    # Also accept the socket-address form used by some hosting proxies.
     if address.startswith("["):
         closing_bracket = address.find("]")
         separator = address[
@@ -236,7 +246,9 @@ async def rate_limit_storage_ready(
                 pass
 
 
-class MaintenanceModeMiddleware(BaseHTTPMiddleware):
+class RateLimitStorageGuardMiddleware(BaseHTTPMiddleware):
+    """Fail closed when production rate-limit storage is unavailable."""
+
     async def dispatch(self, request: Request, call_next):
         if ENV in ("dev", "test"):
             return await call_next(request)
@@ -495,7 +507,7 @@ def register_rate_limiter(app) -> None:
 
     app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(AccountAuthRateLimitMiddleware)
-    app.add_middleware(MaintenanceModeMiddleware)
+    app.add_middleware(RateLimitStorageGuardMiddleware)
     app.add_middleware(SafeSlowAPIMiddleware)
     app.add_middleware(TrustedOriginMiddleware)
     logger.info("Rate limiter enabled (ENV=%s, storage=Redis).", ENV)
