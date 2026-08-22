@@ -6,7 +6,7 @@ from starlette.responses import JSONResponse
 from backend.cache.redis import get_redis_cache
 from backend.config.settings import ENV
 from backend.dependencies import database_connections_ready
-from backend.utils.rate_limit import limiter, rate_limit_storage_ready
+from backend.rate_limit.middleware import limiter, rate_limit_storage_ready
 from backend.utils.response import error
 
 router = APIRouter(tags=["system"])

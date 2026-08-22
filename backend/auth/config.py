@@ -41,6 +41,17 @@ class Settings(BaseSettings):
         None,
         validation_alias=AliasChoices("FRONTEND_URL"),
     )
+    password_reset_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices("PASSWORD_RESET_URL"),
+    )
+    password_reset_token_lifetime_minutes: int = Field(
+        30,
+        ge=1,
+        validation_alias=AliasChoices(
+            "PASSWORD_RESET_TOKEN_LIFETIME_MINUTES"
+        ),
+    )
     email_delivery_mode: Literal["console", "resend", "disabled"] = Field(
         default_factory=_default_email_delivery_mode,
         validation_alias=AliasChoices("EMAIL_DELIVERY_MODE"),

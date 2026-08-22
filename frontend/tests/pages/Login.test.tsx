@@ -25,6 +25,10 @@ describe("Login Page", () => {
     renderWithProviders(<Login />);
 
     expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /forgot your password/i })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
   });
 
   test("calls login on submit", async () => {

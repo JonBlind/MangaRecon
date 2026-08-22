@@ -7,7 +7,7 @@ Registers consistent JSON error responses for:
 '''
 
 import logging
-from fastapi import Request, HTTPException
+from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
@@ -24,6 +24,11 @@ HTTP_DETAIL_MAP: dict[str, tuple[int, str, str]] = {
     "REGISTER_USER_ALREADY_EXISTS": (409, "AUTH_EMAIL_EXISTS", "An account with that email already exists."),
     "VERIFY_USER_BAD_TOKEN": (400, "AUTH_VERIFY_INVALID", "This verification link is invalid or expired."),
     "VERIFY_USER_ALREADY_VERIFIED": (409, "AUTH_ALREADY_VERIFIED", "This email address is already verified."),
+    "RESET_PASSWORD_BAD_TOKEN": (
+        400,
+        "AUTH_RESET_INVALID",
+        "This password reset link is invalid, expired, or already used.",
+    ),
 }
 
 def register_exception_handlers(app):
@@ -64,6 +69,26 @@ def register_exception_handlers(app):
             status_code, code, message = HTTP_DETAIL_MAP[exc.detail]
             logger.info("http mapped %s -> %s", exc.detail, code)
             return JSONResponse(status_code=status_code, content=error(message, detail=code))
+
+        if (
+            isinstance(exc.detail, dict)
+            and exc.detail.get("code") == "RESET_PASSWORD_INVALID_PASSWORD"
+        ):
+            reason = exc.detail.get("reason")
+            message = (
+                reason
+                if isinstance(reason, str) and reason.strip()
+                else "Password does not meet the requirements."
+            )
+            logger.info(
+                "http mapped %s -> %s",
+                "RESET_PASSWORD_INVALID_PASSWORD",
+                "AUTH_PASSWORD_INVALID",
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=error(message, detail="AUTH_PASSWORD_INVALID"),
+            )
 
         # Unmapped HTTPExceptions are treated as infrastructure errors
         if exc.status_code >= 500:

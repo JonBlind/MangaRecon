@@ -32,6 +32,8 @@ def run_isolated_config_import(
         "DEBUG",
         "MANGARECON_ENV",
         "FRONTEND_URL",
+        "PASSWORD_RESET_URL",
+        "PASSWORD_RESET_TOKEN_LIFETIME_MINUTES",
         "EMAIL_DELIVERY_MODE",
         "RESEND_API_KEY",
         "RESEND_FROM_EMAIL",
@@ -296,6 +298,10 @@ def test_test_environment_disables_email_delivery_by_default():
     assert config.settings.email_delivery_mode == "disabled"
 
 
+def test_password_reset_settings_have_secure_defaults():
+    assert config.settings.password_reset_token_lifetime_minutes == 30
+
+
 def test_validate_email_config_rejects_non_resend_production_mode(
     monkeypatch,
 ):
@@ -354,6 +360,10 @@ def test_real_environment_parsing_accepts_production_resend_api(
             ),
             "DEBUG": "false",
             "FRONTEND_URL": "https://mangarecon.example",
+            "PASSWORD_RESET_URL": (
+                "https://mangarecon.example/reset-password"
+            ),
+            "PASSWORD_RESET_TOKEN_LIFETIME_MINUTES": "45",
             "EMAIL_DELIVERY_MODE": "resend",
             "RESEND_API_KEY": "re_fake_test_key",
             "RESEND_FROM_EMAIL": (
@@ -375,6 +385,10 @@ def test_real_environment_parsing_accepts_production_resend_api(
             "assert config.settings.resend_api_base_url "
             "== 'https://api.resend.com'; "
             "assert config.settings.resend_timeout_seconds == 10; "
+            "assert config.settings.password_reset_url "
+            "== 'https://mangarecon.example/reset-password'; "
+            "assert config.settings.password_reset_token_lifetime_minutes "
+            "== 45; "
             "print('production-resend-ok')"
         ),
     )

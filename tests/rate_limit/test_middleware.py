@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import SecretStr
 
-from backend.utils import rate_limit
+from backend.rate_limit.account import AccountRateLimitDecision
+from backend.rate_limit import middleware as rate_limit
 
 
 def response_json(response):
@@ -16,8 +17,10 @@ def response_json(response):
 def make_request(
     path="/mangas",
     *,
+    method="GET",
     headers=None,
     client_host="127.0.0.1",
+    rate_limit_client_ip=None,
     ready=True,
     last_check=0.0,
     check_interval=15.0,
@@ -32,13 +35,19 @@ def make_request(
 
     app = SimpleNamespace(state=state)
 
-    return SimpleNamespace(
+    request = SimpleNamespace(
         url=SimpleNamespace(path=path),
+        method=method,
         app=app,
         headers=headers or {},
         client=SimpleNamespace(host=client_host),
         state=SimpleNamespace(),
     )
+
+    if rate_limit_client_ip is not None:
+        request.state.rate_limit_client_ip = rate_limit_client_ip
+
+    return request
 
 
 def make_middleware(middleware_class):
@@ -524,6 +533,216 @@ async def test_trusted_origin_middleware_sets_client_ip(
     assert result is expected
     assert request.state.rate_limit_client_ip == "2001:db8::1"
     call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["dev", "test"])
+async def test_account_auth_limiter_is_disabled_outside_production(
+    monkeypatch,
+    environment,
+):
+    monkeypatch.setattr(rate_limit, "ENV", environment)
+    check_email_ip = AsyncMock()
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_email_ip",
+        check_email_ip,
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        "/auth/forgot-password",
+        method="POST",
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    check_email_ip.assert_not_awaited()
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_account_auth_limiter_ignores_unrelated_route(monkeypatch):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    check_email_ip = AsyncMock()
+    check_token_ip = AsyncMock()
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_email_ip",
+        check_email_ip,
+    )
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_token_ip",
+        check_token_ip,
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        "/auth/jwt/login",
+        method="POST",
+        rate_limit_client_ip="198.51.100.23",
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    check_email_ip.assert_not_awaited()
+    check_token_ip.assert_not_awaited()
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/register",
+        "/auth/forgot-password",
+        "/auth/request-verify-token",
+    ],
+)
+async def test_account_email_routes_use_strict_ip_limit(
+    monkeypatch,
+    path,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    check_email_ip = AsyncMock(
+        return_value=AccountRateLimitDecision(allowed=True)
+    )
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_email_ip",
+        check_email_ip,
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        path,
+        method="POST",
+        rate_limit_client_ip="198.51.100.23",
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    check_email_ip.assert_awaited_once_with("198.51.100.23")
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/auth/reset-password"),
+        ("POST", "/auth/reset-password"),
+        ("POST", "/auth/verify"),
+    ],
+)
+async def test_account_token_routes_use_strict_ip_limit(
+    monkeypatch,
+    method,
+    path,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    check_token_ip = AsyncMock(
+        return_value=AccountRateLimitDecision(allowed=True)
+    )
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_token_ip",
+        check_token_ip,
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        path,
+        method=method,
+        rate_limit_client_ip="2001:db8::1",
+    )
+    expected = MagicMock()
+    call_next = AsyncMock(return_value=expected)
+
+    result = await middleware.dispatch(request, call_next)
+
+    assert result is expected
+    check_token_ip.assert_awaited_once_with("2001:db8::1")
+    call_next.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_account_auth_limiter_returns_429_with_retry_after(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    check_email_ip = AsyncMock(
+        return_value=AccountRateLimitDecision(
+            allowed=False,
+            retry_after=37,
+        )
+    )
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_email_ip",
+        check_email_ip,
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        "/auth/forgot-password",
+        method="POST",
+        rate_limit_client_ip="198.51.100.23",
+    )
+    call_next = AsyncMock()
+
+    response = await middleware.dispatch(request, call_next)
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "37"
+    assert response_json(response) == {
+        "status": "error",
+        "data": {},
+        "message": "Rate limit exceeded",
+        "detail": "RATE_LIMIT_EXCEEDED",
+    }
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_account_auth_limiter_propagates_storage_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limit, "ENV", "prod")
+    storage_error = rate_limit.AccountRateLimitStorageError(
+        "storage unavailable"
+    )
+    monkeypatch.setattr(
+        rate_limit.account_rate_limiter,
+        "check_email_ip",
+        AsyncMock(side_effect=storage_error),
+    )
+    middleware = make_middleware(
+        rate_limit.AccountAuthRateLimitMiddleware
+    )
+    request = make_request(
+        "/auth/register",
+        method="POST",
+        rate_limit_client_ip="198.51.100.23",
+    )
+
+    with pytest.raises(rate_limit.AccountRateLimitStorageError):
+        await middleware.dispatch(request, AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -1192,6 +1411,37 @@ async def test_safe_middleware_converts_connection_error_to_503(
 
 
 @pytest.mark.asyncio
+async def test_safe_middleware_converts_account_storage_error_to_503(
+    monkeypatch,
+):
+    middleware = make_middleware(
+        rate_limit.SafeSlowAPIMiddleware
+    )
+    request = make_request()
+    log_down = MagicMock()
+    monkeypatch.setattr(
+        middleware,
+        "_log_limiter_down",
+        log_down,
+    )
+
+    response = await middleware.dispatch(
+        request,
+        AsyncMock(
+            side_effect=rate_limit.AccountRateLimitStorageError(
+                "Redis unavailable"
+            )
+        ),
+    )
+
+    assert response.status_code == 503
+    assert response_json(response)["detail"] == (
+        "TEMPORARILY_UNAVAILABLE"
+    )
+    log_down.assert_called_once_with(request)
+
+
+@pytest.mark.asyncio
 async def test_safe_middleware_reraises_unrecognized_exception():
     middleware = make_middleware(
         rate_limit.SafeSlowAPIMiddleware
@@ -1249,6 +1499,16 @@ def test_has_connection_error_uses_exception_class_name():
     assert middleware._has_connection_error(
         RuntimeError("down")
     ) is False
+
+
+def test_has_connection_error_detects_account_limiter_storage_error():
+    middleware = make_middleware(
+        rate_limit.SafeSlowAPIMiddleware
+    )
+
+    assert middleware._has_connection_error(
+        rate_limit.AccountRateLimitStorageError("down")
+    ) is True
 
 
 def test_iter_exceptions_flattens_nested_exception_groups():
@@ -1496,6 +1756,7 @@ def test_register_rate_limiter_adds_all_production_middleware(
         for call in app.add_middleware.call_args_list
     ] == [
         rate_limit.SlowAPIMiddleware,
+        rate_limit.AccountAuthRateLimitMiddleware,
         rate_limit.MaintenanceModeMiddleware,
         rate_limit.SafeSlowAPIMiddleware,
         rate_limit.TrustedOriginMiddleware,

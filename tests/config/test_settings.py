@@ -39,6 +39,12 @@ def run_isolated_settings_import(
         "REDIS_OPERATION_TIMEOUT_SECONDS",
         "REDIS_READY_TIMEOUT_SECONDS",
         "REDIS_MAX_CONNECTIONS",
+        "ACCOUNT_EMAIL_IP_15_MINUTE_LIMIT",
+        "ACCOUNT_EMAIL_IP_DAILY_LIMIT",
+        "ACCOUNT_EMAIL_RECIPIENT_COOLDOWN_SECONDS",
+        "ACCOUNT_EMAIL_RECIPIENT_HOURLY_LIMIT",
+        "ACCOUNT_EMAIL_RECIPIENT_DAILY_LIMIT",
+        "ACCOUNT_TOKEN_IP_MINUTE_LIMIT",
     ):
         env.pop(name, None)
         env.pop(name.lower(), None)
@@ -544,6 +550,87 @@ def test_redis_connection_settings_accept_environment_overrides(
         f"stderr:\n{result.stderr}"
     )
     assert "redis-overrides-ok" in result.stdout
+
+
+def test_account_rate_limit_settings_use_protective_defaults(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": "https://mangarecon.example",
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.account_email_ip_15_minute_limit == 5; "
+            "assert configured.account_email_ip_daily_limit == 20; "
+            "assert configured.account_email_recipient_cooldown_seconds == 60; "
+            "assert configured.account_email_recipient_hourly_limit == 3; "
+            "assert configured.account_email_recipient_daily_limit == 5; "
+            "assert configured.account_token_ip_minute_limit == 10; "
+            "print('account-rate-defaults-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "account-rate-defaults-ok" in result.stdout
+
+
+def test_account_rate_limit_settings_accept_environment_overrides(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": "https://mangarecon.example",
+            "ACCOUNT_EMAIL_IP_15_MINUTE_LIMIT": "7",
+            "ACCOUNT_EMAIL_IP_DAILY_LIMIT": "24",
+            "ACCOUNT_EMAIL_RECIPIENT_COOLDOWN_SECONDS": "90",
+            "ACCOUNT_EMAIL_RECIPIENT_HOURLY_LIMIT": "4",
+            "ACCOUNT_EMAIL_RECIPIENT_DAILY_LIMIT": "8",
+            "ACCOUNT_TOKEN_IP_MINUTE_LIMIT": "12",
+        },
+        code=(
+            "from backend.config import settings; "
+            "configured = settings.settings; "
+            "assert configured.account_email_ip_15_minute_limit == 7; "
+            "assert configured.account_email_ip_daily_limit == 24; "
+            "assert configured.account_email_recipient_cooldown_seconds == 90; "
+            "assert configured.account_email_recipient_hourly_limit == 4; "
+            "assert configured.account_email_recipient_daily_limit == 8; "
+            "assert configured.account_token_ip_minute_limit == 12; "
+            "print('account-rate-overrides-ok')"
+        ),
+    )
+
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "account-rate-overrides-ok" in result.stdout
+
+
+def test_account_rate_limit_settings_reject_zero(
+    tmp_path,
+):
+    result = run_isolated_settings_import(
+        tmp_path=tmp_path,
+        environment={
+            "MANGARECON_ENV": "prod",
+            "FRONTEND_ORIGINS": "https://mangarecon.example",
+            "ACCOUNT_EMAIL_RECIPIENT_DAILY_LIMIT": "0",
+        },
+        code="from backend.config import settings",
+    )
+
+    assert result.returncode != 0
+    assert "account_email_recipient_daily_limit" in result.stderr
 
 def test_mangaupdates_settings_use_safe_defaults(
     tmp_path,

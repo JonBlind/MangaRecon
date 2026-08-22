@@ -310,6 +310,15 @@ async def test_rate_limit_handler_returns_standard_429_response(
             "AUTH_ALREADY_VERIFIED",
             "This email address is already verified.",
         ),
+        (
+            "RESET_PASSWORD_BAD_TOKEN",
+            400,
+            "AUTH_RESET_INVALID",
+            (
+                "This password reset link is invalid, expired, "
+                "or already used."
+            ),
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -455,6 +464,39 @@ async def test_http_handler_logs_server_errors_at_error_level(
         exc_info=True,
     )
     log_info.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_http_handler_maps_invalid_reset_password_reason(
+    monkeypatch,
+    registered_handlers,
+):
+    log_info = MagicMock()
+    monkeypatch.setattr(errors.logger, "info", log_info)
+
+    exception = HTTPException(
+        status_code=400,
+        detail={
+            "code": "RESET_PASSWORD_INVALID_PASSWORD",
+            "reason": "Password should be at least 8 characters.",
+        },
+    )
+
+    handler = registered_handlers[HTTPException]
+    response = await handler(MagicMock(), exception)
+
+    assert response.status_code == 400
+    assert response_json(response) == {
+        "status": "error",
+        "data": {},
+        "message": "Password should be at least 8 characters.",
+        "detail": "AUTH_PASSWORD_INVALID",
+    }
+    log_info.assert_called_once_with(
+        "http mapped %s -> %s",
+        "RESET_PASSWORD_INVALID_PASSWORD",
+        "AUTH_PASSWORD_INVALID",
+    )
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,28 @@ export async function verifyEmail(token: string) {
   });
 }
 
+export async function requestPasswordReset(email: string) {
+  return apiFetch<void>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function validatePasswordResetToken(token: string) {
+  const query = new URLSearchParams({ token });
+
+  return apiFetch<void>(`/auth/reset-password?${query.toString()}`, {
+    method: "GET",
+  });
+}
+
+export async function resetPassword(token: string, password: string) {
+  return apiFetch<void>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+}
+
 export async function me(): Promise<UserMe | null> {
   try {
     const res = await apiFetch<UserMe>("/profiles/me", { method: "GET" });

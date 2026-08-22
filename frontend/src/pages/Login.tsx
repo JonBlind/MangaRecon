@@ -97,6 +97,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
+            <div className="text-right text-sm">
+              <Link className="underline" to="/forgot-password">
+                Forgot your password?
+              </Link>
+            </div>
           </div>
 
           {errorMsg ? (

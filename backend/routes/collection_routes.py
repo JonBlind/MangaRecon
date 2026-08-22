@@ -35,7 +35,7 @@ from backend.services.collection_service import (
     add_manga_bulk_to_user_collection,
     remove_manga_from_user_collection,
 )
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 from backend.utils.response import success
 from backend.utils.domain_exceptions import DomainError
 

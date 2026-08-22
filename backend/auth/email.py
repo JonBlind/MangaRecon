@@ -1,4 +1,4 @@
-"""Verification-email creation and delivery through Resend."""
+"""Account-email creation and delivery through Resend."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmailDeliveryError(RuntimeError):
-    """Raised when a verification email cannot be delivered."""
+    """Raised when an account email cannot be delivered."""
 
 
 def build_verification_url(token: str) -> str:
@@ -28,6 +28,23 @@ def build_verification_url(token: str) -> str:
 
     base_url = settings.frontend_url.rstrip("/")
     return f"{base_url}/verify-email?{urlencode({'token': token})}"
+
+
+def build_password_reset_url(token: str) -> str:
+    """Build the frontend URL that consumes a password-reset token."""
+    configured_url = settings.password_reset_url
+
+    if configured_url:
+        base_url = configured_url.rstrip("/")
+    elif settings.frontend_url:
+        base_url = f"{settings.frontend_url.rstrip('/')}/reset-password"
+    else:
+        raise EmailDeliveryError(
+            "PASSWORD_RESET_URL or FRONTEND_URL is not configured."
+        )
+
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}{urlencode({'token': token})}"
 
 
 def build_verification_email(
@@ -71,6 +88,48 @@ def build_verification_email(
     }
 
 
+def build_password_reset_email(
+    *,
+    recipient: str,
+    reset_url: str,
+) -> dict[str, Any]:
+    """Create a password-reset payload for Resend's send-email API."""
+    if not settings.resend_from_email:
+        raise EmailDeliveryError("RESEND_FROM_EMAIL is not configured.")
+
+    lifetime = settings.password_reset_token_lifetime_minutes
+    plain_text = (
+        "A password reset was requested for your MangaRecon account.\n\n"
+        "Choose a new password by opening this link:\n"
+        f"{reset_url}\n\n"
+        f"This link expires in {lifetime} minutes and can only be used once. "
+        "If you did not request a password reset, you can ignore this email."
+    )
+    safe_url = escape(reset_url, quote=True)
+    html = (
+        "<!doctype html>"
+        "<html><body>"
+        "<p>A password reset was requested for your MangaRecon account.</p>"
+        f'<p><a href="{safe_url}">Choose a new password</a></p>'
+        f"<p>This link expires in {lifetime} minutes and can only be used once. "
+        "If you did not request a password reset, you can ignore this email.</p>"
+        "</body></html>"
+    )
+
+    return {
+        "from": formataddr(
+            (
+                settings.resend_from_name,
+                str(settings.resend_from_email),
+            )
+        ),
+        "to": [recipient],
+        "subject": "Reset your MangaRecon password",
+        "text": plain_text,
+        "html": html,
+    }
+
+
 def build_verification_idempotency_key(
     *,
     recipient: str,
@@ -81,6 +140,18 @@ def build_verification_idempotency_key(
         f"{recipient.casefold()}\0{token}".encode("utf-8")
     ).hexdigest()
     return f"mangarecon-verification-{digest}"
+
+
+def build_password_reset_idempotency_key(
+    *,
+    recipient: str,
+    token: str,
+) -> str:
+    """Build a stable, opaque Resend key for one password-reset token."""
+    digest = sha256(
+        f"{recipient.casefold()}\0{token}".encode("utf-8")
+    ).hexdigest()
+    return f"mangarecon-password-reset-{digest}"
 
 
 async def _send_resend_email(
@@ -124,11 +195,11 @@ async def _send_resend_email(
 
     if not 200 <= response.status_code < 300:
         logger.error(
-            "Resend rejected verification email (status=%s, request_id=%s).",
+            "Resend rejected account email (status=%s, request_id=%s).",
             response.status_code,
             response.headers.get("x-request-id"),
         )
-        raise EmailDeliveryError("Verification email delivery failed.")
+        raise EmailDeliveryError("Account email delivery failed.")
 
     try:
         response_payload = response.json()
@@ -182,5 +253,41 @@ async def send_verification_email(
     )
     logger.info(
         "Verification email accepted by Resend (email_id=%s).",
+        email_id,
+    )
+
+
+async def send_password_reset_email(
+    *,
+    recipient: str,
+    token: str,
+) -> None:
+    """Deliver a reset link in disabled, console, or Resend mode."""
+    if settings.email_delivery_mode == "disabled":
+        return
+
+    reset_url = build_password_reset_url(token)
+
+    if settings.email_delivery_mode == "console":
+        logger.warning(
+            "Development password-reset link for %s: %s",
+            recipient,
+            reset_url,
+        )
+        return
+
+    payload = build_password_reset_email(
+        recipient=recipient,
+        reset_url=reset_url,
+    )
+    email_id = await _send_resend_email(
+        payload,
+        idempotency_key=build_password_reset_idempotency_key(
+            recipient=recipient,
+            token=token,
+        ),
+    )
+    logger.info(
+        "Password-reset email accepted by Resend (email_id=%s).",
         email_id,
     )

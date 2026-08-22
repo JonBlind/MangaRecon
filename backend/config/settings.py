@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     redis_ready_timeout_seconds: float = Field(default=5.0, gt=0)
     redis_max_connections: int = Field(default=4, ge=1)
 
+    # Account email and token abuse limits.
+    account_email_ip_15_minute_limit: int = Field(default=5, ge=1)
+    account_email_ip_daily_limit: int = Field(default=20, ge=1)
+    account_email_recipient_cooldown_seconds: int = Field(default=60, ge=1)
+    account_email_recipient_hourly_limit: int = Field(default=3, ge=1)
+    account_email_recipient_daily_limit: int = Field(default=5, ge=1)
+    account_token_ip_minute_limit: int = Field(default=10, ge=1)
+
     mangaupdates_base_url: str = ("https://api.mangaupdates.com/v1")
     mangaupdates_timeout_seconds: float = Field(default=10.0, gt=0)
     mangaupdates_min_request_interval_seconds: float = Field(default=1.0, ge=0)

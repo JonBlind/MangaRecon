@@ -14,11 +14,30 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from backend.rate_limit.account import (
+    AccountRateLimitStorageError,
+    account_rate_limiter,
+)
 from backend.cache.redis import get_redis_url
 from backend.config.settings import ENV, settings as app_settings
 from backend.utils.response import error
 
 logger = logging.getLogger(__name__)
+
+_ACCOUNT_EMAIL_REQUEST_PATHS = frozenset(
+    {
+        "/auth/register",
+        "/auth/forgot-password",
+        "/auth/request-verify-token",
+    }
+)
+_ACCOUNT_TOKEN_REQUESTS = frozenset(
+    {
+        ("GET", "/auth/reset-password"),
+        ("POST", "/auth/reset-password"),
+        ("POST", "/auth/verify"),
+    }
+)
 
 _HEADER_NAME_PATTERN = re.compile(
     r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$"
@@ -300,6 +319,40 @@ class TrustedOriginMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class AccountAuthRateLimitMiddleware(BaseHTTPMiddleware):
+    """Apply stricter IP limits to account-email and token endpoints."""
+
+    async def dispatch(self, request: Request, call_next):
+        if ENV != "prod":
+            return await call_next(request)
+
+        method = request.method.upper()
+        path = request.url.path
+
+        check_limit = None
+        if method == "POST" and path in _ACCOUNT_EMAIL_REQUEST_PATHS:
+            check_limit = account_rate_limiter.check_email_ip
+        elif (method, path) in _ACCOUNT_TOKEN_REQUESTS:
+            check_limit = account_rate_limiter.check_token_ip
+
+        if check_limit is None:
+            return await call_next(request)
+
+        decision = await check_limit(get_rate_limit_key(request))
+        if decision.allowed:
+            return await call_next(request)
+
+        retry_after = max(1, decision.retry_after or 1)
+        return JSONResponse(
+            status_code=429,
+            content=error(
+                "Rate limit exceeded",
+                detail="RATE_LIMIT_EXCEEDED",
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 class SafeSlowAPIMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
@@ -356,7 +409,10 @@ class SafeSlowAPIMiddleware(BaseHTTPMiddleware):
 
     def _has_connection_error(self, exc: BaseException) -> bool:
         for sub in self._iter_exceptions(exc):
-            if sub.__class__.__name__ == "ConnectionError":
+            if (
+                isinstance(sub, AccountRateLimitStorageError)
+                or sub.__class__.__name__ == "ConnectionError"
+            ):
                 return True
         return False
 
@@ -438,6 +494,7 @@ def register_rate_limiter(app) -> None:
         return
 
     app.add_middleware(SlowAPIMiddleware)
+    app.add_middleware(AccountAuthRateLimitMiddleware)
     app.add_middleware(MaintenanceModeMiddleware)
     app.add_middleware(SafeSlowAPIMiddleware)
     app.add_middleware(TrustedOriginMiddleware)

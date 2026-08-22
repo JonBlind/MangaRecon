@@ -7,7 +7,7 @@ from backend.db.client_db import ClientReadDatabase
 from backend.dependencies import get_public_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
 from backend.utils.response import success
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 import logging
 
 logger = logging.getLogger(__name__)

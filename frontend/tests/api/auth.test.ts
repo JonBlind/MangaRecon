@@ -5,7 +5,10 @@ import {
   logout,
   me,
   register,
+  requestPasswordReset,
   requestVerificationEmail,
+  resetPassword,
+  validatePasswordResetToken,
   verifyEmail,
 } from "../../src/api/auth";
 
@@ -93,6 +96,42 @@ describe("auth api", () => {
     expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/verify", {
       method: "POST",
       body: JSON.stringify({ token: "verification-token" }),
+    });
+  });
+
+  test("requests a password-reset email", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ data: undefined });
+
+    await requestPasswordReset("test@example.com");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email: "test@example.com" }),
+    });
+  });
+
+  test("validates an encoded password-reset token", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ data: undefined });
+
+    await validatePasswordResetToken("token+with/slash=");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/auth/reset-password?token=token%2Bwith%2Fslash%3D",
+      { method: "GET" },
+    );
+  });
+
+  test("submits a new password with its reset token", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ data: undefined });
+
+    await resetPassword("reset-token", "newpassword123");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({
+        token: "reset-token",
+        password: "newpassword123",
+      }),
     });
   });
 

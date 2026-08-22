@@ -4,7 +4,7 @@ from backend.db.client_db import ClientReadDatabase
 from backend.dependencies import get_public_read_db
 from backend.utils.ordering import MangaOrderField, OrderDirection
 from backend.utils.response import success
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 from backend.services.manga_service import get_manga_detail, filter_manga_page
 import logging
 

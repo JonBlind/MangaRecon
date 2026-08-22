@@ -18,7 +18,7 @@ from backend.utils.ordering import OrderDirection, RecommendationOrderField
 from backend.dependencies import get_user_read_db, get_public_read_db
 from backend.cache.redis import get_redis_cache
 from backend.utils.response import success
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 from backend.schemas.recommendation import RecommendationQueryListRequest
 from backend.services.recommendation_service import (
     get_recommendations_for_collection_page,

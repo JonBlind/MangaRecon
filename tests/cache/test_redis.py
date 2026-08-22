@@ -261,6 +261,12 @@ def test_get_client_returns_existing_client_without_creating_another(
     from_url.assert_not_called()
 
 
+def test_public_get_client_returns_shared_client(redis_client):
+    cache = attach_client(RedisCache(), redis_client)
+
+    assert cache.get_client() is redis_client
+
+
 def test_resolve_ttl_prefers_method_override():
     cache = RedisCache(
         ttl_default=600,

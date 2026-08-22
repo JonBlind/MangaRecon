@@ -8,7 +8,7 @@ from backend.auth.dependencies import current_active_verified_user as current_us
 from backend.schemas.rating import RatingCreate
 from backend.db.models.user import User
 from backend.utils.response import success
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 
 from backend.services.rating_service import (
     create_or_update_rating,

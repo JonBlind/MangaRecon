@@ -11,7 +11,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from backend.utils.errors import register_exception_handlers
-from backend.utils.rate_limit import register_rate_limiter, rate_limit_storage_ready, validate_rate_limit_config
+from backend.rate_limit.middleware import (
+    rate_limit_storage_ready,
+    register_rate_limiter,
+    validate_rate_limit_config,
+)
 from backend.cache.redis import get_redis_cache
 from backend.auth.config import validate_email_config
 from backend.config.settings import ENV, settings, origins

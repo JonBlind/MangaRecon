@@ -6,7 +6,7 @@ from backend.auth.dependencies import current_active_verified_user as current_us
 from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword
 from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success
-from backend.utils.rate_limit import limiter
+from backend.rate_limit.middleware import limiter
 from backend.utils.domain_exceptions import DomainError
 from backend.services.profile_service import (
     get_my_profile as svc_get_my_profile,

@@ -92,6 +92,10 @@ class RedisCache:
                 max_connections=app_settings.redis_max_connections,
             )
         return self._client
+
+    def get_client(self) -> Redis:
+        """Return the shared client for callers that own error handling."""
+        return self._get_client()
     
     def _resolve_ttl(self, ttl: int | None) -> int | None:
         if ttl is not None:

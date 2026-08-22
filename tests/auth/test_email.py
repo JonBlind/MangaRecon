@@ -50,6 +50,40 @@ def test_build_verification_url_uses_frontend_and_encodes_token(
     )
 
 
+def test_build_password_reset_url_uses_configured_url_and_encodes_token(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        email.settings,
+        "password_reset_url",
+        "https://mangarecon.example/account/reset?source=email",
+    )
+
+    result = email.build_password_reset_url("token+with/slash=")
+
+    assert result == (
+        "https://mangarecon.example/account/reset?source=email&"
+        "token=token%2Bwith%2Fslash%3D"
+    )
+
+
+def test_build_password_reset_url_falls_back_to_frontend_url(
+    monkeypatch,
+):
+    monkeypatch.setattr(email.settings, "password_reset_url", None)
+    monkeypatch.setattr(
+        email.settings,
+        "frontend_url",
+        "https://mangarecon.example/",
+    )
+
+    result = email.build_password_reset_url("reset-token")
+
+    assert result == (
+        "https://mangarecon.example/reset-password?token=reset-token"
+    )
+
+
 def test_build_verification_email_contains_safe_link(
     monkeypatch,
 ):
@@ -83,6 +117,44 @@ def test_build_verification_email_contains_safe_link(
     assert "<script>" not in payload["html"]
 
 
+def test_build_password_reset_email_contains_safe_one_time_link(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        email.settings,
+        "resend_from_email",
+        "noreply@mangarecon.example",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "resend_from_name",
+        "MangaRecon",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "password_reset_token_lifetime_minutes",
+        30,
+    )
+
+    payload = email.build_password_reset_email(
+        recipient="reader@example.com",
+        reset_url=(
+            "https://mangarecon.example/reset-password?"
+            "token=abc&next=<script>"
+        ),
+    )
+
+    assert payload["subject"] == "Reset your MangaRecon password"
+    assert payload["from"] == (
+        "MangaRecon <noreply@mangarecon.example>"
+    )
+    assert payload["to"] == ["reader@example.com"]
+    assert "expires in 30 minutes" in payload["text"]
+    assert "only be used once" in payload["text"]
+    assert "token=abc&amp;next=&lt;script&gt;" in payload["html"]
+    assert "<script>" not in payload["html"]
+
+
 def test_verification_idempotency_key_is_stable_and_opaque():
     first = email.build_verification_idempotency_key(
         recipient="Reader@Example.com",
@@ -101,6 +173,27 @@ def test_verification_idempotency_key_is_stable_and_opaque():
     assert first != different
     assert first.startswith("mangarecon-verification-")
     assert "sensitive-verification-token" not in first
+    assert len(first) <= 256
+
+
+def test_password_reset_idempotency_key_is_stable_and_opaque():
+    first = email.build_password_reset_idempotency_key(
+        recipient="Reader@Example.com",
+        token="sensitive-reset-token",
+    )
+    same = email.build_password_reset_idempotency_key(
+        recipient="reader@example.com",
+        token="sensitive-reset-token",
+    )
+    different = email.build_password_reset_idempotency_key(
+        recipient="reader@example.com",
+        token="another-token",
+    )
+
+    assert first == same
+    assert first != different
+    assert first.startswith("mangarecon-password-reset-")
+    assert "sensitive-reset-token" not in first
     assert len(first) <= 256
 
 
@@ -128,6 +221,30 @@ async def test_disabled_delivery_does_not_build_or_send(
     )
 
     await email.send_verification_email(
+        recipient="reader@example.com",
+        token="secret-token",
+    )
+
+    build_url.assert_not_called()
+    send_resend.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_disabled_password_reset_delivery_does_not_build_or_send(
+    monkeypatch,
+):
+    build_url = MagicMock()
+    send_resend = AsyncMock()
+
+    monkeypatch.setattr(
+        email.settings,
+        "email_delivery_mode",
+        "disabled",
+    )
+    monkeypatch.setattr(email, "build_password_reset_url", build_url)
+    monkeypatch.setattr(email, "_send_resend_email", send_resend)
+
+    await email.send_password_reset_email(
         recipient="reader@example.com",
         token="secret-token",
     )
@@ -174,6 +291,43 @@ async def test_console_delivery_logs_development_link(
         "reader@example.com",
         (
             "http://localhost:5173/verify-email?"
+            "token=development-token"
+        ),
+    )
+    send_resend.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_console_password_reset_delivery_logs_development_link(
+    monkeypatch,
+):
+    log_warning = MagicMock()
+    send_resend = AsyncMock()
+
+    monkeypatch.setattr(
+        email.settings,
+        "email_delivery_mode",
+        "console",
+    )
+    monkeypatch.setattr(email.settings, "password_reset_url", None)
+    monkeypatch.setattr(
+        email.settings,
+        "frontend_url",
+        "http://localhost:5173",
+    )
+    monkeypatch.setattr(email.logger, "warning", log_warning)
+    monkeypatch.setattr(email, "_send_resend_email", send_resend)
+
+    await email.send_password_reset_email(
+        recipient="reader@example.com",
+        token="development-token",
+    )
+
+    log_warning.assert_called_once_with(
+        "Development password-reset link for %s: %s",
+        "reader@example.com",
+        (
+            "http://localhost:5173/reset-password?"
             "token=development-token"
         ),
     )
@@ -234,6 +388,48 @@ async def test_resend_delivery_builds_and_dispatches_payload(
     log_info.assert_called_once_with(
         "Verification email accepted by Resend (email_id=%s).",
         "email_123",
+    )
+
+
+@pytest.mark.asyncio
+async def test_resend_password_reset_builds_and_dispatches_payload(
+    monkeypatch,
+):
+    send_resend = AsyncMock(return_value="email_reset_123")
+    log_info = MagicMock()
+
+    monkeypatch.setattr(email.settings, "email_delivery_mode", "resend")
+    monkeypatch.setattr(email.settings, "password_reset_url", None)
+    monkeypatch.setattr(
+        email.settings,
+        "frontend_url",
+        "https://mangarecon.example",
+    )
+    monkeypatch.setattr(
+        email.settings,
+        "resend_from_email",
+        "noreply@mangarecon.example",
+    )
+    monkeypatch.setattr(email.settings, "resend_from_name", "MangaRecon")
+    monkeypatch.setattr(email, "_send_resend_email", send_resend)
+    monkeypatch.setattr(email.logger, "info", log_info)
+
+    await email.send_password_reset_email(
+        recipient="reader@example.com",
+        token="production-reset-token",
+    )
+
+    send_resend.assert_awaited_once()
+    payload = send_resend.await_args.args[0]
+    idempotency_key = send_resend.await_args.kwargs["idempotency_key"]
+
+    assert payload["to"] == ["reader@example.com"]
+    assert payload["subject"] == "Reset your MangaRecon password"
+    assert "production-reset-token" in payload["text"]
+    assert "production-reset-token" not in idempotency_key
+    log_info.assert_called_once_with(
+        "Password-reset email accepted by Resend (email_id=%s).",
+        "email_reset_123",
     )
 
 
@@ -341,7 +537,7 @@ async def test_resend_sender_rejects_unsuccessful_status(
 
     with pytest.raises(
         email.EmailDeliveryError,
-        match="Verification email delivery failed",
+        match="Account email delivery failed",
     ):
         await email._send_resend_email(
             {},
@@ -354,7 +550,7 @@ async def test_resend_sender_rejects_unsuccessful_status(
         )
 
     log_error.assert_called_once_with(
-        "Resend rejected verification email (status=%s, request_id=%s).",
+        "Resend rejected account email (status=%s, request_id=%s).",
         403,
         "request_789",
     )
