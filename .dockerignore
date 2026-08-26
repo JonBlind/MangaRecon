@@ -1,45 +1,11 @@
-# Git
-.git
-.gitignore
+**
 
-# Environment files and secrets
-**/.env
-**/.env.*
-!**/.env.example
+!Dockerfile
+!requirements-prod.txt
+!alembic.ini
 
-# Python environments and generated files
-.venv/
-.venv-*/
-venv/
-**/__pycache__/
-**/*.py[cod]
-**/.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
+!backend/
+!backend/**
 
-# Frontend dependencies and build output
-frontend/node_modules/
-frontend/dist/
-frontend/coverage/
-frontend/.vite/
-frontend/*.tsbuildinfo
-
-# General build output
-build/
-dist/
-
-# Editors and operating-system files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Logs and temporary files
-*.log
-*.tmp
-*.zip
+!alembic/
+!alembic/**

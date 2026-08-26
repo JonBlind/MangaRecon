@@ -4,7 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
-    PORT=8000
+    PORT=8000 \
+    AWS_LWA_PORT=8000 \
+    AWS_LWA_READINESS_CHECK_PATH=/healthz \
+    AWS_LWA_READINESS_CHECK_HEALTHY_STATUS=200-399
+
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 \
+    /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /app
 
