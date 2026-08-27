@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "A full-stack manga recommendation application."
 requires-python = ">=3.12"
 dependencies = [
+    "boto3",
+
     "fastapi",
     "uvicorn[standard]",
 
