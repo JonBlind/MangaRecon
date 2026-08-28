@@ -1,4 +1,4 @@
-FROM python:3.13.14-slim-trixie
+FROM python:3.13.15-alpine3.23
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -9,13 +9,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AWS_LWA_READINESS_CHECK_PATH=/healthz \
     AWS_LWA_READINESS_CHECK_HEALTHY_STATUS=200-399
 
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates
+
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 \
     /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /app
 
-RUN addgroup --system app \
-    && adduser --system --ingroup app app
+RUN addgroup -S app \
+    && adduser -S -G app app
 
 COPY requirements-prod.txt ./
 
