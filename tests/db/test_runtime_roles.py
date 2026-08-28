@@ -13,6 +13,7 @@ from backend.db.runtime_roles import (
     validate_migration_database_url,
     validate_runtime_roles,
 )
+from backend.db import runtime_roles
 
 
 def test_direct_psycopg_migration_url_is_accepted() -> None:
@@ -112,6 +113,13 @@ def test_runtime_role_url_requires_asyncpg_driver() -> None:
 def test_role_provisioning_creates_and_grants_connect() -> None:
     connection = Mock()
     connection.info.dbname = "mangarecon"
+    connection.execute.return_value.fetchone.return_value = (
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
     credential = RuntimeRoleCredential(
         role_name="UserManager",
         password="secret",
@@ -123,12 +131,19 @@ def test_role_provisioning_creates_and_grants_connect() -> None:
     ):
         provision_runtime_roles(connection, (credential,))
 
-    assert connection.execute.call_count == 2
+    assert connection.execute.call_count == 3
 
 
 def test_existing_neon_role_has_privileged_membership_removed() -> None:
     connection = Mock()
     connection.info.dbname = "mangarecon"
+    connection.execute.return_value.fetchone.return_value = (
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
     credential = RuntimeRoleCredential(
         role_name="UserManager",
         password="secret",
@@ -146,7 +161,44 @@ def test_existing_neon_role_has_privileged_membership_removed() -> None:
     ):
         provision_runtime_roles(connection, (credential,))
 
-    assert connection.execute.call_count == 3
+    assert connection.execute.call_count == 4
+
+
+def test_runtime_role_attribute_validation_accepts_unprivileged_role() -> None:
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = (
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
+
+    runtime_roles._validate_runtime_role_attributes(
+        connection,
+        "UserManager",
+    )
+
+
+def test_runtime_role_attribute_validation_rejects_privileged_role() -> None:
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = (
+        False,
+        True,
+        False,
+        False,
+        True,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        runtime_roles._validate_runtime_role_attributes(
+            connection,
+            "UserManager",
+        )
+
+    message = str(exc_info.value)
+    assert "CREATEDB" in message
+    assert "BYPASSRLS" in message
 
 
 def test_runtime_role_validation_accepts_all_roles() -> None:

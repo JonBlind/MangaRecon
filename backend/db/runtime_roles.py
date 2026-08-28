@@ -21,6 +21,14 @@ REQUIRED_RUNTIME_ROLES = (
     MANGA_READER_ROLE,
 )
 
+PROHIBITED_RUNTIME_ROLE_ATTRIBUTES = (
+    "SUPERUSER",
+    "CREATEDB",
+    "CREATEROLE",
+    "REPLICATION",
+    "BYPASSRLS",
+)
+
 RUNTIME_ROLE_URLS = (
     ("UserWriterDB", USER_WRITER_ROLE),
     ("UserReaderDB", USER_READER_ROLE),
@@ -145,6 +153,48 @@ def _has_neon_superuser_membership(
     return result.fetchone() is not None
 
 
+def _validate_runtime_role_attributes(
+    connection: PsycopgConnection,
+    role_name: str,
+) -> None:
+    """Reject runtime roles that retain privileged PostgreSQL attributes."""
+    result = connection.execute(
+        """
+        SELECT
+            rolsuper,
+            rolcreatedb,
+            rolcreaterole,
+            rolreplication,
+            rolbypassrls
+        FROM pg_catalog.pg_roles
+        WHERE rolname = %s
+        """,
+        (role_name,),
+    )
+    attributes = result.fetchone()
+    if attributes is None:
+        raise RuntimeError(
+            f"Runtime database role {role_name} does not exist."
+        )
+
+    prohibited = tuple(
+        attribute_name
+        for attribute_name, enabled in zip(
+            PROHIBITED_RUNTIME_ROLE_ATTRIBUTES,
+            attributes,
+            strict=True,
+        )
+        if enabled
+    )
+    if prohibited:
+        raise RuntimeError(
+            f"Runtime database role {role_name} retains prohibited "
+            "attributes: "
+            + ", ".join(prohibited)
+            + "."
+        )
+
+
 def provision_runtime_roles(
     connection: PsycopgConnection,
     credentials: Collection[RuntimeRoleCredential],
@@ -168,8 +218,7 @@ def provision_runtime_roles(
                 """
                 ALTER ROLE {} WITH
                     LOGIN PASSWORD {}
-                    NOSUPERUSER NOCREATEDB NOCREATEROLE
-                    NOINHERIT NOREPLICATION NOBYPASSRLS
+                    NOINHERIT
                 """
             ).format(identifier, password)
         else:
@@ -177,12 +226,15 @@ def provision_runtime_roles(
                 """
                 CREATE ROLE {} WITH
                     LOGIN PASSWORD {}
-                    NOSUPERUSER NOCREATEDB NOCREATEROLE
-                    NOINHERIT NOREPLICATION NOBYPASSRLS
+                    NOINHERIT
                 """
             ).format(identifier, password)
 
         connection.execute(statement)
+        _validate_runtime_role_attributes(
+            connection,
+            credential.role_name,
+        )
         connection.execute(
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                 sql.Identifier(connection.info.dbname),
