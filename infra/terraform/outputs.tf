@@ -27,3 +27,18 @@ output "backend_runtime_secret_name" {
   description = "Secrets Manager name populated outside Terraform for backend startup."
   value       = aws_secretsmanager_secret.backend_runtime.name
 }
+
+output "frontend_bucket_name" {
+  description = "Private S3 bucket containing the compiled frontend assets."
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "frontend_cloudfront_distribution_id" {
+  description = "CloudFront distribution used to publish the frontend."
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "frontend_url" {
+  description = "Canonical HTTPS URL for the MangaRecon frontend."
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}
