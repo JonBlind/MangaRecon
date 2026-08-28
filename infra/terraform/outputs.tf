@@ -22,3 +22,8 @@ output "backend_ecr_repository_url" {
   description = "ECR repository URL used when tagging backend images."
   value       = aws_ecr_repository.backend.repository_url
 }
+
+output "backend_runtime_secret_name" {
+  description = "Secrets Manager name populated outside Terraform for backend startup."
+  value       = aws_secretsmanager_secret.backend_runtime.name
+}
