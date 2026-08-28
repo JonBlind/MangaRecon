@@ -40,5 +40,5 @@ output "frontend_cloudfront_distribution_id" {
 
 output "frontend_url" {
   description = "Canonical HTTPS URL for the MangaRecon frontend."
-  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  value       = "https://mangarecon.com"
 }
