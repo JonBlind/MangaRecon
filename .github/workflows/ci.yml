@@ -52,10 +52,10 @@ jobs:
       EMAIL_DELIVERY_MODE: disabled
       REDIS_URL: redis://localhost:6379/0
       DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/manga_test
-      UserWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
-      UserReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
-      MangaWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
-      MangaReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      UserWriterDB: postgresql+asyncpg://UserManager:postgres@localhost:5432/manga_test
+      UserReaderDB: postgresql+asyncpg://UserReader:postgres@localhost:5432/manga_test
+      MangaWriterDB: postgresql+asyncpg://MangaManager:postgres@localhost:5432/manga_test
+      MangaReaderDB: postgresql+asyncpg://MangaReader:postgres@localhost:5432/manga_test
 
     steps:
       - name: Check out repository
@@ -73,6 +73,9 @@ jobs:
           python -m pip install --upgrade "pip==26.2"
           python -m pip install --requirement requirements-dev.txt
           python -m pip check
+
+      - name: Provision test database roles
+        run: python -m backend.cli.bootstrap_database_roles
 
       - name: Apply test database migrations
         run: python -m alembic upgrade head
@@ -107,6 +110,8 @@ jobs:
         run: npm run typecheck
 
       - name: Run frontend test suite
+        env:
+          VITE_API_BASE_URL: http://localhost:8000
         run: npm run test:run
 
       - name: Build production frontend
@@ -170,7 +175,11 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Initialize Terraform without the remote backend
-        run: terraform init -backend=false -input=false
+        run: |
+          if [ -f backend.tf ]; then
+            mv backend.tf backend.tf.ci-disabled
+          fi
+          terraform init -backend=false -input=false
 
       - name: Validate Terraform
         run: terraform validate
