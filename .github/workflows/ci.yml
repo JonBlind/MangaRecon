@@ -46,16 +46,16 @@ jobs:
 
     env:
       MANGARECON_ENV: test
-      DEBUG: "false"
+      DEBUG: "true"
       AUTH_SECRET: ci-only-auth-secret
       FRONTEND_ORIGINS: http://localhost:5173
       EMAIL_DELIVERY_MODE: disabled
       REDIS_URL: redis://localhost:6379/0
       DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/manga_test
-      UserWriterDB: postgresql+asyncpg://UserManager:postgres@localhost:5432/manga_test
-      UserReaderDB: postgresql+asyncpg://UserReader:postgres@localhost:5432/manga_test
-      MangaWriterDB: postgresql+asyncpg://MangaManager:postgres@localhost:5432/manga_test
-      MangaReaderDB: postgresql+asyncpg://MangaReader:postgres@localhost:5432/manga_test
+      UserWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      UserReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      MangaWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      MangaReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
 
     steps:
       - name: Check out repository
@@ -74,7 +74,12 @@ jobs:
           python -m pip install --requirement requirements-dev.txt
           python -m pip check
 
-      - name: Provision test database roles
+      - name: Provision database roles required by migrations
+        env:
+          UserWriterDB: postgresql+asyncpg://UserManager:postgres@localhost:5432/manga_test
+          UserReaderDB: postgresql+asyncpg://UserReader:postgres@localhost:5432/manga_test
+          MangaWriterDB: postgresql+asyncpg://MangaManager:postgres@localhost:5432/manga_test
+          MangaReaderDB: postgresql+asyncpg://MangaReader:postgres@localhost:5432/manga_test
         run: python -m backend.cli.bootstrap_database_roles
 
       - name: Apply test database migrations
