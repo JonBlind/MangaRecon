@@ -58,3 +58,8 @@ output "backend_origin_url" {
   value       = aws_lambda_function_url.backend.function_url
   sensitive   = true
 }
+
+output "github_actions_deploy_role_arn" {
+  description = "Short-lived AWS role assumed by the gated production workflow."
+  value       = aws_iam_role.github_actions_deploy.arn
+}

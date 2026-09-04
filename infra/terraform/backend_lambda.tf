@@ -81,6 +81,12 @@ resource "aws_lambda_function" "backend" {
   memory_size = 1024
   timeout     = 30
 
+  # Terraform owns the function and runtime configuration. The production
+  # workflow owns application-image releases after the bootstrap deployment.
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
+
   environment {
     variables = {
       AWS_SECRETS_MANAGER_SECRET_ID = aws_secretsmanager_secret.backend_runtime.arn

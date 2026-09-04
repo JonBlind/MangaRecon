@@ -127,17 +127,15 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
-.env
+# Environments: only public templates may be committed.
+.env*
+!.env.example
 .venv
-.env.test
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-.env.docker
-.env.production.local
 
 # Spyder project settings
 .spyderproject
@@ -207,4 +205,5 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+/infra/terraform/backend.tf
 /infra/terraform/backend.hcl

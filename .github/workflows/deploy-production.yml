@@ -1,0 +1,467 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Production component to release
+        required: true
+        default: application
+        type: choice
+        options:
+          - application
+          - backend
+          - frontend
+          - worker
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require the main branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Production releases must run from main." >&2
+            exit 1
+          fi
+
+  backend:
+    name: Deploy backend
+    needs: preflight
+    if: >-
+      inputs.component == 'application' ||
+      inputs.component == 'backend' ||
+      inputs.component == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate backend deployment configuration
+        shell: bash
+        run: |
+          for name in AWS_REGION AWS_DEPLOY_ROLE_ARN ECR_REPOSITORY LAMBDA_FUNCTION_NAME; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing production environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: MangaReconProductionDeploy
+
+      - name: Resolve ECR repository
+        id: ecr
+        shell: bash
+        run: |
+          repository_uri="$({
+            aws ecr describe-repositories \
+              --repository-names "$ECR_REPOSITORY" \
+              --query 'repositories[0].repositoryUri' \
+              --output text
+          })"
+          registry="${repository_uri%%/*}"
+          echo "repository_uri=$repository_uri" >> "$GITHUB_OUTPUT"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push immutable backend image
+        shell: bash
+        env:
+          REPOSITORY_URI: ${{ steps.ecr.outputs.repository_uri }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$GITHUB_SHA" \
+            >/dev/null 2>&1; then
+            echo "ECR already contains this commit image; reusing it."
+            exit 0
+          fi
+
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$REGISTRY"
+
+          docker build \
+            --pull \
+            --platform linux/amd64 \
+            --provenance=false \
+            --tag "$REPOSITORY_URI:$GITHUB_SHA" \
+            .
+
+          docker push "$REPOSITORY_URI:$GITHUB_SHA"
+
+      - name: Require a clean ECR vulnerability scan
+        shell: bash
+        run: |
+          scan_file="$RUNNER_TEMP/ecr-scan.json"
+
+          for attempt in {1..60}; do
+            if aws ecr describe-image-scan-findings \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-id "imageTag=$GITHUB_SHA" \
+              --output json > "$scan_file" 2>/dev/null; then
+              status="$(jq -r '.imageScanStatus.status // "UNKNOWN"' "$scan_file")"
+
+              if [[ "$status" == "COMPLETE" ]]; then
+                break
+              fi
+
+              if [[ "$status" == "FAILED" || "$status" == "UNSUPPORTED_IMAGE" ]]; then
+                echo "ECR image scan ended with status $status." >&2
+                exit 1
+              fi
+            fi
+
+            if [[ "$attempt" == "60" ]]; then
+              echo "Timed out waiting for the ECR image scan." >&2
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          counts="$(jq -c '.imageScanFindings.findingSeverityCounts // {}' "$scan_file")"
+          finding_total="$(jq '[.imageScanFindings.findingSeverityCounts // {} | .[]] | add // 0' "$scan_file")"
+          echo "ECR severity counts: $counts"
+
+          if [[ "$finding_total" != "0" ]]; then
+            echo "Production deployment blocked because ECR found $finding_total vulnerabilities." >&2
+            exit 1
+          fi
+
+      - name: Deploy verified image digest to Lambda
+        shell: bash
+        env:
+          REPOSITORY_URI: ${{ steps.ecr.outputs.repository_uri }}
+        run: |
+          image_digest="$({
+            aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-ids "imageTag=$GITHUB_SHA" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text
+          })"
+
+          if [[ ! "$image_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "ECR returned an invalid image digest." >&2
+            exit 1
+          fi
+
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --image-uri "$REPOSITORY_URI@$image_digest" \
+            >/dev/null
+
+          aws lambda wait function-updated-v2 \
+            --function-name "$LAMBDA_FUNCTION_NAME"
+
+          echo "Lambda now uses ECR digest $image_digest."
+
+  frontend:
+    name: Deploy frontend
+    needs: preflight
+    if: >-
+      inputs.component == 'application' ||
+      inputs.component == 'frontend' ||
+      inputs.component == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      VITE_API_BASE_URL: ${{ vars.PUBLIC_API_URL }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate frontend deployment configuration
+        shell: bash
+        run: |
+          for name in AWS_REGION AWS_DEPLOY_ROLE_ARN FRONTEND_BUCKET CLOUDFRONT_DISTRIBUTION_ID VITE_API_BASE_URL; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing production environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$VITE_API_BASE_URL" != "https://api.mangarecon.com" ]]; then
+            echo "PUBLIC_API_URL is not the canonical production API URL." >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build production frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:run
+          npm run build
+
+      - name: Verify production build configuration
+        shell: bash
+        run: |
+          grep -R -q --fixed-strings "https://api.mangarecon.com" frontend/dist
+          if grep -R -q --fixed-strings "http://localhost:8000" frontend/dist; then
+            echo "The production build contains the localhost API URL." >&2
+            exit 1
+          fi
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: MangaReconProductionDeploy
+
+      - name: Upload frontend assets safely
+        shell: bash
+        run: |
+          aws s3 sync \
+            frontend/dist/assets \
+            "s3://$FRONTEND_BUCKET/assets/" \
+            --cache-control "public,max-age=31536000,immutable" \
+            --only-show-errors
+
+          aws s3 sync \
+            frontend/dist \
+            "s3://$FRONTEND_BUCKET/" \
+            --delete \
+            --exclude "assets/*" \
+            --cache-control "no-cache" \
+            --only-show-errors
+
+      - name: Refresh CloudFront entry content
+        shell: bash
+        run: |
+          invalidation_id="$({
+            aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+              --paths "/" "/index.html" \
+              --query 'Invalidation.Id' \
+              --output text
+          })"
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --id "$invalidation_id"
+
+  worker:
+    name: Deploy Cloudflare Worker
+    needs: preflight
+    if: inputs.component == 'worker' || inputs.component == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate Worker deployment configuration
+        shell: bash
+        run: |
+          if [[ -z "$CLOUDFLARE_ACCOUNT_ID" || -z "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "Cloudflare production deployment configuration is incomplete." >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: infra/cloudflare/worker/package-lock.json
+
+      - name: Install and type-check Worker
+        working-directory: infra/cloudflare/worker
+        run: |
+          npm ci
+          npm run typecheck
+
+      - name: Deploy Worker without replacing runtime secrets
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: infra/cloudflare/worker
+          command: deploy --keep-vars
+
+  smoke:
+    name: Verify production
+    needs:
+      - preflight
+      - backend
+      - frontend
+      - worker
+    if: >-
+      always() &&
+      needs.preflight.result == 'success' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.worker.result == 'success' || needs.worker.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+      PUBLIC_FRONTEND_URL: ${{ vars.PUBLIC_FRONTEND_URL }}
+      PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+
+    steps:
+      - name: Validate smoke-test configuration
+        shell: bash
+        run: |
+          for name in AWS_REGION AWS_DEPLOY_ROLE_ARN LAMBDA_FUNCTION_NAME PUBLIC_FRONTEND_URL PUBLIC_API_URL; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing production environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$PUBLIC_FRONTEND_URL" != "https://mangarecon.com" ]]; then
+            echo "PUBLIC_FRONTEND_URL is not canonical." >&2
+            exit 1
+          fi
+
+          if [[ "$PUBLIC_API_URL" != "https://api.mangarecon.com" ]]; then
+            echo "PUBLIC_API_URL is not canonical." >&2
+            exit 1
+          fi
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: MangaReconProductionSmokeTest
+
+      - name: Run public and origin security checks
+        shell: bash
+        run: |
+          frontend_url="${PUBLIC_FRONTEND_URL%/}"
+          api_url="${PUBLIC_API_URL%/}"
+
+          homepage="$(curl --fail --silent --show-error "$frontend_url/")"
+          if ! grep -q '<title>MangaRecon</title>' <<< "$homepage"; then
+            echo "Production homepage title is incorrect." >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error --output /dev/null "$frontend_url/search"
+
+          health_message="$({
+            curl --fail --silent --show-error "$api_url/healthz" |
+              jq -r '.message'
+          })"
+          if [[ "$health_message" != "MangaRecon API is running." ]]; then
+            echo "Unexpected health response: $health_message" >&2
+            exit 1
+          fi
+
+          readiness_message="$({
+            curl --fail --silent --show-error "$api_url/readyz" |
+              jq -r '.message'
+          })"
+          if [[ "$readiness_message" != "MangaRecon API is ready." ]]; then
+            echo "Unexpected readiness response: $readiness_message" >&2
+            exit 1
+          fi
+
+          spoofed_status="$({
+            curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' \
+              --header 'X-MangaRecon-Origin-Verify: deliberately-wrong' \
+              "$api_url/readyz"
+          })"
+          if [[ "$spoofed_status" != "200" ]]; then
+            echo "Worker did not overwrite the spoofed origin header." >&2
+            exit 1
+          fi
+
+          cors_headers="$RUNNER_TEMP/cors-headers.txt"
+          cors_status="$({
+            curl --silent --show-error --output /dev/null \
+              --dump-header "$cors_headers" \
+              --write-out '%{http_code}' \
+              --request OPTIONS \
+              --header "Origin: $frontend_url" \
+              --header 'Access-Control-Request-Method: GET' \
+              "$api_url/mangas/"
+          })"
+          if [[ "$cors_status" != "200" ]]; then
+            echo "Production CORS preflight returned $cors_status." >&2
+            exit 1
+          fi
+          if ! grep -i -q "^access-control-allow-origin: $frontend_url" "$cors_headers"; then
+            echo "Production CORS did not allow the canonical frontend." >&2
+            exit 1
+          fi
+
+          origin_url="$({
+            aws lambda get-function-url-config \
+              --function-name "$LAMBDA_FUNCTION_NAME" \
+              --query 'FunctionUrl' \
+              --output text
+          })"
+          direct_status="$({
+            curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' \
+              "${origin_url%/}/readyz"
+          })"
+          unset origin_url
+
+          if [[ "$direct_status" != "403" ]]; then
+            echo "Direct Lambda readiness returned $direct_status instead of 403." >&2
+            exit 1
+          fi
+
+          echo "Production smoke and origin-security checks passed."

@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: manga_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d manga_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7.4.10-alpine3.21
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MANGARECON_ENV: test
+      DEBUG: "false"
+      AUTH_SECRET: ci-only-auth-secret
+      FRONTEND_ORIGINS: http://localhost:5173
+      EMAIL_DELIVERY_MODE: disabled
+      REDIS_URL: redis://localhost:6379/0
+      DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/manga_test
+      UserWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      UserReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      MangaWriterDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+      MangaReaderDB: postgresql+asyncpg://postgres:postgres@localhost:5432/manga_test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade "pip==26.2"
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip check
+
+      - name: Apply test database migrations
+        run: python -m alembic upgrade head
+
+      - name: Run backend test suite
+        run: python -m pytest
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type-check frontend
+        run: npm run typecheck
+
+      - name: Run frontend test suite
+        run: npm run test:run
+
+      - name: Build production frontend
+        env:
+          VITE_API_BASE_URL: https://api.mangarecon.com
+        run: npm run build
+
+      - name: Verify production API URL
+        run: |
+          grep -R -q --fixed-strings "https://api.mangarecon.com" dist
+          if grep -R -q --fixed-strings "http://localhost:8000" dist; then
+            echo "The production build contains the localhost API URL." >&2
+            exit 1
+          fi
+
+  worker:
+    name: Cloudflare Worker checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: infra/cloudflare/worker
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: infra/cloudflare/worker/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Type-check Worker
+        run: npm run typecheck
+
+  terraform:
+    name: Terraform checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: infra/terraform
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.15.0"
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform without the remote backend
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform
+        run: terraform validate
