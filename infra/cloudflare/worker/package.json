@@ -1,0 +1,14 @@
+{
+  "name": "mangarecon-api-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "wrangler types && tsc --noEmit",
+    "deploy": "npm run typecheck && wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "wrangler": "^4.0.0"
+  }
+}

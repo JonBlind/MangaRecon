@@ -30,3 +30,25 @@ variable "environment" {
     error_message = "environment must be dev, staging, or prod."
   }
 }
+
+variable "github_repository" {
+  description = "Exact GitHub owner/repository allowed to deploy MangaRecon."
+  type        = string
+  default     = "JonBlind/MangaRecon"
+
+  validation {
+    condition     = var.github_repository == "JonBlind/MangaRecon"
+    error_message = "Production deployment is restricted to JonBlind/MangaRecon."
+  }
+}
+
+variable "github_production_environment" {
+  description = "GitHub environment required by the AWS deployment trust policy."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = var.github_production_environment == "production"
+    error_message = "The production deployment environment must be named production."
+  }
+}

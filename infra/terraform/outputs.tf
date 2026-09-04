@@ -40,5 +40,26 @@ output "frontend_cloudfront_distribution_id" {
 
 output "frontend_url" {
   description = "Canonical HTTPS URL for the MangaRecon frontend."
-  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  value       = local.frontend_url
+}
+
+output "backend_lambda_function_name" {
+  description = "Lambda function running the MangaRecon backend container."
+  value       = aws_lambda_function.backend.function_name
+}
+
+output "backend_lambda_log_group_name" {
+  description = "CloudWatch Logs group receiving backend Lambda logs."
+  value       = aws_cloudwatch_log_group.backend.name
+}
+
+output "backend_origin_url" {
+  description = "Lambda Function URL used only as the Cloudflare Worker origin."
+  value       = aws_lambda_function_url.backend.function_url
+  sensitive   = true
+}
+
+output "github_actions_deploy_role_arn" {
+  description = "Short-lived AWS role assumed by the gated production workflow."
+  value       = aws_iam_role.github_actions_deploy.arn
 }
