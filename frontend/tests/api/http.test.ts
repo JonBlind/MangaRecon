@@ -84,7 +84,7 @@ describe("apiFetch", () => {
     );
   });
 
-  test("sends request with base url, credentials, and default json content type", async () => {
+  test("omits content type for a bodyless request", async () => {
     const { apiFetch } = await loadHttpModule();
 
     vi.mocked(fetch).mockResolvedValueOnce(
@@ -105,10 +105,11 @@ describe("apiFetch", () => {
 
     expect(fetch).toHaveBeenCalledWith("http://localhost:8000/healthz", {
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: expect.any(Headers),
     });
+
+    const request = vi.mocked(fetch).mock.calls[0][1];
+    expect(new Headers(request?.headers).has("Content-Type")).toBe(false);
   });
 
   test("preserves provided request options and merges headers", async () => {
@@ -133,17 +134,22 @@ describe("apiFetch", () => {
       }),
     });
 
-    expect(fetch).toHaveBeenCalledWith("http://localhost:8000/collections", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Test": "yes",
-      },
-      body: JSON.stringify({
-        collection_name: "Favorites",
-      }),
-    });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8000/collections",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.any(Headers),
+        body: JSON.stringify({
+          collection_name: "Favorites",
+        }),
+      })
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1];
+    const headers = new Headers(request?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Test")).toBe("yes");
   });
 
   test("allows caller content type header to override default json header", async () => {
@@ -168,14 +174,20 @@ describe("apiFetch", () => {
       body,
     });
 
-    expect(fetch).toHaveBeenCalledWith("http://localhost:8000/auth/jwt/login", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
-    });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8000/auth/jwt/login",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.any(Headers),
+        body,
+      })
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1];
+    expect(new Headers(request?.headers).get("Content-Type")).toBe(
+      "application/x-www-form-urlencoded"
+    );
   });
 
   test("handles empty successful response body", async () => {

@@ -139,8 +139,14 @@ describe("Search Page", () => {
     });
 
     expect(screen.getByText(/action/i)).toBeInTheDocument();
-    expect(screen.getByText(/adventure/i)).toBeInTheDocument();
     expect(screen.getByText(/shounen/i)).toBeInTheDocument();
+    expect(mocks.getTags).not.toHaveBeenCalled();
+
+    fireEvent.focus(screen.getByRole("combobox", { name: /^tag$/i }));
+
+    expect(
+      await screen.findByRole("option", { name: /adventure/i })
+    ).toBeInTheDocument();
   });
 
   test("renders manga results", async () => {
@@ -486,13 +492,11 @@ describe("Search Page", () => {
   test("updates tag filter", async () => {
     renderWithProviders(<Search />);
 
-    await screen.findByText(/adventure/i);
-
-    const selects = screen.getAllByRole("combobox");
-
-    fireEvent.change(selects[1], {
-      target: { value: "1" },
-    });
+    const tagFilter = screen.getByRole("combobox", { name: /^tag$/i });
+    fireEvent.focus(tagFilter);
+    fireEvent.pointerDown(
+      await screen.findByRole("option", { name: /adventure/i })
+    );
 
     await waitFor(() => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
@@ -567,6 +571,22 @@ describe("Search Page", () => {
     renderWithProviders(<Search />);
 
     expect(screen.getByText(/loading filters/i)).toBeInTheDocument();
+  });
+
+  test("does not fetch tags until the tag filter is used", async () => {
+    renderWithProviders(<Search />);
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalled();
+    });
+
+    expect(mocks.getTags).not.toHaveBeenCalled();
+
+    fireEvent.focus(screen.getByRole("combobox", { name: /^tag$/i }));
+
+    await waitFor(() => {
+      expect(mocks.getTags).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("shows manga search error message", async () => {

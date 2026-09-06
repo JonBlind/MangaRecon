@@ -182,6 +182,18 @@ describe("MangaDetail Page", () => {
       "src",
       "https://example.com/naruto.jpg",
     );
+    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
+      "loading",
+      "eager",
+    );
+    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
+      "decoding",
+      "async",
+    );
+    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
+      "fetchpriority",
+      "high",
+    );
   });
 
   test("uses fallback cover when the cover image fails to load", () => {

@@ -168,6 +168,9 @@ export default function MangaDetail() {
           alt={m.title}
           className="h-72 w-48 shrink-0 rounded-xl border border-neutral-800"
           imageClassName="bg-neutral-900 object-cover"
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
         />
 
         <div className="min-w-0 flex-1 space-y-4">

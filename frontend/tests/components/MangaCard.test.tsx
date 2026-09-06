@@ -40,6 +40,14 @@ describe("MangaCard", () => {
       "src",
       "https://example.com/naruto.jpg"
     );
+    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
+      "loading",
+      "lazy"
+    );
+    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
+      "decoding",
+      "async"
+    );
   });
 
   test("links to manga detail page", () => {
