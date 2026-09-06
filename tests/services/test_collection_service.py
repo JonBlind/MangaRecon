@@ -660,13 +660,14 @@ async def test_get_collection_manga_page_returns_empty_page(
     )
     monkeypatch.setattr(
         collection_service,
-        "count_collection_manga",
-        AsyncMock(return_value=0),
+        "list_collection_manga_ids",
+        AsyncMock(return_value=[]),
     )
+    filter_visible = AsyncMock(return_value=[])
     monkeypatch.setattr(
         collection_service,
-        "page_collection_manga_ids",
-        AsyncMock(return_value=[]),
+        "filter_visible_manga_ids",
+        filter_visible,
     )
 
     fetch_base = AsyncMock()
@@ -702,6 +703,11 @@ async def test_get_collection_manga_page_returns_empty_page(
 
     fetch_base.assert_not_awaited()
     attach_genres.assert_not_awaited()
+    filter_visible.assert_awaited_once_with(
+        manga_db,
+        manga_ids=[],
+        include_adult=False,
+    )
 
 
 @pytest.mark.asyncio
@@ -712,10 +718,10 @@ async def test_get_collection_manga_page_preserves_membership_order(
     manga_db = MagicMock()
 
     get_owned = AsyncMock(return_value=4)
-    count_manga = AsyncMock(return_value=3)
-    page_ids = AsyncMock(
-        return_value=[30, 10, 20]
+    list_ids = AsyncMock(
+        return_value=[90, 30, 10, 20]
     )
+    filter_visible = AsyncMock(return_value=[30, 10, 20])
 
     base_by_id = {
         10: {
@@ -753,13 +759,13 @@ async def test_get_collection_manga_page_preserves_membership_order(
     )
     monkeypatch.setattr(
         collection_service,
-        "count_collection_manga",
-        count_manga,
+        "list_collection_manga_ids",
+        list_ids,
     )
     monkeypatch.setattr(
         collection_service,
-        "page_collection_manga_ids",
-        page_ids,
+        "filter_visible_manga_ids",
+        filter_visible,
     )
     monkeypatch.setattr(
         collection_service,
@@ -775,7 +781,7 @@ async def test_get_collection_manga_page_preserves_membership_order(
     result = await collection_service.get_collection_manga_page(
         user_id=uuid.uuid4(),
         collection_id=4,
-        page=2,
+        page=1,
         size=3,
         order="desc",
         user_db=user_db,
@@ -783,7 +789,7 @@ async def test_get_collection_manga_page_preserves_membership_order(
     )
 
     assert result["total_results"] == 3
-    assert result["page"] == 2
+    assert result["page"] == 1
     assert result["size"] == 3
     assert [
         item.manga_id
@@ -794,16 +800,20 @@ async def test_get_collection_manga_page_preserves_membership_order(
         20,
     ]
 
-    page_ids.assert_awaited_once_with(
+    list_ids.assert_awaited_once_with(
         user_db,
         collection_id=4,
-        offset=3,
-        limit=3,
         order="desc",
+    )
+    filter_visible.assert_awaited_once_with(
+        manga_db,
+        manga_ids=[90, 30, 10, 20],
+        include_adult=False,
     )
     fetch_base.assert_awaited_once_with(
         manga_db,
         manga_ids=[30, 10, 20],
+        include_adult=False,
     )
     attach_genres.assert_awaited_once_with(
         manga_db,
@@ -823,15 +833,13 @@ async def test_get_collection_manga_page_skips_missing_manga_rows(
     )
     monkeypatch.setattr(
         collection_service,
-        "count_collection_manga",
-        AsyncMock(return_value=2),
+        "list_collection_manga_ids",
+        AsyncMock(return_value=[10, 20]),
     )
     monkeypatch.setattr(
         collection_service,
-        "page_collection_manga_ids",
-        AsyncMock(
-            return_value=[10, 20]
-        ),
+        "filter_visible_manga_ids",
+        AsyncMock(return_value=[10, 20]),
     )
     monkeypatch.setattr(
         collection_service,
@@ -911,6 +919,7 @@ async def test_add_manga_to_collection_adds_and_invalidates(
     manga_exists_mock.assert_awaited_once_with(
         manga_db,
         manga_id=25,
+        include_adult=False,
     )
     user_db.add_manga_to_collection.assert_awaited_once_with(
         user_id,

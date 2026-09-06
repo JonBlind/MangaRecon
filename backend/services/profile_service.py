@@ -81,6 +81,23 @@ async def update_my_profile(
     requested_updates = payload.model_dump(
         exclude_unset=True,
     )
+    age_confirmed = requested_updates.pop(
+        "confirm_adult_content_age",
+        False,
+    )
+
+    if (
+        requested_updates.get("show_adult_content") is True
+        and getattr(user, "show_adult_content", False) is False
+        and age_confirmed is not True
+    ):
+        raise BadRequestError(
+            code="ADULT_CONTENT_AGE_CONFIRMATION_REQUIRED",
+            message=(
+                "Confirm that you are at least 18 years old "
+                "before enabling adult content."
+            ),
+        )
 
     # Keep only values that differ from the stored profile.
     effective_updates = {

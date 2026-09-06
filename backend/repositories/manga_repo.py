@@ -13,21 +13,33 @@ from backend.db.models.creator import Creator
 from backend.db.models.manga_creator import MangaCreator
 from backend.db.models.manga_alternate_title import MangaAlternateTitle
 from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic
+from backend.content_safety.visibility import restrict_manga_visibility
 from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 
 
-async def fetch_manga_core_by_id(db: ClientReadDatabase, *, manga_id: int):
-    stmt = select(
-        Manga.manga_id,
-        Manga.title,
-        Manga.description,
-        Manga.publication_year,
-        Manga.media_type,
-        Manga.external_average_rating,
-        Manga.external_rating_votes,
-        Manga.average_rating,
-        Manga.cover_image_url,
-    ).where(Manga.manga_id == manga_id)
+_VISIBLE_ID_BATCH_SIZE = 5_000
+
+
+async def fetch_manga_core_by_id(
+    db: ClientReadDatabase,
+    *,
+    manga_id: int,
+    include_adult: bool = False,
+):
+    stmt = restrict_manga_visibility(
+        select(
+            Manga.manga_id,
+            Manga.title,
+            Manga.description,
+            Manga.publication_year,
+            Manga.media_type,
+            Manga.external_average_rating,
+            Manga.external_rating_votes,
+            Manga.average_rating,
+            Manga.cover_image_url,
+        ).where(Manga.manga_id == manga_id),
+        include_adult=include_adult,
+    )
 
     return (await db.execute(stmt)).one_or_none()
 
@@ -83,8 +95,9 @@ def build_filter_stmt(
     demo_ids: Optional[list[int]],
     exclude_demos: Optional[list[int]],
     title: Optional[str],
+    include_adult: bool = False,
 ):
-    stmt = (
+    stmt = restrict_manga_visibility(
         select(
             Manga.manga_id,
             Manga.title,
@@ -95,8 +108,8 @@ def build_filter_stmt(
             Manga.average_rating,
             Manga.external_average_rating,
             Manga.external_rating_votes,
-        )
-        .distinct()
+        ).distinct(),
+        include_adult=include_adult,
     )
 
     if title:
@@ -185,6 +198,7 @@ async def fetch_manga_list_base(
     db: ClientReadDatabase,
     *,
     manga_ids: Sequence[int],
+    include_adult: bool = False,
 ) -> dict[int, dict]:
     """
     Fetch minimal list-item fields for a set of manga_ids and return a base payload map.
@@ -192,14 +206,16 @@ async def fetch_manga_list_base(
     if not manga_ids:
         return {}
 
-    res = await db.execute(
+    stmt = restrict_manga_visibility(
         select(
             Manga.manga_id,
             Manga.title,
             Manga.average_rating,
             Manga.cover_image_url,
-        ).where(Manga.manga_id.in_(list(manga_ids)))
+        ).where(Manga.manga_id.in_(list(manga_ids))),
+        include_adult=include_adult,
     )
+    res = await db.execute(stmt)
     rows = res.all()
 
     base_by_id: dict[int, dict] = {}
@@ -252,9 +268,52 @@ async def manga_exists(
     manga_db: ClientReadDatabase,
     *,
     manga_id: int,
+    include_adult: bool = False,
 ) -> bool:
-    stmt = select(Manga.manga_id).where(
-        Manga.manga_id == manga_id
+    stmt = restrict_manga_visibility(
+        select(Manga.manga_id).where(
+            Manga.manga_id == manga_id
+        ),
+        include_adult=include_adult,
     )
     result = await manga_db.execute(stmt)
     return result.scalar_one_or_none() is not None
+
+
+async def filter_visible_manga_ids(
+    manga_db: ClientReadDatabase,
+    *,
+    manga_ids: Sequence[int],
+    include_adult: bool = False,
+) -> list[int]:
+    """Return visible IDs in input order without crossing DB role boundaries."""
+    requested_ids = list(manga_ids)
+
+    if not requested_ids:
+        return []
+
+    visible_ids: set[int] = set()
+    unique_ids = list(dict.fromkeys(requested_ids))
+
+    for offset in range(
+        0,
+        len(unique_ids),
+        _VISIBLE_ID_BATCH_SIZE,
+    ):
+        batch = unique_ids[
+            offset : offset + _VISIBLE_ID_BATCH_SIZE
+        ]
+        stmt = restrict_manga_visibility(
+            select(Manga.manga_id).where(
+                Manga.manga_id.in_(batch)
+            ),
+            include_adult=include_adult,
+        )
+        result = await manga_db.execute(stmt)
+        visible_ids.update(result.scalars().all())
+
+    return [
+        manga_id
+        for manga_id in requested_ids
+        if manga_id in visible_ids
+    ]

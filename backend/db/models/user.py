@@ -12,6 +12,7 @@ class User(Base):
         - `email`, `hashed_password` for auth.
         - `username`, `displayname` for identity.
         - `is_active`, `is_superuser`, `is_verified` for authorization flow.
+        - `show_adult_content` for the account's explicit catalog opt-in.
         - `created_at`, `last_login` timestamps.
 
     Relationships:
@@ -32,6 +33,12 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     is_superuser = Column(Boolean, nullable=False, default=False)
     is_verified = Column(Boolean, nullable=False, default=False)
+    show_adult_content = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
     last_login = Column(TIMESTAMP(timezone=True))

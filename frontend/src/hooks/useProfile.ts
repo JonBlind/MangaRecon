@@ -6,8 +6,23 @@ export function useUpdateProfile() {
 
   return useMutation({
     mutationFn: updateProfile,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["me"] });
+    onSuccess: (response, payload) => {
+      qc.setQueryData(["me"], response.data);
+
+      if (payload.show_adult_content !== undefined) {
+        for (const queryKey of [
+          ["manga"],
+          ["mangas"],
+          ["genres"],
+          ["tags"],
+          ["demographics"],
+          ["collections", "mangas"],
+          ["ratings"],
+          ["recommendations"],
+        ]) {
+          qc.removeQueries({ queryKey });
+        }
+      }
     },
   });
 }

@@ -468,6 +468,26 @@ async def test_get_candidate_manga_uses_creator_for_candidate_discovery():
 
     assert "manga_creator.creator_id IN (500)" in sql
     assert "manga.manga_id NOT IN (1)" in sql
+    assert "manga.is_adult_content IS false" in sql
+
+
+@pytest.mark.asyncio
+async def test_get_candidate_manga_allows_adult_for_opted_in_viewer():
+    db = AsyncMock()
+    db.execute.return_value = FakeResult(mapping_rows=[])
+
+    await get_candidate_manga(
+        excluded_ids=[1],
+        genre_ids=[2],
+        tag_ids=[],
+        demo_ids=[],
+        creator_ids=[],
+        db=db,
+        include_adult=True,
+    )
+
+    statement = db.execute.await_args.args[0]
+    assert "is_adult_content" not in str(statement)
 
 @pytest.mark.asyncio
 async def test_get_candidate_manga_skips_query_without_similarity_metadata():

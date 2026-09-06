@@ -17,8 +17,8 @@ export default function Login() {
 
   const mutation = useMutation({
     mutationFn: () => login(email, password),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["me"] });
+    onSuccess: () => {
+      qc.clear();
 
       const stateFrom = (location.state as { from?: string } | undefined)?.from;
 

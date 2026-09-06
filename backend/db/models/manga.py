@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Date, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, Date, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from backend.db.models.base import Base
@@ -16,6 +16,7 @@ class Manga(Base):
         - `external_average_rating` contains a score from the authoritative
           external provider.
         - `average_rating` may reflect internal user ratings.
+        - `is_adult_content` stores the ingestion-time safety classification.
 
     Relationships:
         - `creator_links` credits creators through `manga_creator`.
@@ -40,6 +41,12 @@ class Manga(Base):
     external_rating_votes = Column(Integer)
     average_rating = Column(Numeric(3, 1))
     cover_image_url = Column(String)
+    is_adult_content = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     # Many-to-many memberships
     creator_links = relationship("MangaCreator", back_populates="manga", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin")
@@ -50,4 +57,3 @@ class Manga(Base):
     tags = relationship("Tag", secondary=manga_tag, back_populates="manga")
     demographics = relationship("Demographic", secondary=manga_demographic, back_populates="manga")
     manga_collection_links = relationship("MangaCollection", back_populates="manga", cascade="all, delete-orphan", passive_deletes=True, lazy="raise")
-    

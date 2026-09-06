@@ -54,6 +54,37 @@ async def test_generate_for_collection_raises_when_collection_has_no_manga():
 
 
 @pytest.mark.asyncio
+async def test_generate_for_collection_rejects_hidden_only_seed():
+    user_db = AsyncMock()
+    manga_db = AsyncMock()
+
+    with (
+        patch(
+            "backend.recommendation.generator.core.get_manga_ids_in_user_collection",
+            new=AsyncMock(return_value=[99]),
+        ),
+        patch(
+            "backend.recommendation.generator.filter_visible_manga_ids",
+            new=AsyncMock(return_value=[]),
+        ) as filter_visible,
+    ):
+        with pytest.raises(BadRequestError) as exc_info:
+            await generate_recommendations_for_collection(
+                user_id=uuid.uuid4(),
+                collection_id=12,
+                user_db=user_db,
+                manga_db=manga_db,
+            )
+
+    assert exc_info.value.code == "RECOMMENDATION_SEED_EMPTY"
+    filter_visible.assert_awaited_once_with(
+        manga_db,
+        manga_ids=[99],
+        include_adult=False,
+    )
+
+
+@pytest.mark.asyncio
 async def test_generate_for_collection_composes_core_steps():
     user_db = AsyncMock()
     manga_db = AsyncMock()
@@ -82,6 +113,10 @@ async def test_generate_for_collection_composes_core_steps():
             "backend.recommendation.generator.core.get_manga_ids_in_user_collection",
             new=AsyncMock(return_value=manga_ids),
         ) as get_ids,
+        patch(
+            "backend.recommendation.generator.filter_visible_manga_ids",
+            new=AsyncMock(return_value=manga_ids),
+        ) as filter_visible,
         patch(
             "backend.recommendation.generator.core.get_manga_ids_in_user_collections",
             new=AsyncMock(return_value=[1, 2, 3, 99]),
@@ -114,6 +149,11 @@ async def test_generate_for_collection_composes_core_steps():
     }
 
     get_ids.assert_awaited_once_with(user_id, 7, user_db)
+    filter_visible.assert_awaited_once_with(
+        manga_db,
+        manga_ids=manga_ids,
+        include_adult=False,
+    )
     get_all_user_ids.assert_awaited_once_with(user_id, user_db)
 
     get_profile.assert_awaited_once_with(
@@ -128,6 +168,7 @@ async def test_generate_for_collection_composes_core_steps():
         demo_ids=[100],
         creator_ids=[500],
         db=manga_db,
+        include_adult=False,
     )
 
     get_scored.assert_awaited_once_with(
@@ -157,6 +198,10 @@ async def test_generate_for_collection_truncates_large_seed_list():
     with (
         patch(
             "backend.recommendation.generator.core.get_manga_ids_in_user_collection",
+            new=AsyncMock(return_value=all_manga_ids),
+        ),
+        patch(
+            "backend.recommendation.generator.filter_visible_manga_ids",
             new=AsyncMock(return_value=all_manga_ids),
         ),
         patch(
@@ -202,6 +247,7 @@ async def test_generate_for_collection_truncates_large_seed_list():
         demo_ids=[],
         creator_ids=[],
         db=manga_db,
+        include_adult=False,
     )
 
 
@@ -223,6 +269,24 @@ async def test_generate_for_list_raises_when_list_is_empty():
         "Please provide at least one manga to generate recommendations."
     )
     assert error.detail is None
+
+
+@pytest.mark.asyncio
+async def test_generate_for_list_rejects_hidden_only_seed():
+    db = AsyncMock()
+
+    with patch(
+        "backend.recommendation.generator.filter_visible_manga_ids",
+        new=AsyncMock(return_value=[]),
+    ):
+        with pytest.raises(BadRequestError) as exc_info:
+            await generate_recommendations_for_list(
+                manga_ids=[99],
+                db=db,
+            )
+
+    assert exc_info.value.code == "RECOMMENDATION_SEED_EMPTY"
+    assert "visible manga" in exc_info.value.message
 
 
 @pytest.mark.asyncio
@@ -248,6 +312,10 @@ async def test_generate_for_list_composes_core_steps():
     ]
 
     with (
+        patch(
+            "backend.recommendation.generator.filter_visible_manga_ids",
+            new=AsyncMock(return_value=manga_ids),
+        ) as filter_visible,
         patch(
             "backend.recommendation.generator.core.get_metadata_profile_for_collection",
             new=AsyncMock(return_value=metadata_profile),
@@ -277,6 +345,11 @@ async def test_generate_for_list_composes_core_steps():
         manga_ids,
         db,
     )
+    filter_visible.assert_awaited_once_with(
+        db,
+        manga_ids=manga_ids,
+        include_adult=False,
+    )
 
     get_candidates.assert_awaited_once_with(
         excluded_ids=manga_ids,
@@ -285,6 +358,7 @@ async def test_generate_for_list_composes_core_steps():
         demo_ids=[100],
         creator_ids=[500],
         db=db,
+        include_adult=False,
     )
 
     get_scored.assert_awaited_once_with(
@@ -311,6 +385,10 @@ async def test_generate_for_list_truncates_large_seed_list():
     }
 
     with (
+        patch(
+            "backend.recommendation.generator.filter_visible_manga_ids",
+            new=AsyncMock(return_value=all_manga_ids),
+        ),
         patch(
             "backend.recommendation.generator.core.get_metadata_profile_for_collection",
             new=AsyncMock(return_value=metadata_profile),
@@ -348,6 +426,7 @@ async def test_generate_for_list_truncates_large_seed_list():
         demo_ids=[],
         creator_ids=[],
         db=db,
+        include_adult=False,
     )
 
     get_scored.assert_awaited_once_with(

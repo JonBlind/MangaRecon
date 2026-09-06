@@ -27,6 +27,7 @@ const user = {
   username: "testuser",
   displayname: "Test User",
   username_changed_at: null,
+  show_adult_content: false,
 };
 
 beforeEach(() => {
@@ -123,6 +124,90 @@ describe("Account Page", () => {
         name: /save changes/i,
       }),
     ).toBeEnabled();
+  });
+
+  test("requires age confirmation before enabling adult content", () => {
+    renderWithProviders(<Account />);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", {name: /show adult content/i}),
+    );
+
+    expect(
+      screen.getByText(/age confirmation required/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /save changes/i,
+      }),
+    ).toBeDisabled();
+
+    fireEvent.click(
+      screen.getByLabelText(/i confirm that i am at least 18 years old/i),
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: /save changes/i,
+      }),
+    ).toBeEnabled();
+  });
+
+  test("submits the adult-content opt-in and age confirmation", async () => {
+    renderWithProviders(<Account />);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", {name: /show adult content/i}),
+    );
+    fireEvent.click(
+      screen.getByLabelText(/i confirm that i am at least 18 years old/i),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /save changes/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.mutateAsync).toHaveBeenCalledWith({
+        show_adult_content: true,
+        confirm_adult_content_age: true,
+      });
+    });
+  });
+
+  test("allows an opted-in user to disable adult content immediately", async () => {
+    mocks.useMe.mockReturnValue({
+      data: {
+        ...user,
+        show_adult_content: true,
+      },
+      isLoading: false,
+    });
+
+    renderWithProviders(<Account />);
+
+    const preference = screen.getByRole("checkbox", {
+      name: /show adult content/i,
+    });
+    expect(preference).toBeChecked();
+
+    fireEvent.click(preference);
+    expect(
+      screen.queryByText(/age confirmation required/i),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /save changes/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.mutateAsync).toHaveBeenCalledWith({
+        show_adult_content: false,
+      });
+    });
   });
 
   test("submits updated display name", async () => {

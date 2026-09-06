@@ -213,7 +213,24 @@ def test_build_filter_stmt_without_filters():
 
     assert "SELECT DISTINCT" in sql
     assert "FROM manga" in sql
-    assert "WHERE" not in sql
+    assert "manga.is_adult_content IS false" in sql
+
+
+def test_build_filter_stmt_allows_adult_catalog_for_opted_in_viewer():
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=None,
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        title=None,
+        include_adult=True,
+    )
+
+    sql = str(stmt)
+
+    assert "is_adult_content" not in sql
 
 
 def test_build_filter_stmt_with_title():
@@ -604,6 +621,62 @@ async def test_fetch_manga_list_base_builds_payload_map():
             "genres": [],
         },
     }
+
+    statement = db.execute.await_args.args[0]
+    assert "manga.is_adult_content IS false" in str(statement)
+
+
+@pytest.mark.asyncio
+async def test_filter_visible_manga_ids_preserves_order_and_duplicates():
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=FakeResult(
+            scalar_rows=[2, 3],
+        )
+    )
+
+    result = await manga_repo.filter_visible_manga_ids(
+        db,
+        manga_ids=[3, 1, 2, 3],
+    )
+
+    assert result == [3, 2, 3]
+    statement = db.execute.await_args.args[0]
+    assert "manga.is_adult_content IS false" in str(statement)
+
+
+@pytest.mark.asyncio
+async def test_filter_visible_manga_ids_skips_query_for_empty_input():
+    db = MagicMock()
+    db.execute = AsyncMock()
+
+    result = await manga_repo.filter_visible_manga_ids(
+        db,
+        manga_ids=[],
+    )
+
+    assert result == []
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_filter_visible_manga_ids_omits_filter_for_opted_in_viewer():
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=FakeResult(
+            scalar_rows=[1, 2],
+        )
+    )
+
+    result = await manga_repo.filter_visible_manga_ids(
+        db,
+        manga_ids=[1, 2],
+        include_adult=True,
+    )
+
+    assert result == [1, 2]
+    statement = db.execute.await_args.args[0]
+    assert "is_adult_content" not in str(statement)
 
 
 @pytest.mark.asyncio

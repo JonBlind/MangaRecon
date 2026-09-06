@@ -70,97 +70,38 @@ async def test_get_owned_collection_id_returns_none_when_not_owned():
 
 
 @pytest.mark.asyncio
-async def test_count_collection_manga_returns_count():
+@pytest.mark.parametrize(
+    ("order", "expected_ids"),
+    [
+        ("asc", [10, 20, 30]),
+        ("desc", [30, 20, 10]),
+    ],
+)
+async def test_list_collection_manga_ids_returns_stable_order(
+    order,
+    expected_ids,
+):
     db = MagicMock()
     db.execute = AsyncMock(
         return_value=FakeResult(
-            scalar_value=7,
+            scalar_rows=expected_ids,
         )
     )
 
-    result = await collections_repo.count_collection_manga(
-        db,
-        collection_id=4,
-    )
-
-    assert result == 7
-    db.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_count_collection_manga_returns_zero():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeResult(
-            scalar_value=0,
-        )
-    )
-
-    result = await collections_repo.count_collection_manga(
-        db,
-        collection_id=4,
-    )
-
-    assert result == 0
-
-
-@pytest.mark.asyncio
-async def test_page_collection_manga_ids_returns_ascending_page():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeResult(
-            scalar_rows=[10, 20, 30],
-        )
-    )
-
-    result = await collections_repo.page_collection_manga_ids(
+    result = await collections_repo.list_collection_manga_ids(
         db,
         collection_id=5,
-        offset=0,
-        limit=3,
-        order="asc",
+        order=order,
     )
 
-    assert result == [10, 20, 30]
-    db.execute.assert_awaited_once()
+    assert result == expected_ids
+    statement = db.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(statement)
+    expected_direction = "ASC" if order == "asc" else "DESC"
 
-
-@pytest.mark.asyncio
-async def test_page_collection_manga_ids_returns_descending_page():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeResult(
-            scalar_rows=[30, 20, 10],
-        )
-    )
-
-    result = await collections_repo.page_collection_manga_ids(
-        db,
-        collection_id=5,
-        offset=3,
-        limit=3,
-        order="desc",
-    )
-
-    assert result == [30, 20, 10]
-    db.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_page_collection_manga_ids_returns_empty_list():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeResult(
-            scalar_rows=[],
-        )
-    )
-
-    result = await collections_repo.page_collection_manga_ids(
-        db,
-        collection_id=5,
-        offset=20,
-        limit=10,
-        order="asc",
-    )
-
-    assert result == []
+    assert "manga_collection.collection_id" in sql
+    assert f"ORDER BY manga_collection.manga_id {expected_direction}" in sql
+    assert "LIMIT" not in sql
+    assert "OFFSET" not in sql
+    assert 5 in compiled.params.values()

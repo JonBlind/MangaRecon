@@ -11,7 +11,11 @@ Returned payloads use the project-wide response envelope.
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.auth.dependencies import (
+    current_active_verified_user as current_user,
+    current_active_verified_user_optional as optional_current_user,
+)
+from backend.content_safety.visibility import viewer_allows_adult_content
 from backend.db.models.user import User
 from backend.db.client_db import ClientReadDatabase
 from backend.utils.ordering import OrderDirection, RecommendationOrderField
@@ -59,6 +63,7 @@ async def get_recommendations_for_collection(
         user_db=user_db,
         manga_db=manga_db,
         redis_cache=redis_cache,
+        include_adult=viewer_allows_adult_content(user),
     )
     return success("Recommendations generated successfully", data=data)
 
@@ -74,6 +79,7 @@ async def get_recommendations_for_query_list(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: ClientReadDatabase = Depends(get_public_read_db),
+    user: User | None = Depends(optional_current_user),
 ):
     '''
     Public endpoint: generate recommendations from a client-provided list of manga IDs.
@@ -86,5 +92,6 @@ async def get_recommendations_for_query_list(
         page=page,
         size=size,
         db=db,
+        include_adult=viewer_allows_adult_content(user),
     )
     return success("Recommendations generated successfully", data=data)

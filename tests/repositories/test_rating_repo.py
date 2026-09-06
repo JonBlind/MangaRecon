@@ -113,156 +113,32 @@ async def test_fetch_user_rating_propagates_database_error():
 
 
 @pytest.mark.asyncio
-async def test_count_user_ratings_returns_count():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeScalarResult(8)
-    )
-
-    result = await rating_repo.count_user_ratings(
-        db,
-        user_id=uuid.uuid4(),
-    )
-
-    assert result == 8
-    db.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_count_user_ratings_builds_count_query():
+async def test_list_user_ratings_returns_all_rows_in_stable_order():
     user_id = uuid.uuid4()
-
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakeScalarResult(0)
-    )
-
-    await rating_repo.count_user_ratings(
-        db,
-        user_id=user_id,
-    )
-
-    statement = db.execute.await_args.args[0]
-    compiled = statement.compile()
-    sql = str(statement)
-
-    assert "count(" in sql.lower()
-    assert "rating.user_id" in sql
-    assert "ORDER BY" not in sql.upper()
-    assert user_id in compiled.params.values()
-
-
-@pytest.mark.asyncio
-async def test_count_user_ratings_propagates_database_error():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        side_effect=RuntimeError("count failed")
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="count failed",
-    ):
-        await rating_repo.count_user_ratings(
-            db,
-            user_id=uuid.uuid4(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_page_user_ratings_returns_rating_list():
-    rating_one = MagicMock()
-    rating_two = MagicMock()
-
+    rating_one = MagicMock(manga_id=10)
+    rating_two = MagicMock(manga_id=20)
     db = MagicMock()
     db.execute = AsyncMock(
         return_value=FakePageResult(
-            [
-                rating_one,
-                rating_two,
-            ]
+            [rating_one, rating_two]
         )
     )
 
-    result = await rating_repo.page_user_ratings(
-        db,
-        user_id=uuid.uuid4(),
-        offset=10,
-        limit=5,
-    )
-
-    assert result == [
-        rating_one,
-        rating_two,
-    ]
-
-
-@pytest.mark.asyncio
-async def test_page_user_ratings_returns_empty_list():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakePageResult([])
-    )
-
-    result = await rating_repo.page_user_ratings(
-        db,
-        user_id=uuid.uuid4(),
-        offset=0,
-        limit=10,
-    )
-
-    assert result == []
-
-
-@pytest.mark.asyncio
-async def test_page_user_ratings_builds_expected_query():
-    user_id = uuid.uuid4()
-
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=FakePageResult([])
-    )
-
-    await rating_repo.page_user_ratings(
+    result = await rating_repo.list_user_ratings(
         db,
         user_id=user_id,
-        offset=15,
-        limit=5,
     )
 
+    assert result == [rating_one, rating_two]
     statement = db.execute.await_args.args[0]
     compiled = statement.compile()
     sql = str(statement)
 
     assert "rating.user_id" in sql
     assert "ORDER BY rating.manga_id ASC" in sql
-    assert "LIMIT" in sql
-    assert "OFFSET" in sql
-
-    params = list(compiled.params.values())
-
-    assert user_id in params
-    assert 15 in params
-    assert 5 in params
-
-
-@pytest.mark.asyncio
-async def test_page_user_ratings_propagates_database_error():
-    db = MagicMock()
-    db.execute = AsyncMock(
-        side_effect=RuntimeError("page failed")
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="page failed",
-    ):
-        await rating_repo.page_user_ratings(
-            db,
-            user_id=uuid.uuid4(),
-            offset=0,
-            limit=10,
-        )
+    assert "LIMIT" not in sql
+    assert "OFFSET" not in sql
+    assert user_id in compiled.params.values()
 
 
 @pytest.mark.asyncio

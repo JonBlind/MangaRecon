@@ -40,17 +40,28 @@ async def get_recommendations_for_collection_page(
     user_db: ClientReadDatabase,
     manga_db: ClientReadDatabase,
     redis_cache,
+    include_adult: bool = False,
 ) -> dict:
     """
     Return paginated, ordered recommendations for the given collection.
     """
     await assert_owned_collection(user_db, user_id=user_id, collection_id=collection_id)
 
-    cache_key = build_recommendations_cache_key(user_id=user_id, collection_id=collection_id)
+    cache_key = build_recommendations_cache_key(
+        user_id=user_id,
+        collection_id=collection_id,
+        include_adult=include_adult,
+    )
     cached_payload = await cache_get_recommendations(redis_cache, cache_key=cache_key)
 
     if cached_payload is None:
-        result = await generate_recommendations_for_collection(user_id, collection_id, user_db, manga_db)
+        result = await generate_recommendations_for_collection(
+            user_id,
+            collection_id,
+            user_db,
+            manga_db,
+            include_adult=include_adult,
+        )
         payload = {
             "items": result["items"],
             "seed_total": result["seed_total"],
@@ -93,6 +104,7 @@ async def get_recommendations_for_query_list_page(
     page: int,
     size: int,
     db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     """
     Public: generate recommendations from a client-provided list of manga IDs.
@@ -109,7 +121,11 @@ async def get_recommendations_for_query_list_page(
             seen.add(mid)
             deduped.append(mid)
 
-    result = await generate_recommendations_for_list(deduped, db)
+    result = await generate_recommendations_for_list(
+        deduped,
+        db,
+        include_adult=include_adult,
+    )
     items = result["items"]
 
     _sort_items(items, order_by=order_by, order_dir=order_dir)

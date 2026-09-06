@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent} from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ApiRequestError } from "../api/http";
 import { useMe } from "../hooks/useMe";
 import { useUpdateProfile } from "../hooks/useProfile";
@@ -30,6 +30,10 @@ export default function Account() {
   const [displayName, setDisplayName] =
     useState("");
   const [username, setUsername] = useState("");
+  const [showAdultContent, setShowAdultContent] =
+    useState(false);
+  const [adultContentAgeConfirmed, setAdultContentAgeConfirmed] =
+    useState(false);
 
   const [
     isEditingUsername,
@@ -48,6 +52,8 @@ export default function Account() {
 
     setDisplayName(meQ.data.displayname ?? "");
     setUsername(meQ.data.username ?? "");
+    setShowAdultContent(meQ.data.show_adult_content);
+    setAdultContentAgeConfirmed(false);
   }, [meQ.data]);
 
   if (meQ.isLoading) {
@@ -100,6 +106,14 @@ export default function Account() {
     isEditingUsername &&
     trimmedUsername !== user.username;
 
+  const adultContentChanged =
+    showAdultContent !== user.show_adult_content;
+
+  const adultContentAgeConfirmationRequired =
+    adultContentChanged &&
+    showAdultContent &&
+    !user.show_adult_content;
+
   const displayNameIsValid =
     trimmedDisplayName.length >=
       MIN_PROFILE_FIELD_LENGTH &&
@@ -114,12 +128,16 @@ export default function Account() {
         MAX_PROFILE_FIELD_LENGTH);
 
   const hasChanges =
-    displayNameChanged || usernameChanged;
+    displayNameChanged ||
+    usernameChanged ||
+    adultContentChanged;
 
   const canSave =
     hasChanges &&
     displayNameIsValid &&
     usernameIsValid &&
+    (!adultContentAgeConfirmationRequired ||
+      adultContentAgeConfirmed) &&
     (!usernameChanged ||
       !usernameIsOnCooldown) &&
     !updateMutation.isPending;
@@ -170,6 +188,8 @@ export default function Account() {
     const payload: {
       username?: string;
       displayname?: string;
+      show_adult_content?: boolean;
+      confirm_adult_content_age?: boolean;
     } = {};
 
     if (displayNameChanged) {
@@ -179,6 +199,14 @@ export default function Account() {
 
     if (usernameChanged) {
       payload.username = trimmedUsername;
+    }
+
+    if (adultContentChanged) {
+      payload.show_adult_content = showAdultContent;
+
+      if (showAdultContent) {
+        payload.confirm_adult_content_age = true;
+      }
     }
 
     try {
@@ -359,6 +387,65 @@ export default function Account() {
                 </p>
               )}
           </div>
+        </section>
+
+        <section className="space-y-3 border-t border-neutral-800 pt-5">
+          <div>
+            <h2 className="text-lg font-medium">
+              Content preferences
+            </h2>
+
+            <p className="mt-1 text-xs opacity-70">
+              Adult titles are hidden by default from search, details,
+              collections, ratings, and recommendations.
+            </p>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 p-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              checked={showAdultContent}
+              onChange={(event) => {
+                updateMutation.reset();
+                setShowAdultContent(event.target.checked);
+                setAdultContentAgeConfirmed(false);
+              }}
+            />
+
+            <span>
+              <span className="block text-sm font-medium">
+                Show adult content
+              </span>
+              <span className="mt-1 block text-xs opacity-70">
+                This setting applies only to your signed-in account.
+              </span>
+            </span>
+          </label>
+
+          {adultContentAgeConfirmationRequired && (
+            <div className="space-y-3 rounded-md border border-amber-700/60 bg-amber-950/20 p-4">
+              <p className="text-sm font-medium">
+                Age confirmation required
+              </p>
+
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4"
+                  checked={adultContentAgeConfirmed}
+                  onChange={(event) => {
+                    updateMutation.reset();
+                    setAdultContentAgeConfirmed(event.target.checked);
+                  }}
+                />
+                <span>
+                  I confirm that I am at least 18 years old and want adult
+                  manga to appear in my account.
+                </span>
+              </label>
+            </div>
+          )}
         </section>
 
         {isConfirmingUsernameChange &&

@@ -67,6 +67,7 @@ describe("auth api", () => {
       password: "password123",
       username: "testuser",
       displayname: "Test User",
+      show_adult_content: false,
     };
 
     await register(payload);

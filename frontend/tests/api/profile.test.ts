@@ -74,4 +74,31 @@ describe("profiles api", () => {
       }
     );
   });
+
+  test("submits the adult-content preference and age confirmation", async () => {
+    const response = {
+      data: {
+        id: "user-1",
+        show_adult_content: true,
+      },
+    };
+
+    mocks.apiFetch.mockResolvedValueOnce(response);
+
+    await updateProfile({
+      show_adult_content: true,
+      confirm_adult_content_age: true,
+    });
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/profiles/me",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          show_adult_content: true,
+          confirm_adult_content_age: true,
+        }),
+      },
+    );
+  });
 });

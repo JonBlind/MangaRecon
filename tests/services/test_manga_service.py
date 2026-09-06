@@ -197,6 +197,7 @@ async def test_get_manga_detail_returns_manga_with_metadata(
     fetch_core.assert_awaited_once_with(
         db,
         manga_id=42,
+        include_adult=False,
     )
     fetch_creator_credits.assert_awaited_once_with(
         db,
@@ -269,6 +270,7 @@ async def test_get_manga_detail_raises_when_manga_missing(
     fetch_core.assert_awaited_once_with(
         db,
         manga_id=999,
+        include_adult=False,
     )
     fetch_creator_credits.assert_not_awaited()
     fetch_genres.assert_not_awaited()
@@ -317,6 +319,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         demo_ids=None,
         exclude_demos=None,
         title=None,
+        include_adult=False,
         page=1,
         size=20,
         order_by="title",
@@ -339,6 +342,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         demo_ids=None,
         exclude_demos=None,
         title=None,
+        include_adult=False,
     )
 
     count_filtered.assert_awaited_once_with(
@@ -437,6 +441,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         demo_ids=[100],
         exclude_demos=[999],
         title="manga",
+        include_adult=False,
         page=2,
         size=5,
         order_by="external_average_rating",
@@ -497,6 +502,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         demo_ids=[100],
         exclude_demos=[999],
         title="manga",
+        include_adult=False,
     )
 
     count_filtered.assert_awaited_once_with(

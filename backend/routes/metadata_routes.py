@@ -1,8 +1,14 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
+from backend.auth.dependencies import (
+    current_active_verified_user_optional as optional_current_user,
+)
+from backend.content_safety.policy import NORMALIZED_ADULT_GENRE_NAMES
+from backend.content_safety.visibility import viewer_allows_adult_content
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
 from backend.db.models.demographics import Demographic
+from backend.db.models.user import User
 from backend.db.client_db import ClientReadDatabase
 from backend.dependencies import get_public_read_db
 from backend.schemas.manga import GenreRead, TagRead, DemographicRead
@@ -25,7 +31,8 @@ S_META_DAY   = "metadata-ip-day"
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_genres(
     request: Request,
-    db: ClientReadDatabase = Depends(get_public_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db),
+    user: User | None = Depends(optional_current_user),
 ):
     '''
     Return all available genres.
@@ -40,6 +47,14 @@ async def get_all_genres(
     try:
         logger.info("Retrieving all genres (no pagination)")
         stmt = select(Genre).order_by(Genre.genre_id.asc())
+
+        if not viewer_allows_adult_content(user):
+            stmt = stmt.where(
+                func.lower(func.btrim(Genre.genre_name)).not_in(
+                    tuple(sorted(NORMALIZED_ADULT_GENRE_NAMES))
+                )
+            )
+
         result = await db.execute(stmt)
         genres = result.scalars().all()
         items = [GenreRead.model_validate(g) for g in genres]
