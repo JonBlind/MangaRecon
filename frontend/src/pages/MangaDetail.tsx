@@ -6,8 +6,7 @@ import { useCollections, useAddMangaToCollection } from "../hooks/useCollections
 import { useDeleteRating, useRating, useSaveRating } from "../hooks/useRatings";
 import type { FeedbackMessage, ReturnToLocationState } from "../types/ui";
 import MarkdownDescription from "../components/MarkdownDescription";
-
-const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
+import MangaCover from "../components/MangaCover";
 
 const RATING_STARS = [1, 2, 3, 4, 5] as const;
 const COLLAPSED_TAG_LIMIT = 12;
@@ -164,13 +163,11 @@ export default function MangaDetail() {
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row">
-        <img
-          src={m.cover_image_url ?? FALLBACK_COVER}
+        <MangaCover
+          src={m.cover_image_url}
           alt={m.title}
-          className="h-72 w-48 rounded-xl border border-neutral-800 bg-neutral-900 object-cover"
-          onError={(e) => {
-            e.currentTarget.src = FALLBACK_COVER;
-          }}
+          className="h-72 w-48 shrink-0 rounded-xl border border-neutral-800"
+          imageClassName="bg-neutral-900 object-cover"
         />
 
         <div className="min-w-0 flex-1 space-y-4">

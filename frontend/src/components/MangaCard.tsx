@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import type { MangaListItem } from "../types/manga";
+import MangaCover from "./MangaCover";
 
 type MangaCardProps = {
   manga: MangaListItem;
@@ -7,8 +8,6 @@ type MangaCardProps = {
   selected?: boolean;
   onToggleSelect?: (manga: MangaListItem) => void;
 };
-
-const FALLBACK_COVER = "https://placehold.co/400x600?text=No+Cover";
 
 export default function MangaCard({
   manga,
@@ -53,10 +52,11 @@ export default function MangaCard({
       )}
 
       <div className="aspect-[2/3] w-full overflow-hidden bg-neutral-950">
-        <img
-          src={manga.cover_image_url || FALLBACK_COVER}
+        <MangaCover
+          src={manga.cover_image_url}
           alt={manga.title}
-          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+          className="h-full w-full"
+          imageClassName="object-cover transition group-hover:scale-[1.02]"
         />
       </div>
 
