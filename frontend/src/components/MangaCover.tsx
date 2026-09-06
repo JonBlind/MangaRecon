@@ -5,6 +5,9 @@ type MangaCoverProps = {
   alt: string;
   className?: string;
   imageClassName?: string;
+  loading?: "eager" | "lazy";
+  decoding?: "async" | "auto" | "sync";
+  fetchPriority?: "high" | "low" | "auto";
 };
 
 function joinClassNames(...classNames: Array<string | undefined>) {
@@ -16,6 +19,9 @@ export default function MangaCover({
   alt,
   className,
   imageClassName,
+  loading,
+  decoding,
+  fetchPriority,
 }: MangaCoverProps) {
   const normalizedSource = src?.trim() || null;
   const [failedSource, setFailedSource] = useState<string | null>(null);
@@ -42,6 +48,9 @@ export default function MangaCover({
       src={normalizedSource}
       alt={alt}
       className={joinClassNames(className, imageClassName)}
+      loading={loading}
+      decoding={decoding}
+      fetchPriority={fetchPriority}
       onError={() => setFailedSource(normalizedSource)}
     />
   );

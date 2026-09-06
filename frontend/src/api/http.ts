@@ -135,13 +135,16 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<ApiEnvelope<T>> {
+  const headers = new Headers(options.headers);
+
+  if (typeof options.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers ?? {}),
-    },
+    headers,
   });
 
   const json = await readJsonSafe(res);

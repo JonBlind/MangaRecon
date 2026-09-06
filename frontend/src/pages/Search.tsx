@@ -6,6 +6,7 @@ import { searchMangas } from "../api/manga";
 import { addMangasBulkToCollection } from "../api/collections";
 import type { MangaSearchResponse } from "../types/manga";
 import MangaCard from "../components/MangaCard";
+import TagFilter from "../components/TagFilter";
 import SearchSelectionBar from "../components/SearchSelectionBar";
 import CollectionPickerModal from "../components/CollectionPickerModal";
 import AuthRequiredModal from "../components/AuthRequiredModal";
@@ -32,6 +33,7 @@ export default function Search() {
   const tagId = searchParams.get("tag") ? Number(searchParams.get("tag")) : "";
   const demoId = searchParams.get("demo") ? Number(searchParams.get("demo")) : "";
   const page = Number(searchParams.get("page") ?? "1");
+  const [tagFilterActivated, setTagFilterActivated] = useState(tagId !== "");
 
   const {
     selectedIds,
@@ -192,6 +194,7 @@ export default function Search() {
     queryKey: ["tags"],
     queryFn: getTags,
     staleTime: 10 * 60_000,
+    enabled: tagFilterActivated || tagId !== "",
   });
 
   const demosQ = useQuery({
@@ -322,27 +325,19 @@ export default function Search() {
           </select>
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm">Tag</label>
-          <select
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
-            value={tagId}
-            onChange={(e) => {
-              const v = e.target.value;
-              updateParams({
-                tag: v === "" ? null : Number(v),
-                page: 1,
-              });
-            }}
-          >
-            <option value="">Any</option>
-            {(tagsQ.data ?? []).map((t) => (
-              <option key={t.tag_id} value={t.tag_id}>
-                {t.tag_name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <TagFilter
+          tags={tagsQ.data ?? []}
+          selectedTagId={tagId}
+          isLoading={tagsQ.isLoading}
+          isError={tagsQ.isError}
+          onActivate={() => setTagFilterActivated(true)}
+          onChange={(nextTagId) => {
+            updateParams({
+              tag: nextTagId === "" ? null : nextTagId,
+              page: 1,
+            });
+          }}
+        />
 
         <div>
           <label className="mb-1 block text-sm">Demographic</label>
@@ -368,7 +363,7 @@ export default function Search() {
       </div>
 
       {/* Loading States*/}
-      {(genresQ.isLoading || tagsQ.isLoading || demosQ.isLoading) && (
+      {(genresQ.isLoading || demosQ.isLoading) && (
         <div className="text-sm opacity-80">Loading filters…</div>
       )}
 

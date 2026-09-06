@@ -57,6 +57,8 @@ export default function MangaCard({
           alt={manga.title}
           className="h-full w-full"
           imageClassName="object-cover transition group-hover:scale-[1.02]"
+          loading="lazy"
+          decoding="async"
         />
       </div>
 

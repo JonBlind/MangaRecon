@@ -11,6 +11,23 @@ describe("MangaCover", () => {
     );
   });
 
+  test("passes browser loading hints to an available image", () => {
+    render(
+      <MangaCover
+        src="https://example.com/naruto.jpg"
+        alt="Naruto"
+        loading="lazy"
+        decoding="async"
+        fetchPriority="low"
+      />,
+    );
+
+    const image = screen.getByAltText("Naruto");
+    expect(image).toHaveAttribute("loading", "lazy");
+    expect(image).toHaveAttribute("decoding", "async");
+    expect(image).toHaveAttribute("fetchpriority", "low");
+  });
+
   test.each([null, undefined, "   "])(
     "renders the local fallback when the source is %s",
     (src) => {

@@ -3,44 +3,89 @@ import Layout from "../components/Layout";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 import Landing from "../pages/Landing";
-import Login from "../pages/Login";
-import Register from "../pages/Register";
-import VerifyEmail from "../pages/VerifyEmail";
-import ForgotPassword from "../pages/ForgotPassword";
-import ResetPassword from "../pages/ResetPassword";
-import Search from "../pages/Search";
-import Collections from "../pages/Collections";
-import CollectionDetail from "../pages/CollectionDetail";
-import Recommendations from "../pages/Recommendations";
-import MangaDetail from "../pages/MangaDetail";
-import MaintenancePage from "../pages/Maintenance";
-import Account from "../pages/Account";
 
 export const router = createBrowserRouter([
   {
     path: "/maintenance",
-    element: <MaintenancePage />,
+    lazy: async () => ({
+      Component: (await import("../pages/Maintenance")).default,
+    }),
   },
   {
     path: "/",
     element: <Layout />,
     children: [
       { path: "/", element: <Landing /> },
-      { path: "/login", element: <Login /> },
-      { path: "/register", element: <Register /> },
-      { path: "/verify-email", element: <VerifyEmail /> },
-      { path: "/forgot-password", element: <ForgotPassword /> },
-      { path: "/reset-password", element: <ResetPassword /> },
-      { path: "/search", element: <Search /> },
-      { path: "/manga/:id", element: <MangaDetail /> },
+      {
+        path: "/login",
+        lazy: async () => ({
+          Component: (await import("../pages/Login")).default,
+        }),
+      },
+      {
+        path: "/register",
+        lazy: async () => ({
+          Component: (await import("../pages/Register")).default,
+        }),
+      },
+      {
+        path: "/verify-email",
+        lazy: async () => ({
+          Component: (await import("../pages/VerifyEmail")).default,
+        }),
+      },
+      {
+        path: "/forgot-password",
+        lazy: async () => ({
+          Component: (await import("../pages/ForgotPassword")).default,
+        }),
+      },
+      {
+        path: "/reset-password",
+        lazy: async () => ({
+          Component: (await import("../pages/ResetPassword")).default,
+        }),
+      },
+      {
+        path: "/search",
+        lazy: async () => ({
+          Component: (await import("../pages/Search")).default,
+        }),
+      },
+      {
+        path: "/manga/:id",
+        lazy: async () => ({
+          Component: (await import("../pages/MangaDetail")).default,
+        }),
+      },
 
       {
         element: <ProtectedRoute />,
         children: [
-          { path: "collections", element: <Collections /> },
-          { path: "collections/:id", element: <CollectionDetail /> },
-          { path: "recommendations", element: <Recommendations /> },
-          { path: "/account", element: <Account /> },
+          {
+            path: "collections",
+            lazy: async () => ({
+              Component: (await import("../pages/Collections")).default,
+            }),
+          },
+          {
+            path: "collections/:id",
+            lazy: async () => ({
+              Component: (await import("../pages/CollectionDetail")).default,
+            }),
+          },
+          {
+            path: "recommendations",
+            lazy: async () => ({
+              Component: (await import("../pages/Recommendations")).default,
+            }),
+          },
+          {
+            path: "/account",
+            lazy: async () => ({
+              Component: (await import("../pages/Account")).default,
+            }),
+          },
         ],
       },
     ],
