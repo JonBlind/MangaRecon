@@ -59,10 +59,20 @@ describe("MangaCard", () => {
       },
     });
 
-    expect(screen.getByAltText(/naruto/i)).toHaveAttribute(
-      "src",
-      "https://placehold.co/400x600?text=No+Cover"
-    );
+    expect(
+      screen.getByRole("img", { name: /naruto cover unavailable/i })
+    ).toHaveTextContent("No Cover");
+    expect(screen.queryByAltText(/naruto/i)).not.toBeInTheDocument();
+  });
+
+  test("uses fallback cover when the cover image fails to load", () => {
+    renderCard();
+
+    fireEvent.error(screen.getByAltText(/naruto/i));
+
+    expect(
+      screen.getByRole("img", { name: /naruto cover unavailable/i })
+    ).toHaveTextContent("No Cover");
   });
 
   test("does not show select button when not selectable", () => {

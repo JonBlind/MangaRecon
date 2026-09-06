@@ -184,6 +184,16 @@ describe("MangaDetail Page", () => {
     );
   });
 
+  test("uses fallback cover when the cover image fails to load", () => {
+    renderMangaDetail();
+
+    fireEvent.error(screen.getByAltText(/naruto/i));
+
+    expect(
+      screen.getByRole("img", { name: /naruto cover unavailable/i }),
+    ).toHaveTextContent("No Cover");
+  });
+
   test("shows loading state", () => {
     mocks.useManga.mockReturnValue({
       data: undefined,
