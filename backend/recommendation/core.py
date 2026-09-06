@@ -6,6 +6,7 @@ scores candidates against the profile to produce ranked results.
 
 import uuid
 from sqlalchemy import or_, select
+from backend.content_safety.visibility import restrict_manga_visibility
 from backend.db.client_db import ClientReadDatabase
 from sqlalchemy.exc import SQLAlchemyError
 from backend.db.models.collection import Collection
@@ -149,6 +150,7 @@ async def get_candidate_manga(
     demo_ids: List[int],
     creator_ids: List[int],
     db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Fetch candidate manga that share at least one relevant metadata value with
@@ -199,7 +201,7 @@ async def get_candidate_manga(
         if not similarity_conditions:
             return []
 
-        stmt = (
+        stmt = restrict_manga_visibility(
             select(
                 Manga.manga_id,
                 Manga.title,
@@ -211,8 +213,8 @@ async def get_candidate_manga(
                 Manga.manga_id.notin_(excluded_ids),
                 or_(*similarity_conditions),
                 Manga.external_average_rating.is_not(None),
-            )
-            .distinct()
+            ).distinct(),
+            include_adult=include_adult,
         )
 
         result = await db.execute(stmt)

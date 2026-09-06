@@ -21,7 +21,10 @@ def handler(function):
 
 @pytest.fixture
 def user():
-    return SimpleNamespace(id=uuid.uuid4())
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        show_adult_content=False,
+    )
 
 
 @pytest.fixture
@@ -325,6 +328,7 @@ async def test_get_collection_manga_forwards_both_databases(
         order="asc",
         user_db=user_db,
         manga_db=manga_db,
+        include_adult=False,
     )
 
     assert result["data"] == page_data
@@ -381,6 +385,7 @@ async def test_bulk_add_forwards_all_manga_ids(
         manga_ids=[1, 2, 3],
         user_db=user_db,
         manga_db=manga_db,
+        include_adult=False,
     )
 
     assert result["data"] == output
@@ -434,6 +439,7 @@ async def test_add_single_manga_forwards_id(
         manga_id=25,
         user_db=user_db,
         manga_db=manga_db,
+        include_adult=False,
     )
 
     assert result["data"] == output

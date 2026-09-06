@@ -2,6 +2,11 @@ from fastapi import APIRouter, Depends, Query, Request
 from typing import List, Optional
 from backend.db.client_db import ClientReadDatabase
 from backend.dependencies import get_public_read_db
+from backend.auth.dependencies import (
+    current_active_verified_user_optional as optional_current_user,
+)
+from backend.content_safety.visibility import viewer_allows_adult_content
+from backend.db.models.user import User
 from backend.utils.ordering import MangaOrderField, OrderDirection
 from backend.utils.response import success
 from backend.rate_limit.middleware import limiter
@@ -20,6 +25,7 @@ async def get_manga_by_id(
     request: Request,
     manga_id: int,
     db: ClientReadDatabase = Depends(get_public_read_db),
+    user: User | None = Depends(optional_current_user),
 ):
     '''
     Retrieve a single manga by its identifier.
@@ -34,7 +40,11 @@ async def get_manga_by_id(
     '''
     try:
         logger.info("Fetching full manga metadata for manga %s", manga_id)
-        manga = await get_manga_detail(manga_id=manga_id, db=db)
+        manga = await get_manga_detail(
+            manga_id=manga_id,
+            db=db,
+            include_adult=viewer_allows_adult_content(user),
+        )
         return success("Manga retrieved successfully", data=manga)
 
     except Exception as e:
@@ -60,6 +70,7 @@ async def filter_manga(
     order_by: MangaOrderField = Query("title"),
     order_dir: OrderDirection = Query("asc"),
     db: ClientReadDatabase = Depends(get_public_read_db),
+    user: User | None = Depends(optional_current_user),
 ):
     '''
     List and filter manga with optional genre, tag, and demographic criteria, plus title search.
@@ -98,6 +109,7 @@ async def filter_manga(
             order_by=order_by,
             order_dir=order_dir,
             db=db,
+            include_adult=viewer_allows_adult_content(user),
         )
 
         return success("Filtered manga retrieved successfully", data=data)

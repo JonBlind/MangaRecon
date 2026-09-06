@@ -32,7 +32,10 @@ describe("Login Page", () => {
   });
 
   test("calls login on submit", async () => {
-    renderWithProviders(<Login />);
+    const { queryClient } = renderWithProviders(<Login />);
+    queryClient.setQueryData(["manga", 901], {
+      manga_id: 901,
+    });
 
     fireEvent.change(screen.getByLabelText(/email/i), {
       target: { value: "test@example.com" },
@@ -46,6 +49,12 @@ describe("Login Page", () => {
 
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledWith("test@example.com", "password123");
+    });
+
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData(["manga", 901]),
+      ).toBeUndefined();
     });
   });
 

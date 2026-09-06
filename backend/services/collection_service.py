@@ -12,11 +12,15 @@ from backend.cache.invalidation import (
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.db.models.collection import Collection
 from backend.repositories.collections_repo import (
-    count_collection_manga,
     get_owned_collection_id,
-    page_collection_manga_ids,
+    list_collection_manga_ids,
 )
-from backend.repositories.manga_repo import attach_genres_to_base, fetch_manga_list_base, manga_exists
+from backend.repositories.manga_repo import (
+    attach_genres_to_base,
+    fetch_manga_list_base,
+    filter_visible_manga_ids,
+    manga_exists,
+)
 from backend.schemas.collection import (
     CollectionCreate,
     CollectionRead,
@@ -202,30 +206,37 @@ async def get_collection_manga_page(
     order: Literal["asc", "desc"],
     user_db: ClientReadDatabase,
     manga_db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     """
     Return paginated MangaListItem objects for a user's collection.
     """
-    offset = (page - 1) * size
-
     owned = await get_owned_collection_id(user_db, user_id=user_id, collection_id=collection_id)
     if owned is None:
         raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
 
-    total = await count_collection_manga(user_db, collection_id=collection_id)
-
-    manga_ids = await page_collection_manga_ids(
+    stored_manga_ids = await list_collection_manga_ids(
         user_db,
         collection_id=collection_id,
-        offset=offset,
-        limit=size,
         order=order,
     )
+    visible_manga_ids = await filter_visible_manga_ids(
+        manga_db,
+        manga_ids=stored_manga_ids,
+        include_adult=include_adult,
+    )
+    total = len(visible_manga_ids)
+    offset = (page - 1) * size
+    manga_ids = visible_manga_ids[offset : offset + size]
 
     if not manga_ids:
         return {"total_results": total, "page": page, "size": size, "items": []}
 
-    base_by_id = await fetch_manga_list_base(manga_db, manga_ids=manga_ids)
+    base_by_id = await fetch_manga_list_base(
+        manga_db,
+        manga_ids=manga_ids,
+        include_adult=include_adult,
+    )
     await attach_genres_to_base(manga_db, manga_ids=manga_ids, base_by_id=base_by_id)
 
     ordered_payloads = [base_by_id[mid] for mid in manga_ids if mid in base_by_id]
@@ -241,11 +252,16 @@ async def add_manga_to_user_collection(
     manga_id: int,
     user_db: ClientWriteDatabase,
     manga_db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     """
     Add a manga to a user's collection.
     """
-    exists = await manga_exists(manga_db, manga_id=manga_id)
+    exists = await manga_exists(
+        manga_db,
+        manga_id=manga_id,
+        include_adult=include_adult,
+    )
     if not exists:
         raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
 
@@ -261,6 +277,7 @@ async def add_manga_bulk_to_user_collection(
     manga_ids: list[int],
     user_db: ClientWriteDatabase,
     manga_db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> BulkMangaInCollectionResponse:
     """
     Add multiple manga to a user's collection.
@@ -274,7 +291,11 @@ async def add_manga_bulk_to_user_collection(
 
     for manga_id in manga_ids:
         try:
-            exists = await manga_exists(manga_db, manga_id=manga_id)
+            exists = await manga_exists(
+                manga_db,
+                manga_id=manga_id,
+                include_adult=include_adult,
+            )
             if not exists:
                 failed.append(
                     BulkMangaAddFailure(

@@ -62,3 +62,26 @@ def test_creator_schema_matches_role_aware_many_to_many_model(
         index["column_names"] == ["creator_id"]
         for index in indexes
     )
+
+
+def test_adult_content_columns_are_non_nullable_and_safe_by_default(
+    manga_write_engine: Engine,
+    user_write_engine: Engine,
+) -> None:
+    manga_columns = {
+        column["name"]: column
+        for column in inspect(manga_write_engine).get_columns("manga")
+    }
+    user_columns = {
+        column["name"]: column
+        for column in inspect(user_write_engine).get_columns("user")
+    }
+
+    assert manga_columns["is_adult_content"]["nullable"] is False
+    assert "false" in str(
+        manga_columns["is_adult_content"]["default"]
+    ).casefold()
+    assert user_columns["show_adult_content"]["nullable"] is False
+    assert "false" in str(
+        user_columns["show_adult_content"]["default"]
+    ).casefold()

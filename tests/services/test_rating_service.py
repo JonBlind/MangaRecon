@@ -82,6 +82,7 @@ async def test_create_or_update_rating_returns_validated_rating(
     manga_exists.assert_awaited_once_with(
         manga_db,
         manga_id=15,
+        include_adult=False,
     )
 
     upsert.assert_awaited_once_with(
@@ -155,6 +156,7 @@ async def test_create_or_update_rating_converts_integrity_error(
     manga_exists.assert_awaited_once_with(
         manga_db,
         manga_id=999,
+        include_adult=False,
     )
 
     user_db.rollback.assert_awaited_once()
@@ -204,6 +206,7 @@ async def test_create_or_update_rating_rejects_missing_manga(
     manga_exists.assert_awaited_once_with(
         manga_db,
         manga_id=999,
+        include_adult=False,
     )
 
     upsert.assert_not_awaited()
@@ -214,11 +217,18 @@ async def test_update_existing_rating_raises_when_rating_missing(
     monkeypatch,
 ):
     db = make_write_db()
+    manga_db = MagicMock()
     db.get_user_rating_for_manga.return_value = None
 
+    manga_exists = AsyncMock(return_value=True)
     upsert = AsyncMock()
     invalidate = AsyncMock()
 
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "upsert_user_rating",
@@ -238,12 +248,19 @@ async def test_update_existing_rating_raises_when_rating_missing(
                 personal_rating=Decimal("6.0"),
             ),
             user_db=db,
+            manga_db=manga_db,
         )
 
     error = exc_info.value
 
     assert error.code == "RATING_NOT_FOUND"
     assert error.message == "Rating not found."
+
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=25,
+        include_adult=False,
+    )
 
     upsert.assert_not_awaited()
     invalidate.assert_not_awaited()
@@ -256,6 +273,7 @@ async def test_update_existing_rating_updates_and_invalidates(
 ):
     user_id = uuid.uuid4()
     db = make_write_db()
+    manga_db = MagicMock()
     db.get_user_rating_for_manga.return_value = make_rating(
         manga_id=25,
         personal_rating=5.0,
@@ -268,7 +286,13 @@ async def test_update_existing_rating_updates_and_invalidates(
 
     upsert = AsyncMock(return_value=updated_rating)
     invalidate = AsyncMock()
+    manga_exists = AsyncMock(return_value=True)
 
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "upsert_user_rating",
@@ -287,6 +311,13 @@ async def test_update_existing_rating_updates_and_invalidates(
             personal_rating=Decimal("9.0"),
         ),
         user_db=db,
+        manga_db=manga_db,
+    )
+
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=25,
+        include_adult=False,
     )
 
     db.get_user_rating_for_manga.assert_awaited_once_with(
@@ -312,6 +343,7 @@ async def test_update_existing_rating_converts_integrity_error(
 ):
     user_id = uuid.uuid4()
     db = make_write_db()
+    manga_db = MagicMock()
     db.get_user_rating_for_manga.return_value = make_rating(
         manga_id=25,
     )
@@ -324,7 +356,13 @@ async def test_update_existing_rating_converts_integrity_error(
         )
     )
     invalidate = AsyncMock()
+    manga_exists = AsyncMock(return_value=True)
 
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "upsert_user_rating",
@@ -344,6 +382,7 @@ async def test_update_existing_rating_converts_integrity_error(
                 personal_rating=Decimal("8.0"),
             ),
             user_db=db,
+            manga_db=manga_db,
         )
 
     assert exc_info.value.code == "MANGA_NOT_FOUND"
@@ -423,7 +462,8 @@ async def test_get_user_ratings_page_returns_paginated_ratings(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
 
     ratings = [
         make_rating(
@@ -434,47 +474,51 @@ async def test_get_user_ratings_page_returns_paginated_ratings(
             manga_id=2,
             personal_rating=9.0,
         ),
+        make_rating(
+            manga_id=3,
+            personal_rating=8.0,
+        ),
     ]
 
-    count_ratings = AsyncMock(return_value=12)
-    page_ratings = AsyncMock(return_value=ratings)
+    list_ratings = AsyncMock(return_value=ratings)
+    filter_visible = AsyncMock(return_value=[1, 3])
 
     monkeypatch.setattr(
         rating_service,
-        "count_user_ratings",
-        count_ratings,
+        "list_user_ratings",
+        list_ratings,
     )
     monkeypatch.setattr(
         rating_service,
-        "page_user_ratings",
-        page_ratings,
+        "filter_visible_manga_ids",
+        filter_visible,
     )
 
     result = await rating_service.get_user_ratings_page(
         user_id=user_id,
         page=2,
-        size=5,
-        user_db=db,
+        size=1,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
-    assert result["total_results"] == 12
+    assert result["total_results"] == 2
     assert result["page"] == 2
-    assert result["size"] == 5
-    assert [item.manga_id for item in result["items"]] == [1, 2]
+    assert result["size"] == 1
+    assert [item.manga_id for item in result["items"]] == [3]
     assert [
         item.personal_rating
         for item in result["items"]
-    ] == [7.0, 9.0]
+    ] == [8.0]
 
-    count_ratings.assert_awaited_once_with(
-        db,
+    list_ratings.assert_awaited_once_with(
+        user_db,
         user_id=user_id,
     )
-    page_ratings.assert_awaited_once_with(
-        db,
-        user_id=user_id,
-        offset=5,
-        limit=5,
+    filter_visible.assert_awaited_once_with(
+        manga_db,
+        manga_ids=[1, 2, 3],
+        include_adult=False,
     )
 
 
@@ -482,16 +526,17 @@ async def test_get_user_ratings_page_returns_paginated_ratings(
 async def test_get_user_ratings_page_handles_empty_page(
     monkeypatch,
 ):
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
 
     monkeypatch.setattr(
         rating_service,
-        "count_user_ratings",
-        AsyncMock(return_value=0),
+        "list_user_ratings",
+        AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
         rating_service,
-        "page_user_ratings",
+        "filter_visible_manga_ids",
         AsyncMock(return_value=[]),
     )
 
@@ -499,7 +544,8 @@ async def test_get_user_ratings_page_handles_empty_page(
         user_id=uuid.uuid4(),
         page=1,
         size=10,
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result == {
@@ -515,13 +561,20 @@ async def test_get_single_user_rating_returns_rating(
     monkeypatch,
 ):
     user_id = uuid.uuid4()
-    db = MagicMock()
+    user_db = MagicMock()
+    manga_db = MagicMock()
     rating = make_rating(
         manga_id=44,
         personal_rating=6.0,
     )
 
     fetch_rating = AsyncMock(return_value=rating)
+    manga_exists = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        manga_exists,
+    )
     monkeypatch.setattr(
         rating_service,
         "fetch_user_rating",
@@ -531,16 +584,22 @@ async def test_get_single_user_rating_returns_rating(
     result = await rating_service.get_single_user_rating(
         user_id=user_id,
         manga_id=44,
-        user_db=db,
+        user_db=user_db,
+        manga_db=manga_db,
     )
 
     assert result.manga_id == 44
     assert result.personal_rating == 6.0
 
     fetch_rating.assert_awaited_once_with(
-        db,
+        user_db,
         user_id=user_id,
         manga_id=44,
+    )
+    manga_exists.assert_awaited_once_with(
+        manga_db,
+        manga_id=44,
+        include_adult=False,
     )
 
 
@@ -548,7 +607,40 @@ async def test_get_single_user_rating_returns_rating(
 async def test_get_single_user_rating_returns_none_when_missing(
     monkeypatch,
 ):
+    user_db = MagicMock()
+    manga_db = MagicMock()
     fetch_rating = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        rating_service,
+        "fetch_user_rating",
+        fetch_rating,
+    )
+
+    result = await rating_service.get_single_user_rating(
+        user_id=uuid.uuid4(),
+        manga_id=44,
+        user_db=user_db,
+        manga_db=manga_db,
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_single_user_rating_hides_restricted_manga(
+    monkeypatch,
+):
+    fetch_rating = AsyncMock()
+    monkeypatch.setattr(
+        rating_service,
+        "manga_exists",
+        AsyncMock(return_value=False),
+    )
     monkeypatch.setattr(
         rating_service,
         "fetch_user_rating",
@@ -559,6 +651,8 @@ async def test_get_single_user_rating_returns_none_when_missing(
         user_id=uuid.uuid4(),
         manga_id=44,
         user_db=MagicMock(),
+        manga_db=MagicMock(),
     )
 
     assert result is None
+    fetch_rating.assert_not_awaited()

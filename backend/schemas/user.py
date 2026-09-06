@@ -16,6 +16,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     created_at: datetime
     last_login: Optional[datetime] = None
     username_changed_at: Optional[datetime] = None
+    show_adult_content: bool = False
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -34,14 +35,31 @@ class ProfileUpdate(BaseModel):
     Change profile information request for users who wish to change one of the following:
     - Username
     - Displayname
+    - Adult-content visibility
     '''
     model_config = ConfigDict(extra="forbid")
     username: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]] = None
     displayname: Optional[Annotated[str, StringConstraints(min_length=4, max_length=64, strip_whitespace=True)]] = None
+    show_adult_content: Optional[bool] = None
+    confirm_adult_content_age: Optional[bool] = None
 
     @field_validator("username", "displayname")
     @classmethod
     def reject_explicit_null(cls, value: str | None, info: ValidationInfo) -> str:
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
+
+    @field_validator(
+        "show_adult_content",
+        "confirm_adult_content_age",
+    )
+    @classmethod
+    def reject_explicit_null_boolean(
+        cls,
+        value: bool | None,
+        info: ValidationInfo,
+    ) -> bool:
         if value is None:
             raise ValueError(f"{info.field_name} cannot be null")
         return value

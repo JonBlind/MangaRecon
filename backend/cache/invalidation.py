@@ -1,8 +1,8 @@
 '''
 Cache invalidation helpers for recommendation results.
 This module centralizes *targeted* cache invalidation for recommendations
-stored in Redis. We maintain keys in the format:
-recommendations:{user_id}:{collection_id}
+stored in Redis. We maintain viewer-specific keys in the format:
+recommendations:{user_id}:{collection_id}:{safe|adult}
 '''
 from sqlalchemy import select
 from backend.db.models.collection import Collection
@@ -24,7 +24,11 @@ async def invalidate_user_recommendations(db: ClientReadDatabase, user_id: int):
     res = await db.execute(
         select(Collection.collection_id).where(Collection.user_id == user_id)
     )
-    keys = [f"recommendations:{user_id}:{cid}" for (cid,) in res.all()]
+    keys = [
+        f"recommendations:{user_id}:{cid}:{visibility}"
+        for (cid,) in res.all()
+        for visibility in ("safe", "adult")
+    ]
     if keys:
         await redis_cache.delete_multiple(*keys)
 
@@ -39,4 +43,7 @@ async def invalidate_collection_recommendations(user_id: int, collection_id: int
     Returns:
         None: Performs side effects on the cache (deletes keys), does not return data.
     '''
-    await redis_cache.delete(f"recommendations:{user_id}:{collection_id}")
+    await redis_cache.delete_multiple(
+        f"recommendations:{user_id}:{collection_id}:safe",
+        f"recommendations:{user_id}:{collection_id}:adult",
+    )

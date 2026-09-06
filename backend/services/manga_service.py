@@ -18,8 +18,17 @@ from backend.schemas.manga import MangaRead, CreatorCreditRead, GenreRead, TagRe
 from backend.utils.ordering import MangaOrderField, OrderDirection
 from backend.utils.domain_exceptions import NotFoundError
 
-async def get_manga_detail(*, manga_id: int, db: ClientReadDatabase) -> MangaRead:
-    row = await fetch_manga_core_by_id(db, manga_id=manga_id)
+async def get_manga_detail(
+    *,
+    manga_id: int,
+    db: ClientReadDatabase,
+    include_adult: bool = False,
+) -> MangaRead:
+    row = await fetch_manga_core_by_id(
+        db,
+        manga_id=manga_id,
+        include_adult=include_adult,
+    )
     if not row:
         raise NotFoundError(code="MANGA_NOT_FOUND", message="Manga not found.")
 
@@ -64,6 +73,7 @@ async def filter_manga_page(
     order_by: MangaOrderField,
     order_dir: OrderDirection,
     db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     offset = (page - 1) * size
 
@@ -75,6 +85,7 @@ async def filter_manga_page(
         demo_ids=demo_ids,
         exclude_demos=exclude_demos,
         title=title,
+        include_adult=include_adult,
     )
 
     total = await count_filtered_manga(db, stmt=stmt)

@@ -136,6 +136,18 @@ def test_profile_update_accepts_username():
     }
 
 
+def test_profile_update_accepts_adult_content_confirmation():
+    payload = ProfileUpdate(
+        show_adult_content=True,
+        confirm_adult_content_age=True,
+    )
+
+    assert payload.model_dump(exclude_unset=True) == {
+        "show_adult_content": True,
+        "confirm_adult_content_age": True,
+    }
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -158,6 +170,8 @@ def test_profile_update_rejects_invalid_profile_field_lengths(
     [
         {"username": None},
         {"displayname": None},
+        {"show_adult_content": None},
+        {"confirm_adult_content_age": None},
         {
             "username": None,
             "displayname": None,
@@ -211,6 +225,23 @@ def test_user_read_accepts_complete_payload():
     assert user.displayname == "Manga Reader"
     assert user.created_at == created_at
     assert user.last_login == last_login
+    assert user.show_adult_content is False
+
+
+def test_user_read_exposes_saved_adult_content_preference():
+    user = UserRead(
+        id=uuid.uuid4(),
+        email="reader@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        username="reader",
+        displayname="Manga Reader",
+        created_at=datetime.now(timezone.utc),
+        show_adult_content=True,
+    )
+
+    assert user.show_adult_content is True
 
 
 def test_user_read_allows_missing_last_login():

@@ -14,7 +14,7 @@ export default function Layout() {
     try {
       await logout();
     } finally {
-      qc.removeQueries({ queryKey: ["me"] });
+      qc.clear();
       nav("/login");
     }
   }

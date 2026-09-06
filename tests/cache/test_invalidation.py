@@ -48,9 +48,12 @@ async def test_invalidate_user_recommendations_deletes_all_collection_keys(
     db.execute.assert_awaited_once()
 
     cache.delete_multiple.assert_awaited_once_with(
-        f"recommendations:{user_id}:1",
-        f"recommendations:{user_id}:5",
-        f"recommendations:{user_id}:12",
+        f"recommendations:{user_id}:1:safe",
+        f"recommendations:{user_id}:1:adult",
+        f"recommendations:{user_id}:5:safe",
+        f"recommendations:{user_id}:5:adult",
+        f"recommendations:{user_id}:12:safe",
+        f"recommendations:{user_id}:12:adult",
     )
 
 
@@ -182,8 +185,10 @@ async def test_invalidate_user_recommendations_propagates_cache_error(
         )
 
     cache.delete_multiple.assert_awaited_once_with(
-        f"recommendations:{user_id}:2",
-        f"recommendations:{user_id}:3",
+        f"recommendations:{user_id}:2:safe",
+        f"recommendations:{user_id}:2:adult",
+        f"recommendations:{user_id}:3:safe",
+        f"recommendations:{user_id}:3:adult",
     )
 
 
@@ -194,7 +199,7 @@ async def test_invalidate_collection_recommendations_deletes_target_key(
     user_id = uuid.uuid4()
 
     cache = MagicMock()
-    cache.delete = AsyncMock()
+    cache.delete_multiple = AsyncMock()
 
     monkeypatch.setattr(
         invalidation,
@@ -207,8 +212,9 @@ async def test_invalidate_collection_recommendations_deletes_target_key(
         42,
     )
 
-    cache.delete.assert_awaited_once_with(
-        f"recommendations:{user_id}:42"
+    cache.delete_multiple.assert_awaited_once_with(
+        f"recommendations:{user_id}:42:safe",
+        f"recommendations:{user_id}:42:adult",
     )
 
 
@@ -217,7 +223,7 @@ async def test_invalidate_collection_recommendations_propagates_cache_error(
     monkeypatch,
 ):
     cache = MagicMock()
-    cache.delete = AsyncMock(
+    cache.delete_multiple = AsyncMock(
         side_effect=RuntimeError("cache failure")
     )
 

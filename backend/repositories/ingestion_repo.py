@@ -22,6 +22,7 @@ from backend.db.models.manga_alternate_title import MangaAlternateTitle
 from backend.db.models.manga_creator import MangaCreator
 from backend.db.models.manga_external_source import MangaExternalSource
 from backend.db.models.tag import Tag
+from backend.content_safety.policy import genres_are_adult_content
 from backend.ingestion.records import (
     CreatorCreditRecord,
     MangaIngestionRecord,
@@ -135,10 +136,23 @@ async def upsert_catalog_manga(
                 "Manga external source references a missing manga."
             )
 
+        expected_adult_classification = (
+            genres_are_adult_content(record.genres)
+        )
+        classification_changed = (
+            manga.is_adult_content
+            != expected_adult_classification
+        )
+
+        if classification_changed:
+            manga.is_adult_content = (
+                expected_adult_classification
+            )
+
         return CatalogUpsertOutcome(
             manga=manga,
             created=False,
-            changed=False,
+            changed=classification_changed,
         )
 
     if source is None:
@@ -280,6 +294,9 @@ async def _replace_canonical_metadata(
         record.external_rating_votes
     )
     manga.cover_image_url = record.cover_image_url
+    manga.is_adult_content = genres_are_adult_content(
+        record.genres
+    )
 
     existing_titles = {
         alternate.title: alternate

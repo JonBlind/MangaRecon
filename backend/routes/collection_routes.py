@@ -10,6 +10,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Query, Request
 from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.content_safety.visibility import viewer_allows_adult_content
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.db.models.user import User
 from backend.dependencies import (
@@ -272,6 +273,7 @@ async def get_manga_in_collection(
             order=order,
             user_db=user_db,
             manga_db=manga_db,
+            include_adult=viewer_allows_adult_content(user),
         )
         return success("Manga retrieved successfully", data=data)
 
@@ -312,7 +314,8 @@ async def add_manga_bulk_to_collection(
             collection_id=collection_id,
             manga_ids=data.manga_ids,
             user_db=user_db,
-            manga_db=manga_db
+            manga_db=manga_db,
+            include_adult=viewer_allows_adult_content(user),
         )
         return success("Manga bulk add completed", data=out)
 
@@ -359,6 +362,7 @@ async def add_manga_to_collection(
             manga_id=data.manga_id,
             user_db=user_db,
             manga_db=manga_db,
+            include_adult=viewer_allows_adult_content(user),
         )
         return success("Manga added to collection", data=out)
 

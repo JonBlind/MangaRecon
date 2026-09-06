@@ -38,11 +38,11 @@ def _table_names(statement: str) -> set[str]:
     }
 
 
-def test_runtime_role_privilege_migration_is_head() -> None:
+def test_adult_content_preference_migration_is_head() -> None:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_current_head() == "c6a4e2f91b73"
+    assert scripts.get_current_head() == "f4b2a8c19d6e"
 
 
 def test_upgrade_grants_each_role_only_its_domain() -> None:

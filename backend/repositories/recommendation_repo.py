@@ -25,8 +25,14 @@ async def assert_owned_collection(user_db: ClientReadDatabase, *, user_id, colle
         raise NotFoundError(code="COLLECTION_NOT_FOUND", message="Collection not found.")
 
 
-def build_recommendations_cache_key(*, user_id, collection_id: int) -> str:
-    return f"recommendations:{user_id}:{collection_id}"
+def build_recommendations_cache_key(
+    *,
+    user_id,
+    collection_id: int,
+    include_adult: bool = False,
+) -> str:
+    visibility = "adult" if include_adult else "safe"
+    return f"recommendations:{user_id}:{collection_id}:{visibility}"
 
 
 def _json_default(value):

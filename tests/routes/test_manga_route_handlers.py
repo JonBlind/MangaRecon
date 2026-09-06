@@ -40,6 +40,7 @@ async def test_get_manga_by_id_forwards_arguments(
     service.assert_awaited_once_with(
         manga_id=25,
         db=db,
+        include_adult=False,
     )
 
     assert result == {
@@ -102,6 +103,7 @@ async def test_filter_manga_forwards_all_filters(
         order_by="external_average_rating",
         order_dir="desc",
         db=db,
+        include_adult=False,
     )
 
     assert result["data"] == page_data

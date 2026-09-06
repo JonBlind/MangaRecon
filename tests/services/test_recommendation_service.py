@@ -265,6 +265,7 @@ async def test_collection_recommendations_cache_hit(
     build_key.assert_called_once_with(
         user_id=user_id,
         collection_id=10,
+        include_adult=False,
     )
     cache_get.assert_awaited_once_with(
         redis_cache,
@@ -369,6 +370,7 @@ async def test_collection_recommendations_cache_miss_generates_and_caches(
         10,
         user_db,
         manga_db,
+        include_adult=False,
     )
 
     cache_set.assert_awaited_once_with(
@@ -691,6 +693,7 @@ async def test_query_list_deduplicates_preserving_order(
     generator.assert_awaited_once_with(
         [5, 2, 7],
         db,
+        include_adult=False,
     )
 
     assert result["seed_total"] == 3

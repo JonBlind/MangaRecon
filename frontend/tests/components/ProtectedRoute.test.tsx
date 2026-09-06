@@ -63,6 +63,7 @@ describe("ProtectedRoute", () => {
         email: "test@example.com",
         username: "testuser",
         displayname: "Test User",
+        show_adult_content: false,
       },
       isPending: false,
       isFetching: false,

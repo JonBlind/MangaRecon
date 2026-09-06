@@ -16,7 +16,10 @@ def handler(function):
 
 @pytest.fixture
 def user():
-    return SimpleNamespace(id=uuid.uuid4())
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        show_adult_content=False,
+    )
 
 
 @pytest.fixture
@@ -45,7 +48,7 @@ def payload():
             "update_rating",
             "update_existing_rating",
             "Rating updated successfully",
-            False,
+            True,
         ),
     ],
 )
@@ -92,6 +95,7 @@ async def test_rating_write_routes_forward_payload(
         "user_id": user.id,
         "payload": payload,
         "user_db": user_db,
+        "include_adult": False,
     }
 
     if needs_manga_db:
@@ -147,6 +151,7 @@ async def test_get_user_ratings_uses_single_rating_service_when_id_given(
     user,
 ):
     db = MagicMock()
+    manga_db = MagicMock()
     single = {
         "manga_id": 25,
         "personal_rating": 8.0,
@@ -174,6 +179,7 @@ async def test_get_user_ratings_uses_single_rating_service_when_id_given(
         page=3,
         size=5,
         db=db,
+        manga_db=manga_db,
         user=user,
     )
 
@@ -181,6 +187,8 @@ async def test_get_user_ratings_uses_single_rating_service_when_id_given(
         user_id=user.id,
         manga_id=25,
         user_db=db,
+        manga_db=manga_db,
+        include_adult=False,
     )
     get_page.assert_not_awaited()
 
@@ -196,6 +204,7 @@ async def test_get_user_ratings_returns_null_when_manga_is_unrated(
     user,
 ):
     db = MagicMock()
+    manga_db = MagicMock()
     get_single = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
@@ -212,6 +221,7 @@ async def test_get_user_ratings_returns_null_when_manga_is_unrated(
         page=1,
         size=20,
         db=db,
+        manga_db=manga_db,
         user=user,
     )
 
@@ -219,6 +229,8 @@ async def test_get_user_ratings_returns_null_when_manga_is_unrated(
         user_id=user.id,
         manga_id=25,
         user_db=db,
+        manga_db=manga_db,
+        include_adult=False,
     )
     assert result == {
         "status": "success",
@@ -234,6 +246,7 @@ async def test_get_user_ratings_uses_page_service_without_id(
     user,
 ):
     db = MagicMock()
+    manga_db = MagicMock()
     page_data = {
         "total_results": 3,
         "page": 2,
@@ -263,6 +276,7 @@ async def test_get_user_ratings_uses_page_service_without_id(
         page=2,
         size=5,
         db=db,
+        manga_db=manga_db,
         user=user,
     )
 
@@ -272,6 +286,8 @@ async def test_get_user_ratings_uses_page_service_without_id(
         page=2,
         size=5,
         user_db=db,
+        manga_db=manga_db,
+        include_adult=False,
     )
 
     assert result["data"] == page_data
@@ -305,6 +321,7 @@ async def test_get_user_ratings_uses_page_service_without_id(
                 "request": MagicMock(),
                 "rating_data": payload,
                 "user_db": MagicMock(),
+                "manga_db": MagicMock(),
                 "user": user,
             },
         ),
@@ -327,6 +344,7 @@ async def test_get_user_ratings_uses_page_service_without_id(
                 "page": 1,
                 "size": 20,
                 "db": MagicMock(),
+                "manga_db": MagicMock(),
                 "user": user,
             },
         ),

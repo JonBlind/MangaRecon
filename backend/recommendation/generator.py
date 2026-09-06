@@ -6,6 +6,7 @@ from typing import List
 from backend.config.limits import MAX_RECOMMENDATION_SEEDS
 from backend.db.client_db import ClientReadDatabase
 from backend.recommendation import core
+from backend.repositories.manga_repo import filter_visible_manga_ids
 from backend.utils.domain_exceptions import BadRequestError
 
 
@@ -14,6 +15,7 @@ async def generate_recommendations_for_collection(
     collection_id: int,
     user_db: ClientReadDatabase,
     manga_db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     '''
     Generate recommendations for the given user's collection by composing core steps.
@@ -30,10 +32,15 @@ async def generate_recommendations_for_collection(
             - seed_used: int
             - seed_truncated: bool
     '''
-    collection_manga_ids = await core.get_manga_ids_in_user_collection(
+    stored_collection_manga_ids = await core.get_manga_ids_in_user_collection(
         user_id,
         collection_id,
         user_db,
+    )
+    collection_manga_ids = await filter_visible_manga_ids(
+        manga_db,
+        manga_ids=stored_collection_manga_ids,
+        include_adult=include_adult,
     )
     if not collection_manga_ids:
         raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Need at least 1 manga in the collection to generate recommendations.", 
@@ -63,6 +70,7 @@ async def generate_recommendations_for_collection(
         demo_ids=list(metadata_profile["demographics"].keys()),
         creator_ids=list(metadata_profile["creators"]),
         db=manga_db,
+        include_adult=include_adult,
     )
 
     scored = await core.get_scored_recommendations(candidates, metadata_profile, manga_db)
@@ -78,6 +86,7 @@ async def generate_recommendations_for_collection(
 async def generate_recommendations_for_list(
     manga_ids: List[int],
     db: ClientReadDatabase,
+    include_adult: bool = False,
 ) -> dict:
     '''
     Generate recommendations from a raw list of manga IDs (not persisted).
@@ -97,9 +106,24 @@ async def generate_recommendations_for_list(
         raise BadRequestError(code="RECOMMENDATION_SEED_EMPTY", message="Please provide at least one manga to generate recommendations.")
 
     excluded_ids = list(manga_ids)
-    seed_total = len(excluded_ids)
+    visible_manga_ids = await filter_visible_manga_ids(
+        db,
+        manga_ids=excluded_ids,
+        include_adult=include_adult,
+    )
+
+    if not visible_manga_ids:
+        raise BadRequestError(
+            code="RECOMMENDATION_SEED_EMPTY",
+            message=(
+                "Please provide at least one visible manga "
+                "to generate recommendations."
+            ),
+        )
+
+    seed_total = len(visible_manga_ids)
     seed_truncated = seed_total > MAX_RECOMMENDATION_SEEDS
-    scoring_manga_ids = excluded_ids[:MAX_RECOMMENDATION_SEEDS]
+    scoring_manga_ids = visible_manga_ids[:MAX_RECOMMENDATION_SEEDS]
 
     metadata_profile = await core.get_metadata_profile_for_collection(
         scoring_manga_ids,
@@ -113,6 +137,7 @@ async def generate_recommendations_for_list(
         demo_ids=list(metadata_profile["demographics"].keys()),
         creator_ids=list(metadata_profile["creators"]),
         db=db,
+        include_adult=include_adult,
     )
 
     scored = await core.get_scored_recommendations(candidates, metadata_profile, db)

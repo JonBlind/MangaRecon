@@ -5,6 +5,7 @@ import logging
 from backend.db.client_db import ClientReadDatabase, ClientWriteDatabase
 from backend.dependencies import get_user_read_db, get_user_write_db, get_manga_read_db
 from backend.auth.dependencies import current_active_verified_user as current_user
+from backend.content_safety.visibility import viewer_allows_adult_content
 from backend.schemas.rating import RatingCreate
 from backend.db.models.user import User
 from backend.utils.response import success
@@ -51,7 +52,13 @@ async def rate_manga(
         rating_data.manga_id,
         rating_data.personal_rating,
     )
-    validated = await create_or_update_rating(user_id=user.id, payload=rating_data, user_db=user_db, manga_db=manga_db)
+    validated = await create_or_update_rating(
+        user_id=user.id,
+        payload=rating_data,
+        user_db=user_db,
+        manga_db=manga_db,
+        include_adult=viewer_allows_adult_content(user),
+    )
     return success("Rating successfully submitted", data=validated)
 
 
@@ -61,6 +68,7 @@ async def update_rating(
     request: Request,
     rating_data: RatingCreate,
     user_db: ClientWriteDatabase = Depends(get_user_write_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
     user: User = Depends(current_user),
 ):
     """
@@ -81,7 +89,13 @@ async def update_rating(
         rating_data.manga_id,
         rating_data.personal_rating,
     )
-    validated = await update_existing_rating(user_id=user.id, payload=rating_data, user_db=user_db)
+    validated = await update_existing_rating(
+        user_id=user.id,
+        payload=rating_data,
+        user_db=user_db,
+        manga_db=manga_db,
+        include_adult=viewer_allows_adult_content(user),
+    )
     return success("Rating updated successfully", data=validated)
 
 
@@ -118,6 +132,7 @@ async def get_user_ratings(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: ClientReadDatabase = Depends(get_user_read_db),
+    manga_db: ClientReadDatabase = Depends(get_manga_read_db),
     user: User = Depends(current_user),
 ):
     """
@@ -136,9 +151,22 @@ async def get_user_ratings(
     """
     if manga_id is not None:
         logger.info("Fetching rating for manga %s by user %s", manga_id, user.id)
-        validated = await get_single_user_rating(user_id=user.id, manga_id=manga_id, user_db=db)
+        validated = await get_single_user_rating(
+            user_id=user.id,
+            manga_id=manga_id,
+            user_db=db,
+            manga_db=manga_db,
+            include_adult=viewer_allows_adult_content(user),
+        )
         return success("Rating retrieved successfully", data=validated)
 
     logger.info("Fetching paginated ratings for user %s page=%s size=%s", user.id, page, size)
-    data = await get_user_ratings_page(user_id=user.id, page=page, size=size, user_db=db)
+    data = await get_user_ratings_page(
+        user_id=user.id,
+        page=page,
+        size=size,
+        user_db=db,
+        manga_db=manga_db,
+        include_adult=viewer_allows_adult_content(user),
+    )
     return success("Ratings retrieved successfully", data=data)

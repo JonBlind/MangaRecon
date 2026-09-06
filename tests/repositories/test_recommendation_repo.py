@@ -113,7 +113,17 @@ def test_build_recommendations_cache_key():
     )
 
     assert result == (
-        f"recommendations:{user_id}:42"
+        f"recommendations:{user_id}:42:safe"
+    )
+
+    adult_result = recommendation_repo.build_recommendations_cache_key(
+        user_id=user_id,
+        collection_id=42,
+        include_adult=True,
+    )
+
+    assert adult_result == (
+        f"recommendations:{user_id}:42:adult"
     )
 
 
@@ -124,7 +134,7 @@ def test_build_recommendations_cache_key_preserves_string_user_id():
     )
 
     assert result == (
-        "recommendations:user-123:7"
+        "recommendations:user-123:7:safe"
     )
 
 

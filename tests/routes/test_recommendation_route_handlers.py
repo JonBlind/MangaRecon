@@ -68,6 +68,7 @@ async def test_collection_recommendation_route_forwards_all_dependencies(
         user_db=user_db,
         manga_db=manga_db,
         redis_cache=redis_cache,
+        include_adult=False,
     )
 
     assert result == {
@@ -125,6 +126,7 @@ async def test_query_list_recommendation_route_forwards_payload(
         page=3,
         size=10,
         db=db,
+        include_adult=False,
     )
 
     assert result["data"] == data

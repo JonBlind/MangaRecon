@@ -114,6 +114,9 @@ async def test_metadata_routes_return_validated_items(
     assert "ORDER BY" in sql
     assert id_name in sql
 
+    if route_name == "get_all_genres":
+        assert "NOT IN" in sql
+
 
 @pytest.mark.parametrize(
     (
@@ -172,3 +175,18 @@ async def test_metadata_routes_log_and_reraise_errors(
         log_error.call_args.kwargs["exc_info"]
         is True
     )
+
+
+@pytest.mark.asyncio
+async def test_genres_include_restricted_values_for_opted_in_user():
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=FakeResult([]))
+
+    await handler(metadata_routes.get_all_genres)(
+        request=MagicMock(),
+        db=db,
+        user=SimpleNamespace(show_adult_content=True),
+    )
+
+    statement = db.execute.await_args.args[0]
+    assert "NOT IN" not in str(statement)

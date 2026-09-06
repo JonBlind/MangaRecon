@@ -208,6 +208,7 @@ async def test_initial_upsert_creates_complete_catalog_graph(
     assert manga.cover_image_url == (
         "https://example.com/cover.jpg"
     )
+    assert manga.is_adult_content is False
 
     assert {
         alternate.title
@@ -365,6 +366,75 @@ async def test_same_payload_hash_is_idempotent(
     )
     assert source is not None
     assert source.fetched_at == original_fetched_at
+
+
+@pytest.mark.asyncio
+async def test_ingestion_classifies_restricted_genres_but_not_mature(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    adult = await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="adult-100",
+            title="Restricted Example",
+            genres=("Action", "Adult"),
+        ),
+    )
+    mature = await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="mature-100",
+            payload_hash="b" * 64,
+            title="Mature Example",
+            genres=("Mature", "Seinen"),
+        ),
+    )
+
+    stored_adult = await load_manga(
+        ingestion_db,
+        manga_id=adult.manga.manga_id,
+    )
+    stored_mature = await load_manga(
+        ingestion_db,
+        manga_id=mature.manga.manga_id,
+    )
+
+    assert stored_adult.is_adult_content is True
+    assert stored_mature.is_adult_content is False
+
+
+@pytest.mark.asyncio
+async def test_same_payload_reconciles_policy_classification(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    record = make_record(
+        external_id="adult-reconcile",
+        genres=("Smut",),
+    )
+    initial = await upsert_and_commit(
+        ingestion_db,
+        record,
+    )
+    manga_id = initial.manga.manga_id
+    assert manga_id is not None
+
+    manga = await load_manga(
+        ingestion_db,
+        manga_id=manga_id,
+    )
+    manga.is_adult_content = False
+    await ingestion_db.commit()
+
+    reconciled = await repository.upsert_catalog_manga(
+        ingestion_db,
+        record=record,
+        provider_display_name="MangaUpdates",
+        provider_attribution_url="https://www.mangaupdates.com/",
+    )
+
+    assert reconciled.created is False
+    assert reconciled.changed is True
+    assert reconciled.manga.is_adult_content is True
 
 
 @pytest.mark.asyncio

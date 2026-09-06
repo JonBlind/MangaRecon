@@ -24,6 +24,7 @@ def make_user(
     displayname="Test User",
     hashed_password="old-hash",
     username_changed_at=None,
+    show_adult_content=False,
 ):
     return User(
         id=user_id or uuid.uuid4(),
@@ -32,6 +33,7 @@ def make_user(
         displayname=displayname,
         hashed_password=hashed_password,
         username_changed_at=username_changed_at,
+        show_adult_content=show_adult_content,
         is_active=True,
         is_superuser=False,
         is_verified=False,
@@ -271,6 +273,88 @@ async def test_update_my_profile_returns_none_when_values_unchanged(
 
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enabling_adult_content_requires_age_confirmation(
+    monkeypatch,
+):
+    user = make_user(show_adult_content=False)
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await profile_service.update_my_profile(
+            user_id=user.id,
+            payload=ProfileUpdate(show_adult_content=True),
+            user_db=db,
+        )
+
+    assert exc_info.value.code == (
+        "ADULT_CONTENT_AGE_CONFIRMATION_REQUIRED"
+    )
+    assert user.show_adult_content is False
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enabling_adult_content_persists_after_confirmation(
+    monkeypatch,
+):
+    user = make_user(show_adult_content=False)
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(
+            show_adult_content=True,
+            confirm_adult_content_age=True,
+        ),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.show_adult_content is True
+    assert user.show_adult_content is True
+    assert not hasattr(result, "confirm_adult_content_age")
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_disabling_adult_content_does_not_require_confirmation(
+    monkeypatch,
+):
+    user = make_user(show_adult_content=True)
+    db = make_write_db()
+
+    monkeypatch.setattr(
+        profile_service,
+        "fetch_user_by_id",
+        AsyncMock(return_value=user),
+    )
+
+    result = await profile_service.update_my_profile(
+        user_id=user.id,
+        payload=ProfileUpdate(show_adult_content=False),
+        user_db=db,
+    )
+
+    assert result is not None
+    assert result.show_adult_content is False
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
