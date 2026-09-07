@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from backend.repositories import manga_repo
 
@@ -253,6 +254,26 @@ def test_build_filter_stmt_with_title():
     ).lower()
 
     assert "lower(manga.title) like lower('%naruto%')" in sql
+    assert "manga.manga_id in (select manga_alternate_title.manga_id" in sql
+    assert "lower(manga_alternate_title.title) like lower('%naruto%')" in sql
+    assert "exists" not in sql
+
+
+def test_build_filter_stmt_ignores_whitespace_only_title():
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=None,
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        title="   ",
+    )
+
+    sql = str(stmt).lower()
+
+    assert " like " not in sql
+    assert "manga_alternate_title" not in sql
 
 
 def test_build_filter_stmt_with_included_genres():
@@ -450,21 +471,32 @@ async def test_count_filtered_manga_returns_scalar_count():
     assert result == 17
     db.execute.assert_awaited_once()
 
+    count_stmt = db.execute.await_args.args[0]
+    sql = str(
+        count_stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "SELECT count(*) AS count_1" in sql
+    assert "FROM (SELECT DISTINCT manga.manga_id AS manga_id" in sql
+
 
 @pytest.mark.asyncio
-async def test_fetch_filtered_manga_page_applies_order_offset_and_limit(
-    monkeypatch,
-):
+async def test_fetch_filtered_manga_page_returns_window_total_and_pagination():
     db = MagicMock()
 
     rows = [
         SimpleNamespace(
             manga_id=1,
             title="A",
+            total_results=17,
         ),
         SimpleNamespace(
             manga_id=2,
             title="B",
+            total_results=17,
         ),
     ]
 
@@ -474,27 +506,17 @@ async def test_fetch_filtered_manga_page_applies_order_offset_and_limit(
         )
     )
 
-    ordering_clause = MagicMock(name="ordering_clause")
-    get_ordering = MagicMock(
-        return_value=ordering_clause,
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=None,
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        title="quest",
     )
 
-    monkeypatch.setattr(
-        manga_repo,
-        "get_ordering_clause",
-        get_ordering,
-    )
-
-    stmt = MagicMock()
-    ordered_stmt = MagicMock()
-    offset_stmt = MagicMock()
-    final_stmt = MagicMock()
-
-    stmt.order_by.return_value = ordered_stmt
-    ordered_stmt.offset.return_value = offset_stmt
-    offset_stmt.limit.return_value = final_stmt
-
-    result = await manga_repo.fetch_filtered_manga_page(
+    result = await manga_repo.fetch_filtered_manga_page_with_total(
         db,
         stmt=stmt,
         offset=10,
@@ -503,21 +525,50 @@ async def test_fetch_filtered_manga_page_applies_order_offset_and_limit(
         order_dir="desc",
     )
 
-    assert result == rows
+    assert result == (rows, 17)
+    db.execute.assert_awaited_once()
 
-    get_ordering.assert_called_once_with(
-        "external_average_rating",
-        "desc",
+    page_stmt = db.execute.await_args.args[0]
+    sql = str(
+        page_stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
     )
-    stmt.order_by.assert_called_once()
 
-    order_by_args = stmt.order_by.call_args.args
+    assert "count(*) OVER () AS total_results" in sql
+    assert "JOIN (SELECT DISTINCT manga.manga_id AS manga_id" in sql
+    assert "ORDER BY manga.external_average_rating DESC NULLS LAST" in sql
+    assert "manga.manga_id ASC" in sql
+    assert "LIMIT 5 OFFSET 10" in sql
 
-    assert order_by_args[0] is ordering_clause
-    assert str(order_by_args[1]) == "manga.manga_id ASC"
-    ordered_stmt.offset.assert_called_once_with(10)
-    offset_stmt.limit.assert_called_once_with(5)
-    db.execute.assert_awaited_once_with(final_stmt)
+
+@pytest.mark.asyncio
+async def test_fetch_filtered_manga_page_returns_unknown_total_when_empty():
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=FakeResult(rows=[])
+    )
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=None,
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        title=None,
+    )
+
+    result = await manga_repo.fetch_filtered_manga_page_with_total(
+        db,
+        stmt=stmt,
+        offset=100,
+        limit=25,
+        order_by="title",
+        order_dir="asc",
+    )
+
+    assert result == ([], None)
 
 
 @pytest.mark.asyncio

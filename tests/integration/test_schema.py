@@ -85,3 +85,24 @@ def test_adult_content_columns_are_non_nullable_and_safe_by_default(
     assert "false" in str(
         user_columns["show_adult_content"]["default"]
     ).casefold()
+
+
+def test_title_search_trigram_indexes_exist(
+    manga_write_engine: Engine,
+) -> None:
+    inspector = inspect(manga_write_engine)
+    manga_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("manga")
+    }
+    alternate_title_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("manga_alternate_title")
+    }
+
+    assert manga_indexes["ix_manga_title_trgm"]["column_names"] == [
+        "title"
+    ]
+    assert alternate_title_indexes[
+        "ix_manga_alternate_title_title_trgm"
+    ]["column_names"] == ["title"]

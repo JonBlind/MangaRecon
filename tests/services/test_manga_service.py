@@ -287,7 +287,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
 
     build_filter = MagicMock(return_value=statement)
     count_filtered = AsyncMock(return_value=0)
-    fetch_page = AsyncMock(return_value=[])
+    fetch_page = AsyncMock(return_value=([], None))
     fetch_genres = AsyncMock()
 
     monkeypatch.setattr(
@@ -302,7 +302,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
     )
     monkeypatch.setattr(
         manga_service,
-        "fetch_filtered_manga_page",
+        "fetch_filtered_manga_page_with_total",
         fetch_page,
     )
     monkeypatch.setattr(
@@ -408,8 +408,8 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
     ]
 
     build_filter = MagicMock(return_value=statement)
-    count_filtered = AsyncMock(return_value=12)
-    fetch_page = AsyncMock(return_value=rows)
+    count_filtered = AsyncMock()
+    fetch_page = AsyncMock(return_value=(rows, 12))
     fetch_genres = AsyncMock(return_value=genre_rows)
 
     monkeypatch.setattr(
@@ -424,7 +424,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
     )
     monkeypatch.setattr(
         manga_service,
-        "fetch_filtered_manga_page",
+        "fetch_filtered_manga_page_with_total",
         fetch_page,
     )
     monkeypatch.setattr(
@@ -505,10 +505,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         include_adult=False,
     )
 
-    count_filtered.assert_awaited_once_with(
-        db,
-        stmt=statement,
-    )
+    count_filtered.assert_not_awaited()
 
     fetch_page.assert_awaited_once_with(
         db,
@@ -548,12 +545,12 @@ async def test_filter_manga_page_leaves_genres_empty_when_no_matches(
     monkeypatch.setattr(
         manga_service,
         "count_filtered_manga",
-        AsyncMock(return_value=1),
+        AsyncMock(),
     )
     monkeypatch.setattr(
         manga_service,
-        "fetch_filtered_manga_page",
-        AsyncMock(return_value=rows),
+        "fetch_filtered_manga_page_with_total",
+        AsyncMock(return_value=(rows, 1)),
     )
     monkeypatch.setattr(
         manga_service,
@@ -625,12 +622,12 @@ async def test_filter_manga_page_groups_duplicate_genre_rows_by_manga(
     monkeypatch.setattr(
         manga_service,
         "count_filtered_manga",
-        AsyncMock(return_value=2),
+        AsyncMock(),
     )
     monkeypatch.setattr(
         manga_service,
-        "fetch_filtered_manga_page",
-        AsyncMock(return_value=rows),
+        "fetch_filtered_manga_page_with_total",
+        AsyncMock(return_value=(rows, 2)),
     )
     monkeypatch.setattr(
         manga_service,
