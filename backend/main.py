@@ -7,6 +7,10 @@ FastAPI application entrypoint for MangaRecon.
 '''
 
 import os
+import time
+
+_APPLICATION_IMPORT_STARTED_AT = time.perf_counter()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -22,6 +26,7 @@ from backend.auth.config import validate_email_config
 from backend.config.settings import ENV, settings, origins
 from backend.dependencies import dispose_database_engines, validate_database_config
 from dotenv import load_dotenv
+from backend.utils.performance import emit_elapsed
 from backend.routes import (
     auth_routes,
     collection_routes,
@@ -44,19 +49,46 @@ async def lifespan(app: FastAPI):
     Yields:
         None: Control is passed to the application while resources are active.
     '''
+    startup_started_at = time.perf_counter()
     redis_cache = None
 
     if ENV == "prod":
         redis_cache = get_redis_cache()
 
     if ENV == "prod":
-        app.state.rate_limit_storage_ready = await rate_limit_storage_ready()
+        redis_ready_started_at = time.perf_counter()
+        try:
+            app.state.rate_limit_storage_ready = (
+                await rate_limit_storage_ready()
+            )
+        except Exception:
+            emit_elapsed(
+                "redis_readiness",
+                redis_ready_started_at,
+                outcome="error",
+            )
+            raise
+
+        emit_elapsed(
+            "redis_readiness",
+            redis_ready_started_at,
+            outcome=(
+                "ready"
+                if app.state.rate_limit_storage_ready
+                else "unavailable"
+            ),
+        )
     else:
         app.state.rate_limit_storage_ready = True
 
     app.state.rate_limit_last_log = 0.0
     app.state.rate_limit_last_check = 0.0
     app.state.rate_limit_check_interval = float(os.getenv("RATELIMIT_CHECK_SECONDS", "15"))
+
+    emit_elapsed(
+        "application_lifespan_startup",
+        startup_started_at,
+    )
 
     try:
         yield
@@ -108,3 +140,7 @@ def create_app() -> FastAPI:
     return app
 
 app = create_app()
+emit_elapsed(
+    "application_import_and_creation",
+    _APPLICATION_IMPORT_STARTED_AT,
+)

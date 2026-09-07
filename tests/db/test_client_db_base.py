@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.db import client_db as client_db_module
 from backend.db.client_db import (
     ClientReadDatabase,
     ClientWriteDatabase,
@@ -34,6 +35,68 @@ async def test_execute_delegates_to_session(session):
 
     assert result is expected_result
     session.execute.assert_awaited_once_with(statement)
+
+
+@pytest.mark.asyncio
+async def test_execute_emits_only_one_first_database_timing(
+    session,
+    monkeypatch,
+):
+    first_result = MagicMock()
+    second_result = MagicMock()
+    session.execute.side_effect = [first_result, second_result]
+    emit = MagicMock()
+
+    monkeypatch.setattr(
+        client_db_module,
+        "_first_database_execute_pending",
+        True,
+    )
+    monkeypatch.setattr(
+        client_db_module,
+        "emit_elapsed",
+        emit,
+    )
+
+    db = ClientReadDatabase(session)
+
+    assert await db.execute(MagicMock()) is first_result
+    assert await db.execute(MagicMock()) is second_result
+
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "first_database_execute"
+    assert isinstance(emit.call_args.args[1], float)
+    assert emit.call_args.kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_first_database_timing_records_execute_failure(
+    session,
+    monkeypatch,
+):
+    session.execute.side_effect = RuntimeError("database unavailable")
+    emit = MagicMock()
+
+    monkeypatch.setattr(
+        client_db_module,
+        "_first_database_execute_pending",
+        True,
+    )
+    monkeypatch.setattr(
+        client_db_module,
+        "emit_elapsed",
+        emit,
+    )
+
+    db = ClientReadDatabase(session)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await db.execute(MagicMock())
+
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "first_database_execute"
+    assert isinstance(emit.call_args.args[1], float)
+    assert emit.call_args.kwargs == {"outcome": "error"}
 
 
 @pytest.mark.asyncio

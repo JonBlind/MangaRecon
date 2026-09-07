@@ -167,6 +167,7 @@ def test_main_loads_secrets_before_replacing_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
+    timings: list[tuple[str, str]] = []
 
     def load() -> None:
         calls.append("load")
@@ -185,11 +186,29 @@ def test_main_loads_secrets_before_replacing_process(
         ]
         raise RuntimeError("exec intercepted")
 
+    def emit_elapsed(
+        stage: str,
+        started_at: float,
+        *,
+        outcome: str = "success",
+    ) -> None:
+        assert isinstance(started_at, float)
+        timings.append((stage, outcome))
+
     monkeypatch.setenv("PORT", "9000")
+    monkeypatch.delenv(
+        bootstrap_runtime.SECRET_ID_ENV,
+        raising=False,
+    )
     monkeypatch.setattr(
         bootstrap_runtime,
         "load_runtime_secrets",
         load,
+    )
+    monkeypatch.setattr(
+        bootstrap_runtime,
+        "emit_elapsed",
+        emit_elapsed,
     )
     monkeypatch.setattr(
         bootstrap_runtime.os,
@@ -201,3 +220,44 @@ def test_main_loads_secrets_before_replacing_process(
         bootstrap_runtime.main()
 
     assert calls == ["load", "exec"]
+    assert timings == [
+        ("runtime_secret_load", "skipped"),
+        ("bootstrap_before_uvicorn", "success"),
+    ]
+
+
+def test_main_times_failed_secret_loading_without_exec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("secret loading failed")
+    load = MagicMock(side_effect=failure)
+    emit = MagicMock()
+    execv = MagicMock()
+
+    monkeypatch.setenv(
+        bootstrap_runtime.SECRET_ID_ENV,
+        "mangarecon/prod/runtime",
+    )
+    monkeypatch.setattr(
+        bootstrap_runtime,
+        "load_runtime_secrets",
+        load,
+    )
+    monkeypatch.setattr(
+        bootstrap_runtime,
+        "emit_elapsed",
+        emit,
+    )
+    monkeypatch.setattr(
+        bootstrap_runtime.os,
+        "execv",
+        execv,
+    )
+
+    with pytest.raises(RuntimeError, match="secret loading failed"):
+        bootstrap_runtime.main()
+
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "runtime_secret_load"
+    assert emit.call_args.kwargs == {"outcome": "error"}
+    execv.assert_not_called()

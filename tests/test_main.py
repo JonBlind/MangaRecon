@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -103,6 +103,7 @@ async def test_lifespan_prod_checks_storage_and_closes_redis(
     storage_ready = AsyncMock(
         return_value=False
     )
+    emit = MagicMock()
 
     monkeypatch.setattr(main, "ENV", "prod")
     monkeypatch.setattr(
@@ -114,6 +115,11 @@ async def test_lifespan_prod_checks_storage_and_closes_redis(
         main,
         "rate_limit_storage_ready",
         storage_ready,
+    )
+    monkeypatch.setattr(
+        main,
+        "emit_elapsed",
+        emit,
     )
     monkeypatch.setenv(
         "RATELIMIT_CHECK_SECONDS",
@@ -135,6 +141,10 @@ async def test_lifespan_prod_checks_storage_and_closes_redis(
     get_cache.assert_called_once_with()
     storage_ready.assert_awaited_once_with()
     redis_cache.close.assert_awaited_once_with()
+    assert emit.call_args_list == [
+        (("redis_readiness", ANY), {"outcome": "unavailable"}),
+        (("application_lifespan_startup", ANY), {}),
+    ]
 
 
 @pytest.mark.asyncio

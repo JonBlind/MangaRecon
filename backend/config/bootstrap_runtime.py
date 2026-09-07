@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import time
+
+_BOOTSTRAP_STARTED_AT = time.perf_counter()
+
 import json
 import os
 import sys
@@ -7,6 +11,8 @@ from collections.abc import Mapping
 from typing import NoReturn
 
 import boto3
+
+from backend.utils.performance import emit_elapsed
 
 SECRET_ID_ENV = "AWS_SECRETS_MANAGER_SECRET_ID"
 
@@ -111,7 +117,29 @@ def _uvicorn_command() -> list[str]:
 
 def main() -> NoReturn:
     """Load runtime secrets, then replace this process with Uvicorn."""
-    load_runtime_secrets()
+    secret_load_started_at = time.perf_counter()
+    secret_configured = bool(os.getenv(SECRET_ID_ENV, "").strip())
+
+    try:
+        load_runtime_secrets()
+    except Exception:
+        emit_elapsed(
+            "runtime_secret_load",
+            secret_load_started_at,
+            outcome="error",
+        )
+        raise
+
+    emit_elapsed(
+        "runtime_secret_load",
+        secret_load_started_at,
+        outcome="success" if secret_configured else "skipped",
+    )
+    emit_elapsed(
+        "bootstrap_before_uvicorn",
+        _BOOTSTRAP_STARTED_AT,
+    )
+
     command = _uvicorn_command()
     os.execv(command[0], command)
 
