@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Boolean, Column, Date, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Column, Date, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from backend.db.models.base import Base
@@ -29,6 +29,15 @@ class Manga(Base):
         - `manga_collection_links` connects manga to collections.
     '''
     __tablename__ = "manga"
+
+    __table_args__ = (
+        Index(
+            "ix_manga_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+    )
 
     manga_id = Column(Integer, primary_key=True)
     title = Column(String(255), nullable=False, index=True)

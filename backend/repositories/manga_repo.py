@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from sqlalchemy import case, func, select, exists, or_
+from sqlalchemy import case, func, or_, select
 
 from backend.db.client_db import ClientReadDatabase
 from backend.db.models.manga import Manga
@@ -18,6 +18,18 @@ from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering
 
 
 _VISIBLE_ID_BATCH_SIZE = 5_000
+
+_MANGA_LIST_COLUMNS = (
+    Manga.manga_id,
+    Manga.title,
+    Manga.description,
+    Manga.publication_year,
+    Manga.media_type,
+    Manga.cover_image_url,
+    Manga.average_rating,
+    Manga.external_average_rating,
+    Manga.external_rating_votes,
+)
 
 
 async def fetch_manga_core_by_id(
@@ -98,29 +110,21 @@ def build_filter_stmt(
     include_adult: bool = False,
 ):
     stmt = restrict_manga_visibility(
-        select(
-            Manga.manga_id,
-            Manga.title,
-            Manga.description,
-            Manga.publication_year,
-            Manga.media_type,
-            Manga.cover_image_url,
-            Manga.average_rating,
-            Manga.external_average_rating,
-            Manga.external_rating_votes,
-        ).distinct(),
+        select(Manga.manga_id).distinct(),
         include_adult=include_adult,
     )
 
-    if title:
-        pattern = f"%{title.strip()}%"
+    normalized_title = title.strip() if title else ""
+    if normalized_title:
+        pattern = f"%{normalized_title}%"
 
         stmt = stmt.where(
             or_(
                 Manga.title.ilike(pattern),
-                exists().where(
-                    MangaAlternateTitle.manga_id == Manga.manga_id,
-                    MangaAlternateTitle.title.ilike(pattern),
+                Manga.manga_id.in_(
+                    select(MangaAlternateTitle.manga_id).where(
+                        MangaAlternateTitle.title.ilike(pattern)
+                    )
                 ),
             )
         )
@@ -159,11 +163,12 @@ def build_filter_stmt(
 
 
 async def count_filtered_manga(db: ClientReadDatabase, *, stmt):
-    count_stmt = stmt.with_only_columns(func.count(func.distinct(Manga.manga_id))).order_by(None)
+    filtered_ids = stmt.order_by(None).subquery("filtered_manga_ids")
+    count_stmt = select(func.count()).select_from(filtered_ids)
     return (await db.execute(count_stmt)).scalar_one()
 
 
-async def fetch_filtered_manga_page(
+async def fetch_filtered_manga_page_with_total(
     db: ClientReadDatabase,
     *,
     stmt,
@@ -172,9 +177,27 @@ async def fetch_filtered_manga_page(
     order_by: MangaOrderField,
     order_dir: OrderDirection,
 ):
-    stmt = (stmt.order_by(get_ordering_clause(order_by, order_dir), Manga.manga_id.asc()).offset(offset).limit(limit))
-    res = await db.execute(stmt)
-    return res.all()
+    filtered_ids = stmt.order_by(None).subquery("filtered_manga_ids")
+    page_stmt = (
+        select(
+            *_MANGA_LIST_COLUMNS,
+            func.count().over().label("total_results"),
+        )
+        .select_from(Manga)
+        .join(
+            filtered_ids,
+            filtered_ids.c.manga_id == Manga.manga_id,
+        )
+        .order_by(
+            get_ordering_clause(order_by, order_dir),
+            Manga.manga_id.asc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = (await db.execute(page_stmt)).all()
+    total = int(rows[0].total_results) if rows else None
+    return rows, total
 
 
 async def fetch_genres_for_manga_ids(db: ClientReadDatabase, *, manga_ids: Sequence[int]):

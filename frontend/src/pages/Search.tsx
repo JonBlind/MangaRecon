@@ -14,7 +14,7 @@ import { useMangaSelection } from "../hooks/useMangaSelection";
 import { useMe } from "../hooks/useMe";
 import { recommendationKeys } from "../hooks/useRecommendations";
 
-const SEARCH_DEBOUNCE_MS = 450;
+const SEARCH_DEBOUNCE_MS = 250;
 
 export default function Search() {
   const nav = useNavigate();
@@ -227,6 +227,8 @@ export default function Search() {
   const total = mangaQ.data?.total_results ?? 0;
   const size = mangaQ.data?.size ?? 25;
   const totalPages = Math.max(1, Math.ceil(total / size));
+  const resultsAreUpdating =
+    titleInput.trim() !== title.trim() || (mangaQ.isFetching && !mangaQ.isLoading);
 
   return (
     <div className="space-y-6">
@@ -380,6 +382,11 @@ export default function Search() {
         <div className="flex items-center justify-between text-sm opacity-80">
           <span>
             {total.toLocaleString()} result{total === 1 ? "" : "s"}
+            {resultsAreUpdating && (
+              <span role="status" className="ml-2">
+                Updating…
+              </span>
+            )}
           </span>
           <span>
             Page {page} / {totalPages}

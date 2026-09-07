@@ -11,7 +11,7 @@ from backend.repositories.manga_repo import (
     fetch_manga_demographics,
     build_filter_stmt,
     count_filtered_manga,
-    fetch_filtered_manga_page,
+    fetch_filtered_manga_page_with_total,
     fetch_genres_for_manga_ids,
 )
 from backend.schemas.manga import MangaRead, CreatorCreditRead, GenreRead, TagRead, DemographicRead, MangaListItem
@@ -88,8 +88,7 @@ async def filter_manga_page(
         include_adult=include_adult,
     )
 
-    total = await count_filtered_manga(db, stmt=stmt)
-    rows = await fetch_filtered_manga_page(
+    rows, total = await fetch_filtered_manga_page_with_total(
         db,
         stmt=stmt,
         offset=offset,
@@ -97,6 +96,8 @@ async def filter_manga_page(
         order_by=order_by,
         order_dir=order_dir,
     )
+    if total is None:
+        total = await count_filtered_manga(db, stmt=stmt)
 
     items = [
         MangaListItem(

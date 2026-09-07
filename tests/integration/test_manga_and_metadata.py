@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from .helpers import assert_error, assert_success, seed_catalog
 
@@ -67,6 +67,25 @@ def test_manga_search_filters_orders_and_paginates_real_rows(
     assert title_data["total_results"] == 2
     assert [item["title"] for item in title_data["items"]] == ["Beta Quest", "Alpha Quest"]
 
+    with manga_write_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga_alternate_title (manga_id, title)
+                VALUES (:manga_id, 'The Great Romance')
+                """
+            ),
+            {"manga_id": catalog.unrelated_manga_id},
+        )
+
+    alternate_title_data = assert_success(
+        client.get("/mangas/", params={"title": "great romance"})
+    )["data"]
+    assert alternate_title_data["total_results"] == 1
+    assert [item["manga_id"] for item in alternate_title_data["items"]] == [
+        catalog.unrelated_manga_id
+    ]
+
     genre_response = client.get(
         "/mangas/",
         params=[("genre_ids", str(catalog.action_genre_id)), ("size", "1")],
@@ -84,6 +103,15 @@ def test_manga_search_filters_orders_and_paginates_real_rows(
     )
     excluded_data = assert_success(excluded_response)["data"]
     assert [item["manga_id"] for item in excluded_data["items"]] == [catalog.unrelated_manga_id]
+
+    out_of_range_data = assert_success(
+        client.get(
+            "/mangas/",
+            params={"title": "quest", "page": 99, "size": 1},
+        )
+    )["data"]
+    assert out_of_range_data["total_results"] == 2
+    assert out_of_range_data["items"] == []
 
 
 def test_manga_search_rejects_invalid_pagination(client: TestClient) -> None:

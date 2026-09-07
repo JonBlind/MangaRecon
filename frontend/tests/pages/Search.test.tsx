@@ -164,7 +164,7 @@ describe("Search Page", () => {
     expect(screen.getByText(/loading results/i)).toBeInTheDocument();
   });
 
-  test("debounces title searches until typing pauses for 450 ms", async () => {
+  test("debounces title searches until typing pauses for 250 ms", async () => {
     renderWithProviders(<Search />);
 
     await waitFor(() => {
@@ -186,9 +186,10 @@ describe("Search Page", () => {
     });
 
     expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent(/updating/i);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(449);
+      await vi.advanceTimersByTimeAsync(249);
     });
 
     expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
