@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 import logging
+import time
 from typing import Dict, Any, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,8 +24,23 @@ from backend.db.models.collection import Collection
 from backend.db.models.manga import Manga
 from backend.db.models.manga_collection import MangaCollection
 from backend.utils.domain_exceptions import BadRequestError, ConflictError, NotFoundError
+from backend.utils.performance import emit_elapsed
 
 logger = logging.getLogger(__name__)
+
+_first_database_execute_pending = True
+
+
+def _claim_first_database_execute() -> bool:
+    """Return true exactly once for the first wrapped execute in this process."""
+    global _first_database_execute_pending
+
+    if not _first_database_execute_pending:
+        return False
+
+    _first_database_execute_pending = False
+    return True
+
 
 class ReadOnlyDatabaseError(RuntimeError):
     '''
@@ -60,7 +76,25 @@ class ClientReadDatabase:
         Returns:
             Result: SQLAlchemy Result object.
         '''
-        return await self._session.execute(stmt)
+        if not _claim_first_database_execute():
+            return await self._session.execute(stmt)
+
+        started_at = time.perf_counter()
+        try:
+            result = await self._session.execute(stmt)
+        except Exception:
+            emit_elapsed(
+                "first_database_execute",
+                started_at,
+                outcome="error",
+            )
+            raise
+
+        emit_elapsed(
+            "first_database_execute",
+            started_at,
+        )
+        return result
 
     async def scalar_one_or_none(self, stmt):
         '''
@@ -72,7 +106,7 @@ class ClientReadDatabase:
         Returns:
             Any | None: Scalar result if present, else None.
         '''
-        result = await self._session.execute(stmt)
+        result = await self.execute(stmt)
         return result.scalar_one_or_none()
 
     async def scalars_all(self, stmt):
@@ -85,7 +119,7 @@ class ClientReadDatabase:
         Returns:
             list: List of scalar results.
         '''
-        result = await self._session.execute(stmt)
+        result = await self.execute(stmt)
         return result.scalars().all()
 
     async def get(self, model, ident):
