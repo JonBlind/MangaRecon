@@ -78,7 +78,7 @@ resource "aws_lambda_function" "backend" {
   image_uri     = "${aws_ecr_repository.backend.repository_url}@${local.backend_image_digest}"
   architectures = ["x86_64"]
 
-  memory_size = 1024
+  memory_size = 1769
   timeout     = 30
 
   # Terraform owns the function and runtime configuration. The production
