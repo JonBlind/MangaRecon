@@ -6,9 +6,7 @@ _BOOTSTRAP_STARTED_AT = time.perf_counter()
 
 import json
 import os
-import sys
 from collections.abc import Mapping
-from typing import NoReturn
 
 import boto3
 
@@ -102,21 +100,20 @@ def load_runtime_secrets() -> None:
         os.environ[key] = value
 
 
-def _uvicorn_command() -> list[str]:
-    return [
-        sys.executable,
-        "-m",
-        "uvicorn",
+def _run_uvicorn() -> None:
+    """Start Uvicorn without launching a second Python interpreter."""
+    uvicorn_import_started_at = time.perf_counter()
+    import uvicorn
+
+    emit_elapsed("uvicorn_import", uvicorn_import_started_at)
+    uvicorn.run(
         "backend.main:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        os.getenv("PORT", "8000"),
-    ]
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+    )
 
-
-def main() -> NoReturn:
-    """Load runtime secrets, then replace this process with Uvicorn."""
+def main() -> None:
+    """Load runtime secrets, then run Uvicorn in this process."""
     secret_load_started_at = time.perf_counter()
     secret_configured = bool(os.getenv(SECRET_ID_ENV, "").strip())
 
@@ -140,8 +137,7 @@ def main() -> NoReturn:
         _BOOTSTRAP_STARTED_AT,
     )
 
-    command = _uvicorn_command()
-    os.execv(command[0], command)
+    _run_uvicorn()
 
 
 if __name__ == "__main__":
