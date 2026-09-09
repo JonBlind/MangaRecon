@@ -1,8 +1,8 @@
 import json
 import os
-from unittest.mock import MagicMock
-
+import sys
 import pytest
+from unittest.mock import MagicMock
 
 from backend.config import bootstrap_runtime
 
@@ -163,7 +163,33 @@ def test_load_runtime_secrets_wraps_aws_errors_without_secret_values(
     assert "provider failure" not in str(exc_info.value)
 
 
-def test_main_loads_secrets_before_replacing_process(
+def test_run_uvicorn_uses_expected_application_and_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uvicorn_module = MagicMock()
+    emit = MagicMock()
+
+    monkeypatch.setenv("PORT", "9000")
+    monkeypatch.setitem(sys.modules, "uvicorn", uvicorn_module)
+    monkeypatch.setattr(
+        bootstrap_runtime,
+        "emit_elapsed",
+        emit,
+    )
+
+    bootstrap_runtime._run_uvicorn()
+
+    uvicorn_module.run.assert_called_once_with(
+        "backend.main:app",
+        host="0.0.0.0",
+        port=9000,
+    )
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "uvicorn_import"
+    assert isinstance(emit.call_args.args[1], float)
+
+
+def test_main_loads_secrets_before_running_uvicorn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -172,19 +198,8 @@ def test_main_loads_secrets_before_replacing_process(
     def load() -> None:
         calls.append("load")
 
-    def execv(executable: str, command: list[str]) -> None:
-        calls.append("exec")
-        assert executable == command[0]
-        assert command[1:] == [
-            "-m",
-            "uvicorn",
-            "backend.main:app",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            "9000",
-        ]
-        raise RuntimeError("exec intercepted")
+    def run_uvicorn() -> None:
+        calls.append("run")
 
     def emit_elapsed(
         stage: str,
@@ -195,7 +210,6 @@ def test_main_loads_secrets_before_replacing_process(
         assert isinstance(started_at, float)
         timings.append((stage, outcome))
 
-    monkeypatch.setenv("PORT", "9000")
     monkeypatch.delenv(
         bootstrap_runtime.SECRET_ID_ENV,
         raising=False,
@@ -211,28 +225,27 @@ def test_main_loads_secrets_before_replacing_process(
         emit_elapsed,
     )
     monkeypatch.setattr(
-        bootstrap_runtime.os,
-        "execv",
-        execv,
+        bootstrap_runtime,
+        "_run_uvicorn",
+        run_uvicorn,
     )
 
-    with pytest.raises(RuntimeError, match="exec intercepted"):
-        bootstrap_runtime.main()
+    bootstrap_runtime.main()
 
-    assert calls == ["load", "exec"]
+    assert calls == ["load", "run"]
     assert timings == [
         ("runtime_secret_load", "skipped"),
         ("bootstrap_before_uvicorn", "success"),
     ]
 
 
-def test_main_times_failed_secret_loading_without_exec(
+def test_main_times_failed_secret_loading_without_starting_uvicorn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     failure = RuntimeError("secret loading failed")
     load = MagicMock(side_effect=failure)
     emit = MagicMock()
-    execv = MagicMock()
+    run_uvicorn = MagicMock()
 
     monkeypatch.setenv(
         bootstrap_runtime.SECRET_ID_ENV,
@@ -249,9 +262,9 @@ def test_main_times_failed_secret_loading_without_exec(
         emit,
     )
     monkeypatch.setattr(
-        bootstrap_runtime.os,
-        "execv",
-        execv,
+        bootstrap_runtime,
+        "_run_uvicorn",
+        run_uvicorn,
     )
 
     with pytest.raises(RuntimeError, match="secret loading failed"):
@@ -260,4 +273,4 @@ def test_main_times_failed_secret_loading_without_exec(
     emit.assert_called_once()
     assert emit.call_args.args[0] == "runtime_secret_load"
     assert emit.call_args.kwargs == {"outcome": "error"}
-    execv.assert_not_called()
+    run_uvicorn.assert_not_called()
