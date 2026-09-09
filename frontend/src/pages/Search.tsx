@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useIsFetching,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import { addMangasBulkToCollection } from "../api/collections";
@@ -19,8 +24,6 @@ const SEARCH_DEBOUNCE_MS = 250;
 export default function Search() {
   const nav = useNavigate();
   const qc = useQueryClient();
-  const meQ = useMe();
-  const isAuthenticated = Boolean(meQ.data);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
   const [isAuthRequiredModalOpen, setIsAuthRequiredModalOpen] = useState(false);
@@ -43,6 +46,84 @@ export default function Search() {
     removeSelectedIds,
     isSelected,
   } = useMangaSelection();
+
+  // Release one API request at a time so a cold page can reuse the first
+  // Lambda environment instead of creating a startup burst.
+  const authRequestsInFlight = useIsFetching({
+    queryKey: ["me"],
+    exact: true,
+  });
+  const [primaryRequestReleased, setPrimaryRequestReleased] = useState(
+    authRequestsInFlight === 0,
+  );
+
+  useEffect(() => {
+    if (authRequestsInFlight === 0) {
+      setPrimaryRequestReleased(true);
+    }
+  }, [authRequestsInFlight]);
+
+  const params = useMemo(
+    () => ({
+      title,
+      page,
+      size: 25,
+      genre_id: genreId === "" ? null : genreId,
+      tag_id: tagId === "" ? null : tagId,
+      demo_id: demoId === "" ? null : demoId,
+      order_by: "title" as const,
+      order_dir: "asc" as const,
+    }),
+    [title, page, genreId, tagId, demoId],
+  );
+
+  const mangaQ = useQuery<MangaSearchResponse>({
+    queryKey: ["mangas", params],
+    queryFn: ({ signal }) => searchMangas(params, signal),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    enabled: primaryRequestReleased,
+  });
+
+  const [secondaryRequestsReleased, setSecondaryRequestsReleased] =
+    useState(false);
+
+  useEffect(() => {
+    if (mangaQ.isFetched && !mangaQ.isFetching) {
+      setSecondaryRequestsReleased(true);
+    }
+  }, [mangaQ.isFetched, mangaQ.isFetching]);
+
+  const meQ = useMe(secondaryRequestsReleased);
+  const authSettled =
+    secondaryRequestsReleased && !meQ.isPending && !meQ.isFetching;
+  const isAuthenticated = Boolean(meQ.data);
+
+  const genresQ = useQuery({
+    queryKey: ["genres"],
+    queryFn: getGenres,
+    staleTime: 10 * 60_000,
+    enabled: authSettled,
+  });
+  const genresSettled =
+    authSettled && !genresQ.isPending && !genresQ.isFetching;
+
+  const demosQ = useQuery({
+    queryKey: ["demographics"],
+    queryFn: getDemographics,
+    staleTime: 10 * 60_000,
+    enabled: genresSettled,
+  });
+  const demosSettled =
+    genresSettled && !demosQ.isPending && !demosQ.isFetching;
+
+  const tagsRequested = tagFilterActivated || tagId !== "";
+  const tagsQ = useQuery({
+    queryKey: ["tags"],
+    queryFn: getTags,
+    staleTime: 10 * 60_000,
+    enabled: demosSettled && tagsRequested,
+  });
 
   function handleGetRecommendations() {
     if (selectedIds.length === 0) return;
@@ -184,49 +265,10 @@ export default function Search() {
     return () => window.clearTimeout(timeoutId);
   }, [title, titleInput, updateParams]);
 
-  const genresQ = useQuery({
-    queryKey: ["genres"],
-    queryFn: getGenres,
-    staleTime: 10 * 60_000,
-  });
-
-  const tagsQ = useQuery({
-    queryKey: ["tags"],
-    queryFn: getTags,
-    staleTime: 10 * 60_000,
-    enabled: tagFilterActivated || tagId !== "",
-  });
-
-  const demosQ = useQuery({
-    queryKey: ["demographics"],
-    queryFn: getDemographics,
-    staleTime: 10 * 60_000,
-  });
-
-  const params = useMemo(
-    () => ({
-      title,
-      page,
-      size: 25,
-      genre_id: genreId === "" ? null : genreId,
-      tag_id: tagId === "" ? null : tagId,
-      demo_id: demoId === "" ? null : demoId,
-      order_by: "title" as const,
-      order_dir: "asc" as const,
-    }),
-    [title, page, genreId, tagId, demoId],
-  );
-
-  const mangaQ = useQuery<MangaSearchResponse>({
-    queryKey: ["mangas", params],
-    queryFn: ({ signal }) => searchMangas(params, signal),
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-  });
-
   const total = mangaQ.data?.total_results ?? 0;
   const size = mangaQ.data?.size ?? 25;
   const totalPages = Math.max(1, Math.ceil(total / size));
+  const primaryRequestPending = !primaryRequestReleased || mangaQ.isLoading;
   const resultsAreUpdating =
     titleInput.trim() !== title.trim() || (mangaQ.isFetching && !mangaQ.isLoading);
 
@@ -330,7 +372,7 @@ export default function Search() {
         <TagFilter
           tags={tagsQ.data ?? []}
           selectedTagId={tagId}
-          isLoading={tagsQ.isLoading}
+          isLoading={tagsRequested && (!demosSettled || tagsQ.isLoading)}
           isError={tagsQ.isError}
           onActivate={() => setTagFilterActivated(true)}
           onChange={(nextTagId) => {
@@ -369,7 +411,27 @@ export default function Search() {
         <div className="text-sm opacity-80">Loading filters…</div>
       )}
 
-      {mangaQ.isLoading && <div className="text-sm opacity-80">Loading results…</div>}
+      {primaryRequestPending && (
+        <div aria-live="polite" aria-busy="true" className="space-y-3">
+          <div className="text-sm opacity-80">Loading results…</div>
+          <div
+            aria-hidden="true"
+            className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+          >
+            {Array.from({ length: 10 }, (_, index) => (
+              <div
+                key={index}
+                className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
+              >
+                <div className="aspect-[2/3] animate-pulse bg-neutral-800" />
+                <div className="min-h-[72px] p-3">
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-neutral-800" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {mangaQ.isError && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -407,7 +469,7 @@ export default function Search() {
         </div>
 
         {/* Empty State */}
-        {!mangaQ.isLoading && (mangaQ.data?.items?.length ?? 0) === 0 && (
+        {!primaryRequestPending && (mangaQ.data?.items?.length ?? 0) === 0 && (
           <div className="text-sm opacity-80">No results.</div>
         )}
       </div>
@@ -416,7 +478,7 @@ export default function Search() {
       <div className="flex items-center gap-3">
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
-          disabled={page <= 1 || mangaQ.isLoading}
+          disabled={page <= 1 || primaryRequestPending}
           onClick={() => updateParams({ page: Math.max(1, page - 1) })}
         >
           Prev
@@ -424,7 +486,7 @@ export default function Search() {
 
         <button
           className="rounded-md border border-neutral-700 px-3 py-2 disabled:opacity-50"
-          disabled={page >= totalPages || mangaQ.isLoading}
+          disabled={page >= totalPages || primaryRequestPending}
           onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
         >
           Next

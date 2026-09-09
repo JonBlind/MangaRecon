@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { vi } from "vitest";
 import Search from "../../src/pages/Search";
 import { renderWithProviders } from "../testUtils";
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   toggleSelection: vi.fn(),
   clearSelection: vi.fn(),
   removeSelectedIds: vi.fn(),
+  useMeEnabled: vi.fn(),
 
   user: null as unknown,
   selectedIds: [] as number[],
@@ -46,10 +48,16 @@ vi.mock("../../src/api/collections", () => ({
 }));
 
 vi.mock("../../src/hooks/useMe", () => ({
-  useMe: () => ({
-    data: mocks.user,
-    isLoading: false,
-  }),
+  useMe: (enabled = true) => {
+    mocks.useMeEnabled(enabled);
+
+    return {
+      data: mocks.user,
+      isLoading: false,
+      isPending: !enabled,
+      isFetching: false,
+    };
+  },
 }));
 
 vi.mock("../../src/hooks/useMangaSelection", () => ({
@@ -127,6 +135,97 @@ beforeEach(() => {
 });
 
 describe("Search Page", () => {
+  test("waits for an auth request already warming the backend", async () => {
+    let resolveAuth!: (value: null) => void;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const authRequest = queryClient.fetchQuery({
+      queryKey: ["me"],
+      queryFn: () =>
+        new Promise<null>((resolve) => {
+          resolveAuth = resolve;
+        }),
+    });
+
+    renderWithProviders(<Search />, { queryClient });
+
+    expect(mocks.searchMangas).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveAuth(null);
+      await authRequest;
+    });
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test("releases cold-page requests one at a time after the primary search", async () => {
+    let resolveManga!: (value: typeof mangaResults) => void;
+    let resolveGenres!: (value: Array<{ genre_id: number; genre_name: string }>) => void;
+    let resolveDemographics!: (
+      value: Array<{ demographic_id: number; demographic_name: string }>,
+    ) => void;
+
+    mocks.searchMangas.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveManga = resolve;
+      }),
+    );
+    mocks.getGenres.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGenres = resolve;
+      }),
+    );
+    mocks.getDemographics.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDemographics = resolve;
+      }),
+    );
+
+    renderWithProviders(<Search />);
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.useMeEnabled).toHaveBeenLastCalledWith(false);
+    expect(mocks.getGenres).not.toHaveBeenCalled();
+    expect(mocks.getDemographics).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveManga(mangaResults);
+    });
+
+    await waitFor(() => {
+      expect(mocks.useMeEnabled).toHaveBeenLastCalledWith(true);
+      expect(mocks.getGenres).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.getDemographics).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveGenres([{ genre_id: 1, genre_name: "Action" }]);
+    });
+
+    await waitFor(() => {
+      expect(mocks.getDemographics).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.getTags).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveDemographics([
+        { demographic_id: 1, demographic_name: "Shounen" },
+      ]);
+    });
+
+    expect(await screen.findByText(/shounen/i)).toBeInTheDocument();
+    expect(mocks.getTags).not.toHaveBeenCalled();
+  });
+
   test("renders search page and filters", async () => {
     renderWithProviders(<Search />);
 
@@ -138,8 +237,8 @@ describe("Search Page", () => {
       expect(screen.getByText(/2 results/i)).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/action/i)).toBeInTheDocument();
-    expect(screen.getByText(/shounen/i)).toBeInTheDocument();
+    expect(await screen.findByText(/action/i)).toBeInTheDocument();
+    expect(await screen.findByText(/shounen/i)).toBeInTheDocument();
     expect(mocks.getTags).not.toHaveBeenCalled();
 
     fireEvent.focus(screen.getByRole("combobox", { name: /^tag$/i }));
@@ -564,14 +663,15 @@ describe("Search Page", () => {
     expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
   });
 
-  test("shows metadata loading state", () => {
+  test("shows metadata loading state after results settle", async () => {
     mocks.getGenres.mockReturnValue(new Promise(() => {}));
     mocks.getTags.mockReturnValue(new Promise(() => {}));
     mocks.getDemographics.mockReturnValue(new Promise(() => {}));
 
     renderWithProviders(<Search />);
 
-    expect(screen.getByText(/loading filters/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading results/i)).toBeInTheDocument();
+    expect(await screen.findByText(/loading filters/i)).toBeInTheDocument();
   });
 
   test("does not fetch tags until the tag filter is used", async () => {

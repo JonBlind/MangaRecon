@@ -1,14 +1,21 @@
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMe } from "../hooks/useMe";
 import { logout } from "../api/auth";
 
 export default function Layout() {
   const nav = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
-  const { data: me, isLoading } = useMe();
+  const pageLoadsPrimaryPublicData =
+    location.pathname === "/search" ||
+    location.pathname === "/search/" ||
+    location.pathname.startsWith("/manga/");
+  const { data: me, isLoading, isPending } = useMe(!pageLoadsPrimaryPublicData);
 
-  const isCheckingAuth = isLoading && me === undefined;
+  const isCheckingAuth =
+    me === undefined &&
+    (isLoading || (pageLoadsPrimaryPublicData && isPending));
 
   async function handleLogout() {
     try {
