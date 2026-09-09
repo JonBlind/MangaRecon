@@ -23,7 +23,7 @@ vi.mock("../../src/hooks/useManga", () => ({
 }));
 
 vi.mock("../../src/hooks/useMe", () => ({
-  useMe: () => mocks.useMe(),
+  useMe: (enabled = true) => mocks.useMe(enabled),
 }));
 
 vi.mock("../../src/hooks/useCollections", () => ({
@@ -143,6 +143,8 @@ describe("MangaDetail Page", () => {
   test("renders manga details", () => {
     renderMangaDetail();
 
+    expect(mocks.useMe).toHaveBeenLastCalledWith(true);
+
     const title = screen.getByRole("heading", { name: /naruto/i });
     const descriptionRegion = screen.getByRole("region", {
       name: /^description$/i,
@@ -216,6 +218,7 @@ describe("MangaDetail Page", () => {
     renderMangaDetail();
 
     expect(screen.getByText(/loading manga/i)).toBeInTheDocument();
+    expect(mocks.useMe).toHaveBeenLastCalledWith(false);
   });
 
   test("shows error state", () => {

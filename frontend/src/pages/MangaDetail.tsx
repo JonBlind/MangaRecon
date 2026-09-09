@@ -30,7 +30,7 @@ export default function MangaDetail() {
   const { data, isPending, isError } = useManga(mangaId);
 
   // auth + collections
-  const meQ = useMe();
+  const meQ = useMe(Boolean(data));
   const isAuthenticated = Boolean(meQ.data);
 
   const collectionsQ = useCollections(

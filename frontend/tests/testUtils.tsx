@@ -5,14 +5,16 @@ import type { ReactElement } from "react";
 
 export function renderWithProviders(
   ui: ReactElement,
-  options?: { withRouter?: boolean },
+  options?: { withRouter?: boolean; queryClient?: QueryClient },
 ) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+  const queryClient =
+    options?.queryClient ??
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
 
   const content = (
     <QueryClientProvider client={queryClient}>
