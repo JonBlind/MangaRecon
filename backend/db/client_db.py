@@ -79,20 +79,69 @@ class ClientReadDatabase:
         if not _claim_first_database_execute():
             return await self._session.execute(stmt)
 
-        started_at = time.perf_counter()
+        total_started_at = time.perf_counter()
+
+        # Acquire the connection through this session before executing the
+        # original statement. SQLAlchemy reuses it for the statement, which
+        # lets us split first-use connection time without issuing probe SQL.
         try:
-            result = await self._session.execute(stmt)
+            await self._session.connection()
         except Exception:
+            connection_failed_at = time.perf_counter()
+            emit_elapsed(
+                "first_database_connection_acquire",
+                total_started_at,
+                finished_at=connection_failed_at,
+                outcome="error",
+            )
             emit_elapsed(
                 "first_database_execute",
-                started_at,
+                total_started_at,
+                finished_at=connection_failed_at,
                 outcome="error",
             )
             raise
 
+        connection_acquired_at = time.perf_counter()
+
+        try:
+            result = await self._session.execute(stmt)
+        except Exception:
+            statement_failed_at = time.perf_counter()
+            emit_elapsed(
+                "first_database_connection_acquire",
+                total_started_at,
+                finished_at=connection_acquired_at,
+            )
+            emit_elapsed(
+                "first_database_statement_execute",
+                connection_acquired_at,
+                finished_at=statement_failed_at,
+                outcome="error",
+            )
+            emit_elapsed(
+                "first_database_execute",
+                total_started_at,
+                finished_at=statement_failed_at,
+                outcome="error",
+            )
+            raise
+
+        statement_finished_at = time.perf_counter()
+        emit_elapsed(
+            "first_database_connection_acquire",
+            total_started_at,
+            finished_at=connection_acquired_at,
+        )
+        emit_elapsed(
+            "first_database_statement_execute",
+            connection_acquired_at,
+            finished_at=statement_finished_at,
+        )
         emit_elapsed(
             "first_database_execute",
-            started_at,
+            total_started_at,
+            finished_at=statement_finished_at,
         )
         return result
 
