@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +13,6 @@ from backend.utils.domain_exceptions import BadRequestError
 @pytest.fixture
 def session():
     session = MagicMock()
-    session.connection = AsyncMock()
     session.execute = AsyncMock()
     session.get = AsyncMock()
     session.refresh = AsyncMock()
@@ -35,22 +34,18 @@ async def test_execute_delegates_to_session(session):
     result = await db.execute(statement)
 
     assert result is expected_result
-    session.connection.assert_not_awaited()
     session.execute.assert_awaited_once_with(statement)
 
 
 @pytest.mark.asyncio
-async def test_execute_emits_first_database_timing_breakdown_once(
+async def test_execute_emits_only_one_first_database_timing(
     session,
     monkeypatch,
 ):
-    first_statement = MagicMock()
-    second_statement = MagicMock()
     first_result = MagicMock()
     second_result = MagicMock()
     session.execute.side_effect = [first_result, second_result]
     emit = MagicMock()
-    clock = MagicMock(side_effect=[10.0, 10.4, 10.65])
 
     monkeypatch.setattr(
         client_db_module,
@@ -61,50 +56,26 @@ async def test_execute_emits_first_database_timing_breakdown_once(
         client_db_module,
         "emit_elapsed",
         emit,
-    )
-    monkeypatch.setattr(
-        client_db_module.time,
-        "perf_counter",
-        clock,
     )
 
     db = ClientReadDatabase(session)
 
-    assert await db.execute(first_statement) is first_result
-    assert await db.execute(second_statement) is second_result
+    assert await db.execute(MagicMock()) is first_result
+    assert await db.execute(MagicMock()) is second_result
 
-    session.connection.assert_awaited_once_with()
-    session.execute.assert_has_awaits(
-        [call(first_statement), call(second_statement)]
-    )
-    assert emit.call_args_list == [
-        call(
-            "first_database_connection_acquire",
-            10.0,
-            finished_at=10.4,
-        ),
-        call(
-            "first_database_statement_execute",
-            10.4,
-            finished_at=10.65,
-        ),
-        call(
-            "first_database_execute",
-            10.0,
-            finished_at=10.65,
-        ),
-    ]
-    assert clock.call_count == 3
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "first_database_execute"
+    assert isinstance(emit.call_args.args[1], float)
+    assert emit.call_args.kwargs == {}
 
 
 @pytest.mark.asyncio
-async def test_first_database_timing_records_connection_failure(
+async def test_first_database_timing_records_execute_failure(
     session,
     monkeypatch,
 ):
-    session.connection.side_effect = RuntimeError("database unavailable")
+    session.execute.side_effect = RuntimeError("database unavailable")
     emit = MagicMock()
-    clock = MagicMock(side_effect=[20.0, 20.75])
 
     monkeypatch.setattr(
         client_db_module,
@@ -115,11 +86,6 @@ async def test_first_database_timing_records_connection_failure(
         client_db_module,
         "emit_elapsed",
         emit,
-    )
-    monkeypatch.setattr(
-        client_db_module.time,
-        "perf_counter",
-        clock,
     )
 
     db = ClientReadDatabase(session)
@@ -127,75 +93,10 @@ async def test_first_database_timing_records_connection_failure(
     with pytest.raises(RuntimeError, match="database unavailable"):
         await db.execute(MagicMock())
 
-    session.connection.assert_awaited_once_with()
-    session.execute.assert_not_awaited()
-    assert emit.call_args_list == [
-        call(
-            "first_database_connection_acquire",
-            20.0,
-            finished_at=20.75,
-            outcome="error",
-        ),
-        call(
-            "first_database_execute",
-            20.0,
-            finished_at=20.75,
-            outcome="error",
-        ),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_first_database_timing_records_statement_failure(
-    session,
-    monkeypatch,
-):
-    session.execute.side_effect = RuntimeError("query failed")
-    emit = MagicMock()
-    clock = MagicMock(side_effect=[30.0, 30.4, 31.1])
-
-    monkeypatch.setattr(
-        client_db_module,
-        "_first_database_execute_pending",
-        True,
-    )
-    monkeypatch.setattr(
-        client_db_module,
-        "emit_elapsed",
-        emit,
-    )
-    monkeypatch.setattr(
-        client_db_module.time,
-        "perf_counter",
-        clock,
-    )
-
-    db = ClientReadDatabase(session)
-
-    with pytest.raises(RuntimeError, match="query failed"):
-        await db.execute(MagicMock())
-
-    session.connection.assert_awaited_once_with()
-    session.execute.assert_awaited_once()
-    assert emit.call_args_list == [
-        call(
-            "first_database_connection_acquire",
-            30.0,
-            finished_at=30.4,
-        ),
-        call(
-            "first_database_statement_execute",
-            30.4,
-            finished_at=31.1,
-            outcome="error",
-        ),
-        call(
-            "first_database_execute",
-            30.0,
-            finished_at=31.1,
-            outcome="error",
-        ),
-    ]
+    emit.assert_called_once()
+    assert emit.call_args.args[0] == "first_database_execute"
+    assert isinstance(emit.call_args.args[1], float)
+    assert emit.call_args.kwargs == {"outcome": "error"}
 
 
 @pytest.mark.asyncio
