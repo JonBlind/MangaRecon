@@ -76,3 +76,52 @@ async def test_find_existing_catalog_external_ids_deduplicates_and_chunks(
 
     for compiled in compiled_statements:
         assert "mangaupdates" in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_find_missing_cover_external_ids_builds_bounded_provider_query(
+) -> None:
+    db = MagicMock()
+    db.scalars_all = AsyncMock(return_value=["10", "20"])
+
+    result = await ingestion_repo.find_missing_cover_external_ids(
+        db,
+        provider_key="mangaupdates",
+        limit=2,
+    )
+
+    assert result == ("10", "20")
+    db.scalars_all.assert_awaited_once()
+
+    statement = db.scalars_all.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+
+    assert "manga_external_source.external_id" in sql
+    assert "JOIN data_provider" in sql
+    assert "JOIN manga" in sql
+    assert "data_provider.provider_key" in sql
+    assert "manga.cover_image_url IS NULL" in sql
+    assert "btrim(manga.cover_image_url)" in sql
+    assert "ORDER BY manga.manga_id" in sql
+    assert "mangaupdates" in compiled.params.values()
+    assert 2 in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_find_missing_cover_external_ids_rejects_invalid_limit(
+) -> None:
+    db = MagicMock()
+    db.scalars_all = AsyncMock()
+
+    with pytest.raises(
+        ValueError,
+        match="limit must be greater than zero",
+    ):
+        await ingestion_repo.find_missing_cover_external_ids(
+            db,
+            provider_key="mangaupdates",
+            limit=0,
+        )
+
+    db.scalars_all.assert_not_awaited()
