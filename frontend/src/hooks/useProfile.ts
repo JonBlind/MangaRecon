@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateProfile } from "../api/profile";
+import { deleteAccount, updateProfile } from "../api/profile";
 
 export function useUpdateProfile() {
   const qc = useQueryClient();
@@ -24,5 +24,11 @@ export function useUpdateProfile() {
         }
       }
     },
+  });
+}
+
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: deleteAccount,
   });
 }

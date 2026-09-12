@@ -1,6 +1,21 @@
 from __future__ import annotations
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
+
 from fastapi.testclient import TestClient
-from .helpers import assert_error, assert_success, login_user, make_user, register_and_login, register_user
+from sqlalchemy import Engine, text
+
+from backend.cache.redis import get_redis_cache
+from .helpers import (
+    assert_error,
+    assert_success,
+    create_collection,
+    login_user,
+    make_user,
+    register_and_login,
+    register_user,
+    seed_catalog,
+)
 import pytest
 
 def test_get_and_update_profile_persist_across_requests(client: TestClient) -> None:
@@ -18,6 +33,104 @@ def test_get_and_update_profile_persist_across_requests(client: TestClient) -> N
 
     reread = assert_success(client.get("/profiles/me"))["data"]
     assert reread["displayname"] == "Updated Display"
+
+
+def test_delete_account_requires_login_and_confirmed_current_password(
+    client: TestClient,
+) -> None:
+    response = client.request(
+        "DELETE", "/profiles/me",
+        json={"current_password": "not-logged-in", "confirmation": "DELETE"},
+    )
+    assert_error(response, status_code=401)
+
+    user = register_and_login(client, suffix="deletepassword")
+    bad_confirmation = client.request(
+        "DELETE", "/profiles/me",
+        json={"current_password": user.password, "confirmation": "not yet"},
+    )
+    assert_error(bad_confirmation, status_code=422)
+    wrong_password = client.request(
+        "DELETE", "/profiles/me",
+        json={"current_password": "wrong-password", "confirmation": "DELETE"},
+    )
+    assert_error(wrong_password, status_code=400, detail="CURRENT_PASSWORD_INCORRECT")
+    assert "auth" in client.cookies
+    assert client.get("/profiles/me").status_code == 200
+
+
+def test_delete_account_cascades_owned_data_but_keeps_catalog_and_other_users(
+    app,
+    client_factory,
+    user_write_engine: Engine,
+    manga_write_engine: Engine,
+) -> None:
+    first = client_factory()
+    other = client_factory()
+    first_user = register_and_login(first, suffix="deleteowner")
+    previous_auth_cookie = first.cookies.get("auth")
+    register_and_login(other, suffix="deleteother")
+    first_id = UUID(assert_success(first.get("/profiles/me"))["data"]["id"])
+    other_id = UUID(assert_success(other.get("/profiles/me"))["data"]["id"])
+    catalog = seed_catalog(manga_write_engine)
+    owned_collection = create_collection(first, name="To Delete")
+    surviving_collection = create_collection(other, name="Keep Me")
+
+    assert_success(first.post(
+        f"/collections/{owned_collection['collection_id']}/mangas",
+        json={"manga_id": catalog.seed_manga_id},
+    ))
+    assert_success(first.post(
+        "/ratings",
+        json={"manga_id": catalog.seed_manga_id, "personal_rating": 8},
+    ))
+    assert_success(other.post(
+        "/ratings",
+        json={"manga_id": catalog.seed_manga_id, "personal_rating": 10},
+    ))
+
+    cache = MagicMock(delete_multiple=AsyncMock())
+    app.dependency_overrides[get_redis_cache] = lambda: cache
+    try:
+        deleted = first.request(
+            "DELETE", "/profiles/me",
+            json={"current_password": first_user.password, "confirmation": "DELETE"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_redis_cache, None)
+
+    assert_success(deleted, message="Account deleted successfully")
+    assert "auth" not in first.cookies
+    assert first.get("/profiles/me").status_code == 401
+    assert first.get(
+        "/profiles/me", headers={"Cookie": f"auth={previous_auth_cookie}"}
+    ).status_code == 401
+    assert_error(first.post(
+        "/auth/jwt/login",
+        data={"username": first_user.email, "password": first_user.password},
+    ), status_code=401)
+    assert other.get("/profiles/me").status_code == 200
+    assert other.get(f"/collections/{surviving_collection['collection_id']}").status_code == 200
+
+    with user_write_engine.connect() as connection:
+        assert connection.execute(text('SELECT count(*) FROM "user" WHERE id = :id'), {"id": first_id}).scalar_one() == 0
+        assert connection.execute(text('SELECT count(*) FROM "user" WHERE id = :id'), {"id": other_id}).scalar_one() == 1
+        assert connection.execute(text('SELECT count(*) FROM collection WHERE user_id = :id'), {"id": first_id}).scalar_one() == 0
+        assert connection.execute(text('SELECT count(*) FROM manga_collection WHERE collection_id = :id'), {"id": owned_collection["collection_id"]}).scalar_one() == 0
+        assert connection.execute(text('SELECT count(*) FROM rating WHERE user_id = :id'), {"id": first_id}).scalar_one() == 0
+        assert connection.execute(text('SELECT count(*) FROM rating WHERE user_id = :id'), {"id": other_id}).scalar_one() == 1
+
+    with manga_write_engine.connect() as connection:
+        average = connection.execute(
+            text("SELECT average_rating FROM manga WHERE manga_id = :id"),
+            {"id": catalog.seed_manga_id},
+        ).scalar_one()
+    assert float(average) == 10.0
+
+    cache.delete_multiple.assert_awaited_once_with(
+        f"recommendations:{first_id}:{owned_collection['collection_id']}:safe",
+        f"recommendations:{first_id}:{owned_collection['collection_id']}:adult",
+    )
 
 
 def test_username_update_persists_across_requests(client: TestClient) -> None:

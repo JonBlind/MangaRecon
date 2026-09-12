@@ -5,10 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import Response
 
 from backend.routes import profile_routes
 from backend.schemas.user import (
     ChangePassword,
+    DeleteAccount,
     ProfileUpdate,
 )
 from backend.utils.domain_exceptions import (
@@ -190,6 +192,64 @@ async def test_change_password_forwards_dependencies(
     assert result["message"] == (
         "Password changed successfully"
     )
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_clears_auth_cookie_only_after_success(monkeypatch, user):
+    response = Response()
+    db = MagicMock()
+    manager = MagicMock()
+    cache = MagicMock()
+    payload = DeleteAccount(current_password="my-password", confirmation="DELETE")
+    service = AsyncMock()
+    monkeypatch.setattr(profile_routes, "svc_delete_my_account", service)
+
+    result = await handler(profile_routes.delete_my_account)(
+        request=MagicMock(),
+        payload=payload,
+        response=response,
+        db=db,
+        user=user,
+        user_manager=manager,
+        redis_cache=cache,
+    )
+
+    service.assert_awaited_once_with(
+        user_id=user.id,
+        payload=payload,
+        user_db=db,
+        user_manager=manager,
+        redis_cache=cache,
+    )
+    assert result["message"] == "Account deleted successfully"
+    assert "auth=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_keeps_cookie_when_service_fails(monkeypatch, user):
+    response = Response()
+    monkeypatch.setattr(
+        profile_routes,
+        "svc_delete_my_account",
+        AsyncMock(side_effect=BadRequestError(
+            code="CURRENT_PASSWORD_INCORRECT",
+            message="Current password is incorrect.",
+        )),
+    )
+
+    with pytest.raises(BadRequestError):
+        await handler(profile_routes.delete_my_account)(
+            request=MagicMock(),
+            payload=DeleteAccount(current_password="wrong", confirmation="DELETE"),
+            response=response,
+            db=MagicMock(),
+            user=user,
+            user_manager=MagicMock(),
+            redis_cache=MagicMock(),
+        )
+
+    assert "set-cookie" not in response.headers
 
 
 @pytest.mark.parametrize(

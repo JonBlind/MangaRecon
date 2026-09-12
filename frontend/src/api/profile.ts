@@ -16,3 +16,13 @@ export async function updateProfile(
     body: JSON.stringify(payload),
   });
 }
+
+export async function deleteAccount(currentPassword: string) {
+  return apiFetch<void>("/profiles/me", {
+    method: "DELETE",
+    body: JSON.stringify({
+      current_password: currentPassword,
+      confirmation: "DELETE",
+    }),
+  });
+}

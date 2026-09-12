@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import Account from "../../src/pages/Account";
+import { ApiRequestError } from "../../src/api/http";
 import { renderWithProviders } from "../testUtils";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -8,9 +9,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const mocks = vi.hoisted(() => ({
   useMe: vi.fn(),
   useUpdateProfile: vi.fn(),
+  useDeleteAccount: vi.fn(),
   mutateAsync: vi.fn(),
+  deleteMutateAsync: vi.fn(),
+  navigate: vi.fn(),
   reset: vi.fn(),
 }));
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mocks.navigate };
+});
 
 vi.mock("../../src/hooks/useMe", () => ({
   useMe: () => mocks.useMe(),
@@ -19,6 +28,8 @@ vi.mock("../../src/hooks/useMe", () => ({
 vi.mock("../../src/hooks/useProfile", () => ({
   useUpdateProfile: () =>
     mocks.useUpdateProfile(),
+  useDeleteAccount: () =>
+    mocks.useDeleteAccount(),
 }));
 
 const user = {
@@ -32,6 +43,8 @@ const user = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
+  localStorage.clear();
 
   mocks.useMe.mockReturnValue({
     data: user,
@@ -49,9 +62,99 @@ beforeEach(() => {
   mocks.mutateAsync.mockResolvedValue(
     undefined,
   );
+
+  mocks.useDeleteAccount.mockReturnValue({
+    mutateAsync: mocks.deleteMutateAsync,
+    reset: mocks.reset,
+    isPending: false,
+    error: null,
+  });
+  mocks.deleteMutateAsync.mockResolvedValue(undefined);
 });
 
 describe("Account Page", () => {
+  test("requires password and typed DELETE before removing an account", () => {
+    renderWithProviders(<Account />);
+    expect(screen.queryByLabelText(/type DELETE to confirm/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    const submit = screen.getByRole("button", { name: "Permanently delete account" });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "ValidPass123!" },
+    });
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "delete" },
+    });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Current password")).not.toBeInTheDocument();
+    expect(mocks.deleteMutateAsync).not.toHaveBeenCalled();
+  });
+
+  test("deletes account, clears local state and navigates home", async () => {
+    sessionStorage.setItem("search-selected-manga", "selection");
+    sessionStorage.setItem("recommendationSeedIds", "seeds");
+    sessionStorage.setItem("postLoginRedirect", "/collections");
+    localStorage.setItem("auth_token", "legacy-token");
+
+    const { queryClient } = renderWithProviders(<Account />);
+    queryClient.setQueryData(["me"], user);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "ValidPass123!" },
+    });
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete account" }));
+
+    await waitFor(() => {
+      expect(mocks.deleteMutateAsync).toHaveBeenCalledWith("ValidPass123!");
+      expect(mocks.navigate).toHaveBeenCalledWith("/", { replace: true });
+    });
+    expect(queryClient.getQueryData(["me"])).toBeUndefined();
+    expect(sessionStorage.getItem("search-selected-manga")).toBeNull();
+    expect(sessionStorage.getItem("recommendationSeedIds")).toBeNull();
+    expect(sessionStorage.getItem("postLoginRedirect")).toBeNull();
+    expect(localStorage.getItem("auth_token")).toBeNull();
+  });
+
+  test("keeps the user signed in when deletion fails", async () => {
+    let deletionError: Error | null = null;
+    mocks.deleteMutateAsync.mockImplementation(async () => {
+      deletionError = new ApiRequestError("Current password is incorrect.", 400);
+      throw deletionError;
+    });
+    mocks.useDeleteAccount.mockImplementation(() => ({
+      mutateAsync: mocks.deleteMutateAsync,
+      reset: mocks.reset,
+      isPending: false,
+      error: deletionError,
+    }));
+
+    renderWithProviders(<Account />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "wrong" },
+    });
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete account" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Current password is incorrect.");
+    expect(screen.getByLabelText("Current password")).toHaveValue("");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   test("renders account information", () => {
     renderWithProviders(<Account />);
 

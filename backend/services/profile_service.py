@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 
 from pwdlib.exceptions import UnknownHashError
 from sqlalchemy.exc import IntegrityError
@@ -10,9 +11,15 @@ from backend.db.client_db import (
     ClientReadDatabase,
     ClientWriteDatabase,
 )
-from backend.repositories.profile_repo import fetch_user_by_id
+from backend.repositories.profile_repo import (
+    delete_user_row,
+    fetch_user_by_id,
+    fetch_user_for_deletion,
+    get_owned_collection_ids,
+)
 from backend.schemas.user import (
     ChangePassword,
+    DeleteAccount,
     ProfileUpdate,
     UserRead,
 )
@@ -24,6 +31,7 @@ from backend.utils.domain_exceptions import (
 
 
 USERNAME_CHANGE_COOLDOWN = timedelta(days=30)
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
@@ -203,3 +211,53 @@ async def change_my_password(
     await user_db.refresh(db_user)
 
     return UserRead.model_validate(db_user)
+
+
+async def delete_my_account(
+    *,
+    user_id,
+    payload: DeleteAccount,
+    user_db: ClientWriteDatabase,
+    user_manager: UserManager,
+    redis_cache,
+) -> None:
+    """Delete account-owned rows atomically, then clear recommendation cache."""
+    account = await fetch_user_for_deletion(user_db, user_id=user_id)
+    if account is None:
+        raise NotFoundError(code="PROFILE_NOT_FOUND", message="Profile not found.")
+
+    try:
+        valid_password, _ = user_manager.password_helper.verify_and_update(
+            payload.current_password,
+            account.hashed_password,
+        )
+    except UnknownHashError:
+        valid_password = False
+
+    if not valid_password:
+        await user_db.rollback()
+        raise BadRequestError(
+            code="CURRENT_PASSWORD_INCORRECT",
+            message="Current password is incorrect.",
+        )
+
+    try:
+        collection_ids = await get_owned_collection_ids(user_db, user_id=user_id)
+        await delete_user_row(user_db, user_id=user_id)
+        await user_db.commit()
+    except Exception:
+        await user_db.rollback()
+        raise
+
+    cache_keys = [
+        f"recommendations:{user_id}:{collection_id}:{visibility}"
+        for collection_id in collection_ids
+        for visibility in ("safe", "adult")
+    ]
+    if cache_keys:
+        try:
+            await redis_cache.delete_multiple(*cache_keys)
+        except Exception:
+            # The database deletion has committed. Production cache entries
+            # expire, and deleted users cannot authenticate to retrieve them.
+            logger.exception("Failed to clear deleted account recommendation cache.")

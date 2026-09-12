@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { updateProfile } from "../../src/api/profile";
+import { deleteAccount, updateProfile } from "../../src/api/profile";
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -100,5 +100,19 @@ describe("profiles api", () => {
         }),
       },
     );
+  });
+
+  test("deletes the authenticated account only with password and confirmation", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ status: "success" });
+
+    await deleteAccount("secret-password");
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/profiles/me", {
+      method: "DELETE",
+      body: JSON.stringify({
+        current_password: "secret-password",
+        confirmation: "DELETE",
+      }),
+    });
   });
 });

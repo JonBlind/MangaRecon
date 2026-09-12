@@ -87,3 +87,46 @@ async def test_fetch_user_by_id_propagates_database_error():
             db,
             user_id=uuid.uuid4(),
         )
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_for_deletion_locks_only_current_user():
+    user_id = uuid.uuid4()
+    user = MagicMock()
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=FakeScalarResult(user))
+
+    result = await profile_repo.fetch_user_for_deletion(db, user_id=user_id)
+
+    assert result is user
+    statement = db.execute.await_args.args[0]
+    assert "FOR UPDATE" in str(statement)
+    assert user_id in statement.compile().params.values()
+
+
+@pytest.mark.asyncio
+async def test_get_owned_collection_ids_uses_user_filter():
+    user_id = uuid.uuid4()
+    db = MagicMock()
+    db.scalars_all = AsyncMock(return_value=[3, 7])
+
+    result = await profile_repo.get_owned_collection_ids(db, user_id=user_id)
+
+    assert result == [3, 7]
+    statement = db.scalars_all.await_args.args[0]
+    assert "collection.user_id" in str(statement)
+    assert user_id in statement.compile().params.values()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_row_uses_database_cascades():
+    user_id = uuid.uuid4()
+    db = MagicMock()
+    db.execute = AsyncMock()
+
+    await profile_repo.delete_user_row(db, user_id=user_id)
+
+    statement = db.execute.await_args.args[0]
+    assert str(statement).startswith("DELETE FROM")
+    assert user_id in statement.compile().params.values()
+    assert "user" in str(statement).lower()

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional, Annotated
+from typing import Optional, Annotated, Literal
 
 from fastapi_users import schemas
 from pydantic import BaseModel, Field, StringConstraints, ConfigDict, field_validator, ValidationInfo
@@ -71,3 +71,11 @@ class ChangePassword(BaseModel):
     '''
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8)
+
+
+class DeleteAccount(BaseModel):
+    """Require the account password and a deliberate confirmation."""
+
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1)
+    confirmation: Literal["DELETE"]
