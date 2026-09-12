@@ -325,6 +325,66 @@ async def test_existing_external_id_lookup_returns_only_provider_matches(
 
 
 @pytest.mark.asyncio
+async def test_missing_cover_lookup_filters_provider_and_respects_limit(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="100",
+            cover_image_url=None,
+            creator_credits=(),
+        ),
+    )
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="200",
+            payload_hash="b" * 64,
+            title="Blank Cover",
+            cover_image_url="   ",
+            creator_credits=(),
+        ),
+    )
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="300",
+            payload_hash="c" * 64,
+            title="Stored Cover",
+            cover_image_url="https://example.com/stored.jpg",
+            creator_credits=(),
+        ),
+    )
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            provider_key="another-provider",
+            external_id="400",
+            payload_hash="d" * 64,
+            title="Other Provider",
+            cover_image_url=None,
+            creator_credits=(),
+        ),
+        display_name="Another Provider",
+        attribution_url="https://example.com/",
+    )
+
+    result = await repository.find_missing_cover_external_ids(
+        ingestion_db,
+        provider_key="mangaupdates",
+    )
+    limited = await repository.find_missing_cover_external_ids(
+        ingestion_db,
+        provider_key="mangaupdates",
+        limit=1,
+    )
+
+    assert result == ("100", "200")
+    assert limited == ("100",)
+
+
+@pytest.mark.asyncio
 async def test_same_payload_hash_is_idempotent(
     ingestion_db: ClientWriteDatabase,
 ) -> None:
@@ -366,6 +426,40 @@ async def test_same_payload_hash_is_idempotent(
     )
     assert source is not None
     assert source.fetched_at == original_fetched_at
+
+
+@pytest.mark.asyncio
+async def test_same_payload_hash_backfills_missing_canonical_cover(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    record = make_record()
+    initial = await upsert_and_commit(
+        ingestion_db,
+        record,
+    )
+    manga_id = initial.manga.manga_id
+    assert manga_id is not None
+
+    stored = await ingestion_db.get(Manga, manga_id)
+    assert stored is not None
+    stored.cover_image_url = None
+    await ingestion_db.commit()
+
+    repeated = await repository.upsert_catalog_manga(
+        ingestion_db,
+        record=record,
+        provider_display_name="MangaUpdates",
+        provider_attribution_url=(
+            "https://www.mangaupdates.com/"
+        ),
+    )
+    await ingestion_db.commit()
+
+    assert repeated.created is False
+    assert repeated.changed is True
+    assert repeated.manga.cover_image_url == (
+        "https://example.com/cover.jpg"
+    )
 
 
 @pytest.mark.asyncio

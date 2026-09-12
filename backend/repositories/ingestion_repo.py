@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from backend.db.client_db import (
@@ -93,6 +93,48 @@ async def find_existing_catalog_external_ids(
     return existing_ids
 
 
+async def find_missing_cover_external_ids(
+    user_db: ClientReadDatabase,
+    *,
+    provider_key: str,
+    limit: int | None = None,
+) -> tuple[str, ...]:
+    """
+    Return provider IDs for catalog manga without a stored cover URL.
+
+    Results use stable manga insertion order so a bounded maintenance run is
+    predictable. Both null and blank legacy values are treated as missing.
+    """
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be greater than zero.")
+
+    stmt = (
+        select(MangaExternalSource.external_id)
+        .join(
+            DataProvider,
+            DataProvider.provider_id
+            == MangaExternalSource.provider_id,
+        )
+        .join(
+            Manga,
+            Manga.manga_id == MangaExternalSource.manga_id,
+        )
+        .where(
+            DataProvider.provider_key == provider_key,
+            or_(
+                Manga.cover_image_url.is_(None),
+                func.btrim(Manga.cover_image_url) == "",
+            ),
+        )
+        .order_by(Manga.manga_id)
+    )
+
+    if limit is not None:
+        stmt = stmt.limit(limit)
+
+    return tuple(await user_db.scalars_all(stmt))
+
+
 async def upsert_catalog_manga(
     user_db: ClientWriteDatabase,
     *,
@@ -144,15 +186,29 @@ async def upsert_catalog_manga(
             != expected_adult_classification
         )
 
+        stored_cover_missing = (
+            manga.cover_image_url is None
+            or not manga.cover_image_url.strip()
+        )
+        cover_backfilled = (
+            stored_cover_missing
+            and record.cover_image_url is not None
+        )
+
         if classification_changed:
             manga.is_adult_content = (
                 expected_adult_classification
             )
 
+        if cover_backfilled:
+            manga.cover_image_url = record.cover_image_url
+
         return CatalogUpsertOutcome(
             manga=manga,
             created=False,
-            changed=classification_changed,
+            changed=(
+                classification_changed or cover_backfilled
+            ),
         )
 
     if source is None:
