@@ -7,7 +7,7 @@ from pwdlib.exceptions import UnknownHashError
 from sqlalchemy.exc import IntegrityError
 
 from backend.db.models.user import User
-from backend.schemas.user import ChangePassword, ProfileUpdate
+from backend.schemas.user import ChangePassword, DeleteAccount, ProfileUpdate
 from backend.services import profile_service
 from backend.utils.domain_exceptions import (
     BadRequestError,
@@ -1019,3 +1019,141 @@ async def test_duplicate_username_rolls_back_and_returns_conflict(
     db.commit.assert_awaited_once()
     db.rollback.assert_awaited_once()
     db.refresh.assert_not_awaited()
+
+
+def prepare_account_deletion(monkeypatch, user, collection_ids=(3, 7)):
+    fetch = AsyncMock(return_value=user)
+    collections = AsyncMock(return_value=list(collection_ids))
+    delete = AsyncMock()
+    monkeypatch.setattr(profile_service, "fetch_user_for_deletion", fetch)
+    monkeypatch.setattr(profile_service, "get_owned_collection_ids", collections)
+    monkeypatch.setattr(profile_service, "delete_user_row", delete)
+    return fetch, collections, delete
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_commits_and_clears_both_cache_variants(monkeypatch):
+    user = make_user()
+    fetch, collections, delete = prepare_account_deletion(monkeypatch, user)
+    db = make_write_db()
+    manager = MagicMock()
+    manager.password_helper.verify_and_update.return_value = (True, None)
+    cache = MagicMock()
+    cache.delete_multiple = AsyncMock()
+
+    await profile_service.delete_my_account(
+        user_id=user.id,
+        payload=DeleteAccount(current_password="correct", confirmation="DELETE"),
+        user_db=db,
+        user_manager=manager,
+        redis_cache=cache,
+    )
+
+    fetch.assert_awaited_once_with(db, user_id=user.id)
+    manager.password_helper.verify_and_update.assert_called_once_with(
+        "correct", user.hashed_password
+    )
+    collections.assert_awaited_once_with(db, user_id=user.id)
+    delete.assert_awaited_once_with(db, user_id=user.id)
+    db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
+    cache.delete_multiple.assert_awaited_once_with(
+        f"recommendations:{user.id}:3:safe",
+        f"recommendations:{user.id}:3:adult",
+        f"recommendations:{user.id}:7:safe",
+        f"recommendations:{user.id}:7:adult",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unrecognized_hash", [False, True])
+async def test_delete_my_account_rejects_incorrect_password(
+    monkeypatch, unrecognized_hash
+):
+    user = make_user()
+    _, collections, delete = prepare_account_deletion(monkeypatch, user)
+    db = make_write_db()
+    manager = MagicMock()
+    if unrecognized_hash:
+        manager.password_helper.verify_and_update.side_effect = UnknownHashError(user.hashed_password)
+    else:
+        manager.password_helper.verify_and_update.return_value = (False, None)
+    cache = MagicMock(delete_multiple=AsyncMock())
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await profile_service.delete_my_account(
+            user_id=user.id,
+            payload=DeleteAccount(current_password="wrong", confirmation="DELETE"),
+            user_db=db,
+            user_manager=manager,
+            redis_cache=cache,
+        )
+
+    assert exc_info.value.code == "CURRENT_PASSWORD_INCORRECT"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
+    collections.assert_not_awaited()
+    delete.assert_not_awaited()
+    cache.delete_multiple.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_rolls_back_when_database_delete_fails(monkeypatch):
+    user = make_user()
+    _, _, delete = prepare_account_deletion(monkeypatch, user)
+    delete.side_effect = RuntimeError("database failed")
+    db = make_write_db()
+    manager = MagicMock()
+    manager.password_helper.verify_and_update.return_value = (True, None)
+    cache = MagicMock(delete_multiple=AsyncMock())
+
+    with pytest.raises(RuntimeError, match="database failed"):
+        await profile_service.delete_my_account(
+            user_id=user.id,
+            payload=DeleteAccount(current_password="correct", confirmation="DELETE"),
+            user_db=db,
+            user_manager=manager,
+            redis_cache=cache,
+        )
+
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+    cache.delete_multiple.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_reports_missing_user(monkeypatch):
+    monkeypatch.setattr(profile_service, "fetch_user_for_deletion", AsyncMock(return_value=None))
+    db = make_write_db()
+
+    with pytest.raises(NotFoundError) as exc_info:
+        await profile_service.delete_my_account(
+            user_id=uuid.uuid4(),
+            payload=DeleteAccount(current_password="correct", confirmation="DELETE"),
+            user_db=db,
+            user_manager=MagicMock(),
+            redis_cache=MagicMock(),
+        )
+
+    assert exc_info.value.code == "PROFILE_NOT_FOUND"
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_my_account_succeeds_after_cache_failure(monkeypatch):
+    user = make_user()
+    prepare_account_deletion(monkeypatch, user, collection_ids=(3,))
+    db = make_write_db()
+    manager = MagicMock()
+    manager.password_helper.verify_and_update.return_value = (True, None)
+    cache = MagicMock(delete_multiple=AsyncMock(side_effect=RuntimeError("cache failed")))
+
+    await profile_service.delete_my_account(
+        user_id=user.id,
+        payload=DeleteAccount(current_password="correct", confirmation="DELETE"),
+        user_db=db,
+        user_manager=manager,
+        redis_cache=cache,
+    )
+
+    db.commit.assert_awaited_once()

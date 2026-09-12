@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { ApiRequestError } from "../api/http";
 import { useMe } from "../hooks/useMe";
-import { useUpdateProfile } from "../hooks/useProfile";
+import { useDeleteAccount, useUpdateProfile } from "../hooks/useProfile";
 
 const MIN_PROFILE_FIELD_LENGTH = 4;
 const MAX_PROFILE_FIELD_LENGTH = 64;
@@ -24,8 +26,15 @@ function getNextUsernameChangeAt(
 }
 
 export default function Account() {
+  const nav = useNavigate();
+  const queryClient = useQueryClient();
   const meQ = useMe();
   const updateMutation = useUpdateProfile();
+  const deleteMutation = useDeleteAccount();
+
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
   const [displayName, setDisplayName] =
     useState("");
@@ -149,6 +158,44 @@ export default function Account() {
       : updateMutation.error
         ? "Failed to update profile."
         : null;
+
+  const deleteErrorMsg =
+    deleteMutation.error instanceof ApiRequestError
+      ? deleteMutation.error.message
+      : deleteMutation.error
+        ? "Failed to delete account. Please try again."
+        : null;
+
+  const canDeleteAccount =
+    deletePassword.length > 0 &&
+    deleteConfirmation === "DELETE" &&
+    !deleteMutation.isPending;
+
+  async function handleDeleteAccount(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (!canDeleteAccount) return;
+
+    try {
+      await deleteMutation.mutateAsync(deletePassword);
+      setDeletePassword("");
+      queryClient.clear();
+
+      try {
+        sessionStorage.removeItem("search-selected-manga");
+        sessionStorage.removeItem("recommendationSeedIds");
+        sessionStorage.removeItem("postLoginRedirect");
+        localStorage.removeItem("auth_token");
+      } catch {
+        // Account data has been removed on the server even if storage is unavailable.
+      }
+
+      nav("/", { replace: true });
+    } catch {
+      setDeletePassword("");
+      // Show the mutation error without treating a failed request as deletion.
+    }
+  }
 
   function beginUsernameEdit() {
     if (usernameIsOnCooldown) {
@@ -508,6 +555,87 @@ export default function Account() {
           {errorMsg}
         </div>
       )}
+
+      <section className="space-y-4 border-t border-red-900/60 pt-6">
+        <h2 className="text-lg font-medium text-red-300">Delete account</h2>
+        <p className="text-sm opacity-80">
+          Permanently delete your account, collections, saved manga, and ratings.
+          This cannot be undone.
+        </p>
+
+        {!showDeleteForm ? (
+          <button
+            type="button"
+            className="rounded-md border border-red-700 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+            onClick={() => setShowDeleteForm(true)}
+          >
+            Delete my account
+          </button>
+        ) : (
+          <form onSubmit={handleDeleteAccount} className="space-y-4">
+            <div>
+              <label htmlFor="delete-account-password" className="block text-sm font-medium">
+                Current password
+              </label>
+              <input
+                id="delete-account-password"
+                type="password"
+                autoComplete="current-password"
+                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
+                value={deletePassword}
+                onChange={(event) => {
+                  deleteMutation.reset();
+                  setDeletePassword(event.target.value);
+                }}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="delete-account-confirmation" className="block text-sm font-medium">
+                Type DELETE to confirm
+              </label>
+              <input
+                id="delete-account-confirmation"
+                type="text"
+                autoComplete="off"
+                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
+                value={deleteConfirmation}
+                onChange={(event) => {
+                  deleteMutation.reset();
+                  setDeleteConfirmation(event.target.value);
+                }}
+              />
+            </div>
+
+            {deleteErrorMsg && (
+              <p role="alert" className="text-sm text-red-400">{deleteErrorMsg}</p>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                className="rounded-md border border-red-700 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!canDeleteAccount}
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Permanently delete account"}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  deleteMutation.reset();
+                  setDeletePassword("");
+                  setDeleteConfirmation("");
+                  setShowDeleteForm(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   );
 }

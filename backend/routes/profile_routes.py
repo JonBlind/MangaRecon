@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
+from backend.auth.config import cookie_transport
+from backend.cache.redis import get_redis_cache
 from backend.db.client_db import ClientWriteDatabase, ClientReadDatabase
 from backend.db.models.user import User
 from backend.dependencies import get_user_read_db, get_user_write_db
 from backend.auth.dependencies import current_active_verified_user as current_user
-from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword
+from backend.schemas.user import UserRead, ProfileUpdate, ChangePassword, DeleteAccount
 from backend.auth.user_manager import get_user_manager, UserManager
 from backend.utils.response import success
 from backend.rate_limit.middleware import limiter
@@ -12,6 +14,7 @@ from backend.services.profile_service import (
     get_my_profile as svc_get_my_profile,
     update_my_profile as svc_update_my_profile,
     change_my_password as svc_change_my_password,
+    delete_my_account as svc_delete_my_account,
 )
 import logging
 
@@ -126,3 +129,33 @@ async def change_my_password(
     except Exception as e:
         logger.error("Failed password change for user %s: %s", user.id, e, exc_info=True)
         raise
+
+
+@router.delete("/me", response_model=dict)
+@limiter.limit("3/minute")
+async def delete_my_account(
+    request: Request,
+    payload: DeleteAccount,
+    response: Response,
+    db: ClientWriteDatabase = Depends(get_user_write_db),
+    user: User = Depends(current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    redis_cache=Depends(get_redis_cache),
+):
+    """Permanently delete the authenticated account after password confirmation."""
+    await svc_delete_my_account(
+        user_id=user.id,
+        payload=payload,
+        user_db=db,
+        user_manager=user_manager,
+        redis_cache=redis_cache,
+    )
+    response.delete_cookie(
+        key=cookie_transport.cookie_name,
+        path=cookie_transport.cookie_path,
+        domain=cookie_transport.cookie_domain,
+        secure=cookie_transport.cookie_secure,
+        httponly=cookie_transport.cookie_httponly,
+        samesite=cookie_transport.cookie_samesite,
+    )
+    return success("Account deleted successfully")
