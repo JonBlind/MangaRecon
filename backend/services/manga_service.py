@@ -15,8 +15,9 @@ from backend.repositories.manga_repo import (
     fetch_genres_for_manga_ids,
 )
 from backend.schemas.manga import MangaRead, CreatorCreditRead, GenreRead, TagRead, DemographicRead, MangaListItem
-from backend.utils.ordering import MangaOrderField, OrderDirection
 from backend.utils.domain_exceptions import NotFoundError
+from backend.utils.filtering import MetadataMatchMode
+from backend.utils.ordering import MangaOrderField, OrderDirection
 
 async def get_manga_detail(
     *,
@@ -73,6 +74,7 @@ async def filter_manga_page(
     order_by: MangaOrderField,
     order_dir: OrderDirection,
     db: ClientReadDatabase,
+    match_mode: MetadataMatchMode = "and",
     include_adult: bool = False,
 ) -> dict:
     offset = (page - 1) * size
@@ -84,6 +86,7 @@ async def filter_manga_page(
         exclude_tags=exclude_tags,
         demo_ids=demo_ids,
         exclude_demos=exclude_demos,
+        match_mode=match_mode,
         title=title,
         include_adult=include_adult,
     )

@@ -112,7 +112,7 @@ resource "aws_lambda_function" "backend" {
       RESEND_TIMEOUT_SECONDS                = "10"
 
       DATABASE_POOL_MODE                     = "null"
-      DATABASE_CONNECT_TIMEOUT_SECONDS       = "5"
+      DATABASE_CONNECT_TIMEOUT_SECONDS       = "10"
       DATABASE_COMMAND_TIMEOUT_SECONDS       = "15"
       DATABASE_READY_TIMEOUT_SECONDS         = "5"
       DATABASE_PREPARED_STATEMENT_CACHE_SIZE = "0"

@@ -5,7 +5,11 @@ import type { ReactElement } from "react";
 
 export function renderWithProviders(
   ui: ReactElement,
-  options?: { withRouter?: boolean; queryClient?: QueryClient },
+  options?: {
+    withRouter?: boolean;
+    queryClient?: QueryClient;
+    initialEntries?: string[];
+  },
 ) {
   const queryClient =
     options?.queryClient ??
@@ -18,7 +22,11 @@ export function renderWithProviders(
 
   const content = (
     <QueryClientProvider client={queryClient}>
-      {options?.withRouter === false ? ui : <MemoryRouter>{ui}</MemoryRouter>}
+      {options?.withRouter === false ? (
+        ui
+      ) : (
+        <MemoryRouter initialEntries={options?.initialEntries}>{ui}</MemoryRouter>
+      )}
     </QueryClientProvider>
   );
 

@@ -295,8 +295,10 @@ def test_build_filter_stmt_with_included_genres():
         )
     )
 
-    assert "JOIN manga_genre" in sql
+    assert "manga.manga_id IN (SELECT manga_genre.manga_id" in sql
     assert "manga_genre.genre_id IN (1, 2)" in sql
+    assert "GROUP BY manga_genre.manga_id" in sql
+    assert "HAVING count(distinct(manga_genre.genre_id)) = 2" in sql
 
 
 def test_build_filter_stmt_with_excluded_genres():
@@ -341,8 +343,10 @@ def test_build_filter_stmt_with_included_tags():
         )
     )
 
-    assert "JOIN manga_tag" in sql
+    assert "manga.manga_id IN (SELECT manga_tag.manga_id" in sql
     assert "manga_tag.tag_id IN (10, 20)" in sql
+    assert "GROUP BY manga_tag.manga_id" in sql
+    assert "HAVING count(distinct(manga_tag.tag_id)) = 2" in sql
 
 
 def test_build_filter_stmt_with_excluded_tags():
@@ -387,8 +391,9 @@ def test_build_filter_stmt_with_included_demographics():
         )
     )
 
-    assert "JOIN manga_demographic" in sql
+    assert "manga.manga_id IN (SELECT manga_demographic.manga_id" in sql
     assert "manga_demographic.demographic_id IN (100)" in sql
+    assert "GROUP BY manga_demographic.manga_id" not in sql
 
 
 def test_build_filter_stmt_with_excluded_demographics():
@@ -433,15 +438,80 @@ def test_build_filter_stmt_combines_all_filters():
         )
     )
 
-    assert "JOIN manga_genre" in sql
-    assert "JOIN manga_tag" in sql
-    assert "JOIN manga_demographic" in sql
+    assert "manga.manga_id IN (SELECT manga_genre.manga_id" in sql
+    assert "manga.manga_id IN (SELECT manga_tag.manga_id" in sql
+    assert "manga.manga_id IN (SELECT manga_demographic.manga_id" in sql
     assert "manga_genre.genre_id IN (1)" in sql
     assert "manga_tag.tag_id IN (10)" in sql
     assert "manga_demographic.demographic_id IN (100)" in sql
     assert "manga_genre.genre_id IN (2)" in sql
     assert "manga_tag.tag_id IN (20)" in sql
     assert "manga_demographic.demographic_id IN (200)" in sql
+
+
+def test_build_filter_stmt_uses_or_across_all_selected_metadata():
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=[1, 2],
+        exclude_genres=None,
+        tag_ids=[10],
+        exclude_tags=None,
+        demo_ids=[100],
+        exclude_demos=None,
+        match_mode="or",
+        title=None,
+    )
+
+    sql = str(
+        stmt.compile(
+            compile_kwargs={
+                "literal_binds": True,
+            }
+        )
+    )
+
+    assert " OR " in sql
+    assert "manga_genre.genre_id IN (1, 2)" in sql
+    assert "manga_tag.tag_id IN (10)" in sql
+    assert "manga_demographic.demographic_id IN (100)" in sql
+    assert " HAVING " not in sql
+
+
+def test_build_filter_stmt_deduplicates_ids_for_and_matching():
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=[1, 1, 2],
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        match_mode="and",
+        title=None,
+    )
+
+    sql = str(
+        stmt.compile(
+            compile_kwargs={
+                "literal_binds": True,
+            }
+        )
+    )
+
+    assert "manga_genre.genre_id IN (1, 2)" in sql
+    assert "HAVING count(distinct(manga_genre.genre_id)) = 2" in sql
+
+
+def test_build_filter_stmt_rejects_invalid_match_mode():
+    with pytest.raises(ValueError, match="match_mode"):
+        manga_repo.build_filter_stmt(
+            genre_ids=[1],
+            exclude_genres=None,
+            tag_ids=None,
+            exclude_tags=None,
+            demo_ids=None,
+            exclude_demos=None,
+            match_mode="invalid",  # type: ignore[arg-type]
+            title=None,
+        )
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from backend.db.models.manga_creator import MangaCreator
 from backend.db.models.manga_alternate_title import MangaAlternateTitle
 from backend.db.models.join_tables import manga_genre, manga_tag, manga_demographic
 from backend.content_safety.visibility import restrict_manga_visibility
+from backend.utils.filtering import MetadataMatchMode
 from backend.utils.ordering import MangaOrderField, OrderDirection, get_ordering_clause
 
 
@@ -107,6 +108,7 @@ def build_filter_stmt(
     demo_ids: Optional[list[int]],
     exclude_demos: Optional[list[int]],
     title: Optional[str],
+    match_mode: MetadataMatchMode = "and",
     include_adult: bool = False,
 ):
     stmt = restrict_manga_visibility(
@@ -129,8 +131,20 @@ def build_filter_stmt(
             )
         )
 
+    if match_mode not in ("and", "or"):
+        raise ValueError("match_mode must be 'and' or 'or'")
+
+    metadata_clauses = []
+
     if genre_ids:
-        stmt = stmt.join(manga_genre).where(manga_genre.c.genre_id.in_(genre_ids))
+        metadata_clauses.append(
+            _build_metadata_match_clause(
+                association_table=manga_genre,
+                metadata_column=manga_genre.c.genre_id,
+                selected_ids=genre_ids,
+                match_mode=match_mode,
+            )
+        )
 
     if exclude_genres:
         stmt = stmt.where(
@@ -140,7 +154,14 @@ def build_filter_stmt(
         )
 
     if tag_ids:
-        stmt = stmt.join(manga_tag).where(manga_tag.c.tag_id.in_(tag_ids))
+        metadata_clauses.append(
+            _build_metadata_match_clause(
+                association_table=manga_tag,
+                metadata_column=manga_tag.c.tag_id,
+                selected_ids=tag_ids,
+                match_mode=match_mode,
+            )
+        )
 
     if exclude_tags:
         stmt = stmt.where(
@@ -150,7 +171,20 @@ def build_filter_stmt(
         )
 
     if demo_ids:
-        stmt = stmt.join(manga_demographic).where(manga_demographic.c.demographic_id.in_(demo_ids))
+        metadata_clauses.append(
+            _build_metadata_match_clause(
+                association_table=manga_demographic,
+                metadata_column=manga_demographic.c.demographic_id,
+                selected_ids=demo_ids,
+                match_mode=match_mode,
+            )
+        )
+
+    if metadata_clauses:
+        if match_mode == "or":
+            stmt = stmt.where(or_(*metadata_clauses))
+        else:
+            stmt = stmt.where(*metadata_clauses)
 
     if exclude_demos:
         stmt = stmt.where(
@@ -160,6 +194,28 @@ def build_filter_stmt(
         )
 
     return stmt
+
+
+def _build_metadata_match_clause(
+    *,
+    association_table,
+    metadata_column,
+    selected_ids: Sequence[int],
+    match_mode: MetadataMatchMode,
+):
+    unique_ids = list(dict.fromkeys(selected_ids))
+    matching_manga_ids = select(association_table.c.manga_id).where(
+        metadata_column.in_(unique_ids)
+    )
+
+    if match_mode == "and" and len(unique_ids) > 1:
+        matching_manga_ids = matching_manga_ids.group_by(
+            association_table.c.manga_id
+        ).having(
+            func.count(func.distinct(metadata_column)) == len(unique_ids)
+        )
+
+    return Manga.manga_id.in_(matching_manga_ids)
 
 
 async def count_filtered_manga(db: ClientReadDatabase, *, stmt):

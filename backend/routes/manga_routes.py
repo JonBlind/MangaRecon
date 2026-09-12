@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, Query, Request
+import logging
 from typing import List, Optional
-from backend.db.client_db import ClientReadDatabase
-from backend.dependencies import get_public_read_db
+
+from fastapi import APIRouter, Depends, Query, Request
+
 from backend.auth.dependencies import (
     current_active_verified_user_optional as optional_current_user,
 )
 from backend.content_safety.visibility import viewer_allows_adult_content
+from backend.db.client_db import ClientReadDatabase
 from backend.db.models.user import User
-from backend.utils.ordering import MangaOrderField, OrderDirection
-from backend.utils.response import success
+from backend.dependencies import get_public_read_db
 from backend.rate_limit.middleware import limiter
 from backend.services.manga_service import get_manga_detail, filter_manga_page
-import logging
+from backend.utils.filtering import MetadataMatchMode
+from backend.utils.ordering import MangaOrderField, OrderDirection
+from backend.utils.response import success
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ async def filter_manga(
     exclude_tags: Optional[List[int]] = Query(default=None),
     demo_ids: Optional[List[int]] = Query(default=None),
     exclude_demos: Optional[List[int]] = Query(default=None),
+    match_mode: MetadataMatchMode = Query("and"),
     title: Optional[str] = Query(default=None),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
@@ -77,12 +81,13 @@ async def filter_manga(
 
     Args:
         request (Request): FastAPI request (required by rate limiting).
-        genre_ids (Optional[List[int]]): Only include manga that have any of these genres.
+        genre_ids (Optional[List[int]]): Genre identifiers to match.
         exclude_genres (Optional[List[int]]): Exclude manga that have any of these genres.
-        tag_ids (Optional[List[int]]): Only include manga that have any of these tags.
+        tag_ids (Optional[List[int]]): Tag identifiers to match.
         exclude_tags (Optional[List[int]]): Exclude manga that have any of these tags.
-        demo_ids (Optional[List[int]]): Only include manga that have any of these demographics.
+        demo_ids (Optional[List[int]]): Demographic identifiers to match.
         exclude_demos (Optional[List[int]]): Exclude manga that have any of these demographics.
+        match_mode (MetadataMatchMode): Match all or any included metadata identifiers.
         title (Optional[str]): Case-insensitive substring to match on title.
         page (int): 1-based page number.
         size (int): Page size (1 - 100).
@@ -103,6 +108,7 @@ async def filter_manga(
             exclude_tags=exclude_tags,
             demo_ids=demo_ids,
             exclude_demos=exclude_demos,
+            match_mode=match_mode,
             title=title,
             page=page,
             size=size,
