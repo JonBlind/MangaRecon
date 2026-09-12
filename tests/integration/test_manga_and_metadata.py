@@ -117,3 +117,101 @@ def test_manga_search_filters_orders_and_paginates_real_rows(
 def test_manga_search_rejects_invalid_pagination(client: TestClient) -> None:
     response = client.get("/mangas/", params={"page": 0, "size": 101})
     assert_error(response, status_code=422)
+
+
+def test_manga_search_supports_global_and_or_metadata_matching(
+    client: TestClient,
+    manga_write_engine: Engine,
+) -> None:
+    catalog = seed_catalog(manga_write_engine)
+
+    with manga_write_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga_genre (manga_id, genre_id)
+                VALUES (:manga_id, :genre_id)
+                """
+            ),
+            {
+                "manga_id": catalog.seed_manga_id,
+                "genre_id": catalog.romance_genre_id,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO manga_tag (manga_id, tag_id)
+                VALUES (:manga_id, :tag_id)
+                """
+            ),
+            {
+                "manga_id": catalog.seed_manga_id,
+                "tag_id": catalog.drama_tag_id,
+            },
+        )
+
+    and_response = client.get(
+        "/mangas/",
+        params=[
+            ("genre_ids", str(catalog.action_genre_id)),
+            ("genre_ids", str(catalog.romance_genre_id)),
+            ("tag_ids", str(catalog.drama_tag_id)),
+        ],
+    )
+    and_data = assert_success(and_response)["data"]
+    assert [item["manga_id"] for item in and_data["items"]] == [
+        catalog.seed_manga_id
+    ]
+
+    or_response = client.get(
+        "/mangas/",
+        params=[
+            ("genre_ids", str(catalog.action_genre_id)),
+            ("tag_ids", str(catalog.drama_tag_id)),
+            ("demo_ids", str(catalog.seinen_demographic_id)),
+            ("match_mode", "or"),
+            ("order_by", "title"),
+        ],
+    )
+    or_data = assert_success(or_response)["data"]
+    assert [item["manga_id"] for item in or_data["items"]] == [
+        catalog.seed_manga_id,
+        catalog.similar_manga_id,
+        catalog.unrelated_manga_id,
+    ]
+
+    titled_or_data = assert_success(
+        client.get(
+            "/mangas/",
+            params=[
+                ("genre_ids", str(catalog.action_genre_id)),
+                ("demo_ids", str(catalog.seinen_demographic_id)),
+                ("match_mode", "or"),
+                ("title", "beta"),
+            ],
+        )
+    )["data"]
+    assert [item["manga_id"] for item in titled_or_data["items"]] == [
+        catalog.similar_manga_id
+    ]
+
+    excluded_or_data = assert_success(
+        client.get(
+            "/mangas/",
+            params=[
+                ("genre_ids", str(catalog.action_genre_id)),
+                ("demo_ids", str(catalog.seinen_demographic_id)),
+                ("exclude_genres", str(catalog.action_genre_id)),
+                ("match_mode", "or"),
+            ],
+        )
+    )["data"]
+    assert [item["manga_id"] for item in excluded_or_data["items"]] == [
+        catalog.unrelated_manga_id
+    ]
+
+
+def test_manga_search_rejects_invalid_match_mode(client: TestClient) -> None:
+    response = client.get("/mangas/", params={"match_mode": "xor"})
+    assert_error(response, status_code=422)

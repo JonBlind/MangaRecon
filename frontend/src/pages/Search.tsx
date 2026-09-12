@@ -9,9 +9,11 @@ import {
 import { getDemographics, getGenres, getTags } from "../api/metadata";
 import { searchMangas } from "../api/manga";
 import { addMangasBulkToCollection } from "../api/collections";
-import type { MangaSearchResponse } from "../types/manga";
+import type { MangaSearchResponse, MetadataMatchMode } from "../types/manga";
 import MangaCard from "../components/MangaCard";
-import TagFilter from "../components/TagFilter";
+import MetadataMultiSelect, {
+  type MetadataSelection,
+} from "../components/MetadataMultiSelect";
 import SearchSelectionBar from "../components/SearchSelectionBar";
 import CollectionPickerModal from "../components/CollectionPickerModal";
 import AuthRequiredModal from "../components/AuthRequiredModal";
@@ -20,6 +22,35 @@ import { useMe } from "../hooks/useMe";
 import { recommendationKeys } from "../hooks/useRecommendations";
 
 const SEARCH_DEBOUNCE_MS = 250;
+
+type SearchParamValue = string | number | readonly (string | number)[] | null | undefined;
+
+function parseSelectedIds(searchParams: URLSearchParams, key: string): number[] {
+  return Array.from(
+    new Set(
+      searchParams
+        .getAll(key)
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  );
+}
+
+function parseMetadataSelection(
+  searchParams: URLSearchParams,
+  includedKey: string,
+  excludedKey: string,
+): MetadataSelection {
+  const excludedIds = parseSelectedIds(searchParams, excludedKey);
+  const excludedSet = new Set(excludedIds);
+
+  return {
+    includedIds: parseSelectedIds(searchParams, includedKey).filter(
+      (id) => !excludedSet.has(id),
+    ),
+    excludedIds,
+  };
+}
 
 export default function Search() {
   const nav = useNavigate();
@@ -32,11 +63,23 @@ export default function Search() {
 
   const title = searchParams.get("title") ?? "";
   const [titleInput, setTitleInput] = useState(title);
-  const genreId = searchParams.get("genre") ? Number(searchParams.get("genre")) : "";
-  const tagId = searchParams.get("tag") ? Number(searchParams.get("tag")) : "";
-  const demoId = searchParams.get("demo") ? Number(searchParams.get("demo")) : "";
+  const genreSelection = useMemo(
+    () => parseMetadataSelection(searchParams, "genre", "exclude_genre"),
+    [searchParams],
+  );
+  const tagSelection = useMemo(
+    () => parseMetadataSelection(searchParams, "tag", "exclude_tag"),
+    [searchParams],
+  );
+  const demoSelection = useMemo(
+    () => parseMetadataSelection(searchParams, "demo", "exclude_demo"),
+    [searchParams],
+  );
+  const matchMode: MetadataMatchMode = searchParams.get("match") === "or" ? "or" : "and";
   const page = Number(searchParams.get("page") ?? "1");
-  const [tagFilterActivated, setTagFilterActivated] = useState(tagId !== "");
+  const [tagFilterActivated, setTagFilterActivated] = useState(
+    tagSelection.includedIds.length + tagSelection.excludedIds.length > 0,
+  );
 
   const {
     selectedIds,
@@ -68,13 +111,17 @@ export default function Search() {
       title,
       page,
       size: 25,
-      genre_id: genreId === "" ? null : genreId,
-      tag_id: tagId === "" ? null : tagId,
-      demo_id: demoId === "" ? null : demoId,
+      genre_ids: genreSelection.includedIds,
+      exclude_genres: genreSelection.excludedIds,
+      tag_ids: tagSelection.includedIds,
+      exclude_tags: tagSelection.excludedIds,
+      demo_ids: demoSelection.includedIds,
+      exclude_demos: demoSelection.excludedIds,
+      match_mode: matchMode,
       order_by: "title" as const,
       order_dir: "asc" as const,
     }),
-    [title, page, genreId, tagId, demoId],
+    [title, page, genreSelection, tagSelection, demoSelection, matchMode],
   );
 
   const mangaQ = useQuery<MangaSearchResponse>({
@@ -85,8 +132,7 @@ export default function Search() {
     enabled: primaryRequestReleased,
   });
 
-  const [secondaryRequestsReleased, setSecondaryRequestsReleased] =
-    useState(false);
+  const [secondaryRequestsReleased, setSecondaryRequestsReleased] = useState(false);
 
   useEffect(() => {
     if (mangaQ.isFetched && !mangaQ.isFetching) {
@@ -95,8 +141,7 @@ export default function Search() {
   }, [mangaQ.isFetched, mangaQ.isFetching]);
 
   const meQ = useMe(secondaryRequestsReleased);
-  const authSettled =
-    secondaryRequestsReleased && !meQ.isPending && !meQ.isFetching;
+  const authSettled = secondaryRequestsReleased && !meQ.isPending && !meQ.isFetching;
   const isAuthenticated = Boolean(meQ.data);
 
   const genresQ = useQuery({
@@ -105,8 +150,7 @@ export default function Search() {
     staleTime: 10 * 60_000,
     enabled: authSettled,
   });
-  const genresSettled =
-    authSettled && !genresQ.isPending && !genresQ.isFetching;
+  const genresSettled = authSettled && !genresQ.isPending && !genresQ.isFetching;
 
   const demosQ = useQuery({
     queryKey: ["demographics"],
@@ -114,10 +158,12 @@ export default function Search() {
     staleTime: 10 * 60_000,
     enabled: genresSettled,
   });
-  const demosSettled =
-    genresSettled && !demosQ.isPending && !demosQ.isFetching;
+  const demosSettled = genresSettled && !demosQ.isPending && !demosQ.isFetching;
 
-  const tagsRequested = tagFilterActivated || tagId !== "";
+  const tagsRequested =
+    tagFilterActivated ||
+    tagSelection.includedIds.length > 0 ||
+    tagSelection.excludedIds.length > 0;
   const tagsQ = useQuery({
     queryKey: ["tags"],
     queryFn: getTags,
@@ -224,13 +270,18 @@ export default function Search() {
   }
 
   const updateParams = useCallback(
-    (
-      updates: Record<string, string | number | null | undefined>,
-      options: { replace?: boolean } = {},
-    ) => {
+    (updates: Record<string, SearchParamValue>, options: { replace?: boolean } = {}) => {
       const next = new URLSearchParams(searchParams);
 
       for (const [key, value] of Object.entries(updates)) {
+        if (Array.isArray(value)) {
+          next.delete(key);
+          for (const item of value) {
+            next.append(key, String(item));
+          }
+          continue;
+        }
+
         if (value === null || value === undefined || value === "") {
           next.delete(key);
         } else {
@@ -311,8 +362,8 @@ export default function Search() {
       />
 
       {/* Filters */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <div className="md:col-span-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="md:col-span-2 lg:col-span-2">
           <label className="mb-1 block text-sm">Title</label>
           <input
             className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
@@ -347,63 +398,99 @@ export default function Search() {
           />
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm">Genre</label>
-          <select
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
-            value={genreId}
-            onChange={(e) => {
-              const v = e.target.value;
-              updateParams({
-                genre: v === "" ? null : Number(v),
-                page: 1,
-              });
-            }}
-          >
-            <option value="">Any</option>
-            {(genresQ.data ?? []).map((g) => (
-              <option key={g.genre_id} value={g.genre_id}>
-                {g.genre_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <TagFilter
-          tags={tagsQ.data ?? []}
-          selectedTagId={tagId}
-          isLoading={tagsRequested && (!demosSettled || tagsQ.isLoading)}
-          isError={tagsQ.isError}
-          onActivate={() => setTagFilterActivated(true)}
-          onChange={(nextTagId) => {
+        <MetadataMultiSelect
+          label="Genre"
+          placeholder="Any genre"
+          searchable
+          options={(genresQ.data ?? []).map((genre) => ({
+            id: genre.genre_id,
+            label: genre.genre_name,
+          }))}
+          includedIds={genreSelection.includedIds}
+          excludedIds={genreSelection.excludedIds}
+          isLoading={!authSettled || genresQ.isLoading}
+          isError={genresQ.isError}
+          onChange={({ includedIds, excludedIds }) => {
             updateParams({
-              tag: nextTagId === "" ? null : nextTagId,
+              genre: includedIds,
+              exclude_genre: excludedIds,
               page: 1,
             });
           }}
         />
 
-        <div>
-          <label className="mb-1 block text-sm">Demographic</label>
-          <select
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
-            value={demoId}
-            onChange={(e) => {
-              const v = e.target.value;
-              updateParams({
-                demo: v === "" ? null : Number(v),
-                page: 1,
-              });
-            }}
-          >
-            <option value="">Any</option>
-            {(demosQ.data ?? []).map((d) => (
-              <option key={d.demographic_id} value={d.demographic_id}>
-                {d.demographic_name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <MetadataMultiSelect
+          label="Tag"
+          placeholder="Any tag"
+          searchable
+          options={(tagsQ.data ?? []).map((tag) => ({
+            id: tag.tag_id,
+            label: tag.tag_name,
+          }))}
+          includedIds={tagSelection.includedIds}
+          excludedIds={tagSelection.excludedIds}
+          isLoading={tagsRequested && (!demosSettled || tagsQ.isLoading)}
+          isError={tagsQ.isError}
+          onActivate={() => setTagFilterActivated(true)}
+          onChange={({ includedIds, excludedIds }) => {
+            updateParams({
+              tag: includedIds,
+              exclude_tag: excludedIds,
+              page: 1,
+            });
+          }}
+        />
+
+        <MetadataMultiSelect
+          label="Demographic"
+          placeholder="Any demographic"
+          searchable
+          options={(demosQ.data ?? []).map((demographic) => ({
+            id: demographic.demographic_id,
+            label: demographic.demographic_name,
+          }))}
+          includedIds={demoSelection.includedIds}
+          excludedIds={demoSelection.excludedIds}
+          isLoading={!genresSettled || demosQ.isLoading}
+          isError={demosQ.isError}
+          onChange={({ includedIds, excludedIds }) => {
+            updateParams({
+              demo: includedIds,
+              exclude_demo: excludedIds,
+              page: 1,
+            });
+          }}
+        />
+
+        <fieldset className="md:col-span-2 lg:col-span-5">
+          <legend className="mb-1 text-sm">Match selected metadata</legend>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="metadata-match-mode"
+                value="and"
+                checked={matchMode === "and"}
+                onChange={() => updateParams({ match: null, page: 1 })}
+              />
+              All selected (AND)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="metadata-match-mode"
+                value="or"
+                checked={matchMode === "or"}
+                onChange={() => updateParams({ match: "or", page: 1 })}
+              />
+              Any selected (OR)
+            </label>
+            <span className="text-xs text-neutral-400">
+              AND requires every included selection; OR requires at least one. Exclusions
+              always apply.
+            </span>
+          </div>
+        </fieldset>
       </div>
 
       {/* Loading States*/}

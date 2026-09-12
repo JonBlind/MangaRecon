@@ -17,14 +17,20 @@ export type MangaSearchResponse = {
   items: MangaListItem[];
 };
 
+export type MetadataMatchMode = "and" | "or";
+
 export type MangaSearchParams = {
   title?: string;
   page?: number;
   size?: number;
 
-  genre_id?: number | null;
-  tag_id?: number | null;
-  demo_id?: number | null;
+  genre_ids?: number[];
+  exclude_genres?: number[];
+  tag_ids?: number[];
+  exclude_tags?: number[];
+  demo_ids?: number[];
+  exclude_demos?: number[];
+  match_mode?: MetadataMatchMode;
 
   order_by?: "title" | "average_rating" | "external_average_rating" | "published_year";
   order_dir?: "asc" | "desc";

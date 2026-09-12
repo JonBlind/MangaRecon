@@ -6,9 +6,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../src/api/http", async () => {
-  const actual = await vi.importActual<typeof import("../../src/api/http")>(
-    "../../src/api/http"
-  );
+  const actual =
+    await vi.importActual<typeof import("../../src/api/http")>("../../src/api/http");
 
   return {
     ...actual,
@@ -50,9 +49,7 @@ describe("manga api", () => {
 
     await expect(searchMangas({})).resolves.toEqual(response);
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50"
-    );
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?page=1&size=50");
   });
 
   test("searchMangas trims title", async () => {
@@ -69,9 +66,7 @@ describe("manga api", () => {
       title: "   Naruto   ",
     });
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?title=Naruto&page=1&size=50"
-    );
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?title=Naruto&page=1&size=50");
   });
 
   test("searchMangas ignores blank title", async () => {
@@ -88,9 +83,7 @@ describe("manga api", () => {
       title: "      ",
     });
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50"
-    );
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?page=1&size=50");
   });
 
   test("searchMangas uses supplied pagination", async () => {
@@ -108,9 +101,7 @@ describe("manga api", () => {
       size: 10,
     });
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=3&size=10"
-    );
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?page=3&size=10");
   });
 
   test("searchMangas includes ordering", async () => {
@@ -129,11 +120,11 @@ describe("manga api", () => {
     });
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50&order_by=title&order_dir=asc"
+      "/mangas/?page=1&size=50&order_by=title&order_dir=asc",
     );
   });
 
-  test("searchMangas includes genre filter", async () => {
+  test("searchMangas includes repeated genre filters", async () => {
     mocks.apiFetch.mockResolvedValueOnce({
       data: {
         total_results: 0,
@@ -144,15 +135,15 @@ describe("manga api", () => {
     });
 
     await searchMangas({
-      genre_id: 5,
+      genre_ids: [5, 7],
     });
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50&genre_ids=5"
+      "/mangas/?page=1&size=50&genre_ids=5&genre_ids=7",
     );
   });
 
-  test("searchMangas includes tag filter", async () => {
+  test("searchMangas includes repeated tag filters", async () => {
     mocks.apiFetch.mockResolvedValueOnce({
       data: {
         total_results: 0,
@@ -163,15 +154,15 @@ describe("manga api", () => {
     });
 
     await searchMangas({
-      tag_id: 8,
+      tag_ids: [8, 9],
     });
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50&tag_ids=8"
+      "/mangas/?page=1&size=50&tag_ids=8&tag_ids=9",
     );
   });
 
-  test("searchMangas includes demographic filter", async () => {
+  test("searchMangas includes repeated demographic filters", async () => {
     mocks.apiFetch.mockResolvedValueOnce({
       data: {
         total_results: 0,
@@ -182,11 +173,32 @@ describe("manga api", () => {
     });
 
     await searchMangas({
-      demo_id: 2,
+      demo_ids: [2, 3],
     });
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?page=1&size=50&demo_ids=2"
+      "/mangas/?page=1&size=50&demo_ids=2&demo_ids=3",
+    );
+  });
+
+  test("searchMangas includes repeated metadata exclusions", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({
+      data: {
+        total_results: 0,
+        page: 1,
+        size: 50,
+        items: [],
+      },
+    });
+
+    await searchMangas({
+      exclude_genres: [5, 7],
+      exclude_tags: [8, 9],
+      exclude_demos: [2, 3],
+    });
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/mangas/?page=1&size=50&exclude_genres=5&exclude_genres=7&exclude_tags=8&exclude_tags=9&exclude_demos=2&exclude_demos=3",
     );
   });
 
@@ -218,15 +230,41 @@ describe("manga api", () => {
         size: 25,
         order_by: "external_average_rating",
         order_dir: "desc",
-        genre_id: 1,
-        tag_id: 2,
-        demo_id: 3,
-      })
+        genre_ids: [1, 4],
+        exclude_genres: [9],
+        tag_ids: [2],
+        exclude_tags: [8],
+        demo_ids: [3],
+        exclude_demos: [7],
+        match_mode: "or",
+      }),
     ).resolves.toEqual(response);
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?title=Naruto&page=2&size=25&order_by=external_average_rating&order_dir=desc&genre_ids=1&tag_ids=2&demo_ids=3"
+      "/mangas/?title=Naruto&page=2&size=25&order_by=external_average_rating&order_dir=desc&genre_ids=1&genre_ids=4&exclude_genres=9&tag_ids=2&exclude_tags=8&demo_ids=3&exclude_demos=7&match_mode=or",
     );
+  });
+
+  test("searchMangas ignores empty metadata selections", async () => {
+    mocks.apiFetch.mockResolvedValueOnce({
+      data: {
+        total_results: 0,
+        page: 1,
+        size: 50,
+        items: [],
+      },
+    });
+
+    await searchMangas({
+      genre_ids: [],
+      exclude_genres: [],
+      tag_ids: [],
+      exclude_tags: [],
+      demo_ids: [],
+      exclude_demos: [],
+    });
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?page=1&size=50");
   });
 
   test("searchMangas forwards an abort signal", async () => {
@@ -243,9 +281,8 @@ describe("manga api", () => {
 
     await searchMangas({ title: "Naruto" }, controller.signal);
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/mangas/?title=Naruto&page=1&size=50",
-      { signal: controller.signal },
-    );
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/mangas/?title=Naruto&page=1&size=50", {
+      signal: controller.signal,
+    });
   });
 });

@@ -318,6 +318,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         exclude_tags=None,
         demo_ids=None,
         exclude_demos=None,
+        match_mode="and",
         title=None,
         include_adult=False,
         page=1,
@@ -341,6 +342,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         exclude_tags=None,
         demo_ids=None,
         exclude_demos=None,
+        match_mode="and",
         title=None,
         include_adult=False,
     )
@@ -440,6 +442,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         exclude_tags=[99],
         demo_ids=[100],
         exclude_demos=[999],
+        match_mode="or",
         title="manga",
         include_adult=False,
         page=2,
@@ -501,6 +504,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         exclude_tags=[99],
         demo_ids=[100],
         exclude_demos=[999],
+        match_mode="or",
         title="manga",
         include_adult=False,
     )

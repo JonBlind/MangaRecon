@@ -125,10 +125,17 @@ beforeEach(() => {
   mocks.selectedIds = [];
   mocks.selectedCount = 0;
 
-  mocks.getGenres.mockResolvedValue([{ genre_id: 1, genre_name: "Action" }]);
-  mocks.getTags.mockResolvedValue([{ tag_id: 1, tag_name: "Adventure" }]);
+  mocks.getGenres.mockResolvedValue([
+    { genre_id: 1, genre_name: "Action" },
+    { genre_id: 2, genre_name: "Romance" },
+  ]);
+  mocks.getTags.mockResolvedValue([
+    { tag_id: 1, tag_name: "Adventure" },
+    { tag_id: 2, tag_name: "Magic" },
+  ]);
   mocks.getDemographics.mockResolvedValue([
     { demographic_id: 1, demographic_name: "Shounen" },
+    { demographic_id: 2, demographic_name: "Seinen" },
   ]);
 
   mocks.searchMangas.mockResolvedValue(mangaResults);
@@ -217,12 +224,11 @@ describe("Search Page", () => {
     expect(mocks.getTags).not.toHaveBeenCalled();
 
     await act(async () => {
-      resolveDemographics([
-        { demographic_id: 1, demographic_name: "Shounen" },
-      ]);
+      resolveDemographics([{ demographic_id: 1, demographic_name: "Shounen" }]);
     });
 
-    expect(await screen.findByText(/shounen/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /demographic filter/i }));
+    expect(await screen.findByRole("checkbox", { name: /shounen/i })).toBeInTheDocument();
     expect(mocks.getTags).not.toHaveBeenCalled();
   });
 
@@ -237,14 +243,18 @@ describe("Search Page", () => {
       expect(screen.getByText(/2 results/i)).toBeInTheDocument();
     });
 
-    expect(await screen.findByText(/action/i)).toBeInTheDocument();
-    expect(await screen.findByText(/shounen/i)).toBeInTheDocument();
     expect(mocks.getTags).not.toHaveBeenCalled();
 
-    fireEvent.focus(screen.getByRole("combobox", { name: /^tag$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /genre filter/i }));
+    expect(await screen.findByRole("checkbox", { name: /action/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /demographic filter/i }));
+    expect(await screen.findByRole("checkbox", { name: /shounen/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /tag filter/i }));
 
     expect(
-      await screen.findByRole("option", { name: /adventure/i })
+      await screen.findByRole("checkbox", { name: /adventure/i }),
     ).toBeInTheDocument();
   });
 
@@ -567,21 +577,43 @@ describe("Search Page", () => {
     expect(mocks.addMangasBulkToCollection).not.toHaveBeenCalled();
   });
 
-  test("updates genre filter", async () => {
+  test("selects multiple genres", async () => {
     renderWithProviders(<Search />);
 
-    await screen.findByText(/action/i);
-
-    const selects = screen.getAllByRole("combobox");
-
-    fireEvent.change(selects[0], {
-      target: { value: "1" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /genre filter/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /action/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /romance/i }));
 
     await waitFor(() => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
-          genre_id: 1,
+          genre_ids: [1, 2],
+          page: 1,
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("moves a metadata value from included to excluded on its second press", async () => {
+    renderWithProviders(<Search />);
+
+    fireEvent.click(screen.getByRole("button", { name: /genre filter/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /action/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("checkbox", { name: /action: included/i }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /action: included/i }));
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledWith(
+        expect.objectContaining({
+          genre_ids: [],
+          exclude_genres: [1],
           page: 1,
         }),
         expect.anything(),
@@ -592,16 +624,13 @@ describe("Search Page", () => {
   test("updates tag filter", async () => {
     renderWithProviders(<Search />);
 
-    const tagFilter = screen.getByRole("combobox", { name: /^tag$/i });
-    fireEvent.focus(tagFilter);
-    fireEvent.pointerDown(
-      await screen.findByRole("option", { name: /adventure/i })
-    );
+    fireEvent.click(screen.getByRole("button", { name: /tag filter/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /adventure/i }));
 
     await waitFor(() => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
-          tag_id: 1,
+          tag_ids: [1],
           page: 1,
         }),
         expect.anything(),
@@ -609,21 +638,17 @@ describe("Search Page", () => {
     });
   });
 
-  test("updates demographic filter", async () => {
+  test("selects multiple demographics", async () => {
     renderWithProviders(<Search />);
 
-    await screen.findByText(/shounen/i);
-
-    const selects = screen.getAllByRole("combobox");
-
-    fireEvent.change(selects[2], {
-      target: { value: "1" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /demographic filter/i }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /shounen/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /seinen/i }));
 
     await waitFor(() => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
-          demo_id: 1,
+          demo_ids: [1, 2],
           page: 1,
         }),
         expect.anything(),
@@ -634,29 +659,23 @@ describe("Search Page", () => {
   test("clears a selected genre filter", async () => {
     renderWithProviders(<Search />);
 
-    await screen.findByText(/action/i);
-
-    const genreSelect = screen.getAllByRole("combobox")[0];
-
-    fireEvent.change(genreSelect, {
-      target: { value: "1" },
-    });
+    const genreFilter = screen.getByRole("button", { name: /genre filter/i });
+    fireEvent.click(genreFilter);
+    fireEvent.click(await screen.findByRole("checkbox", { name: /action/i }));
 
     await waitFor(() => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
-          genre_id: 1,
+          genre_ids: [1],
         }),
         expect.anything(),
       );
     });
 
-    fireEvent.change(genreSelect, {
-      target: { value: "" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
 
     await waitFor(() => {
-      expect(genreSelect).toHaveValue("");
+      expect(genreFilter).toHaveTextContent(/any genre/i);
     });
 
     // Clearing restores the still-fresh unfiltered query from the cache.
@@ -683,11 +702,52 @@ describe("Search Page", () => {
 
     expect(mocks.getTags).not.toHaveBeenCalled();
 
-    fireEvent.focus(screen.getByRole("combobox", { name: /^tag$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /tag filter/i }));
 
     await waitFor(() => {
       expect(mocks.getTags).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test("switches metadata matching between AND and OR", async () => {
+    renderWithProviders(<Search />);
+
+    expect(screen.getByRole("radio", { name: /all selected/i })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("radio", { name: /any selected/i }));
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledWith(
+        expect.objectContaining({ match_mode: "or", page: 1 }),
+        expect.anything(),
+      );
+    });
+  });
+
+  test("restores included and excluded metadata selections and mode from the URL", async () => {
+    renderWithProviders(<Search />, {
+      initialEntries: [
+        "/search?genre=1&genre=2&exclude_genre=2&tag=1&exclude_tag=2&demo=2&exclude_demo=1&match=or&page=3",
+      ],
+    });
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenCalledWith(
+        expect.objectContaining({
+          genre_ids: [1],
+          exclude_genres: [2],
+          tag_ids: [1],
+          exclude_tags: [2],
+          demo_ids: [2],
+          exclude_demos: [1],
+          match_mode: "or",
+          page: 3,
+        }),
+        expect.anything(),
+      );
+    });
+
+    expect(screen.getByRole("radio", { name: /any selected/i })).toBeChecked();
   });
 
   test("shows manga search error message", async () => {
