@@ -25,8 +25,9 @@ export default function MangaCover({
 }: MangaCoverProps) {
   const normalizedSource = src?.trim() || null;
   const [failedSource, setFailedSource] = useState<string | null>(null);
-  const coverIsUnavailable =
-    normalizedSource === null || failedSource === normalizedSource;
+  const coverRequestFailed =
+    normalizedSource !== null && failedSource === normalizedSource;
+  const coverIsUnavailable = normalizedSource === null || coverRequestFailed;
 
   if (coverIsUnavailable) {
     return (
@@ -38,7 +39,12 @@ export default function MangaCover({
           "flex items-center justify-center bg-neutral-200 px-4 text-center font-semibold text-neutral-500",
         )}
       >
-        <span aria-hidden="true">No Cover</span>
+        <span aria-hidden="true" className="flex flex-col items-center gap-1">
+          <span>No Cover</span>
+          {coverRequestFailed && (
+            <span className="text-xs font-normal">Temporarily unavailable</span>
+          )}
+        </span>
       </div>
     );
   }

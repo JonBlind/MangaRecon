@@ -56,3 +56,24 @@ describe("Layout auth request priority", () => {
     expect(mocks.useMe).toHaveBeenLastCalledWith(true);
   });
 });
+
+describe("Layout footer", () => {
+  test("credits MangaUpdates and provides a support address", () => {
+    renderLayout("/");
+
+    expect(screen.getByRole("link", { name: "MangaUpdates" })).toHaveAttribute(
+      "href",
+      "https://www.mangaupdates.com/",
+    );
+    expect(screen.getByRole("link", { name: "support@mangarecon.com" })).toHaveAttribute(
+      "href",
+      "mailto:support@mangarecon.com",
+    );
+    expect(
+      screen.getByText(/MangaRecon is not affiliated with MangaUpdates/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`© ${new Date().getFullYear()} MangaRecon`),
+    ).toBeInTheDocument();
+  });
+});

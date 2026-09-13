@@ -48,6 +48,9 @@ describe("MangaCover", () => {
     expect(
       screen.getByRole("img", { name: "Naruto cover unavailable" }),
     ).toHaveTextContent("No Cover");
+    expect(
+      screen.getByRole("img", { name: "Naruto cover unavailable" }),
+    ).toHaveTextContent("Temporarily unavailable");
     expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
   });
 
