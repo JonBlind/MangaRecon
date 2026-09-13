@@ -33,7 +33,7 @@ describe("SearchMetadata", () => {
   test("marks the landing page as indexable and canonical", () => {
     renderMetadata("/");
 
-    expect(document.title).toBe("MangaRecon — Discover and Organize Manga");
+    expect(document.title).toBe("MangaRecon - Discover Manga");
     expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute(
       "content",
       "index, follow",

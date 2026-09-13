@@ -3,7 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 
 const SITE_NAME = "MangaRecon";
 const SITE_URL = "https://mangarecon.com/";
-const LANDING_TITLE = "MangaRecon — Discover and Organize Manga";
+const LANDING_TITLE = "MangaRecon - Discover Manga";
 
 function getOrCreateMeta(name: string): HTMLMetaElement {
   const existing = document.head.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
