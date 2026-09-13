@@ -391,7 +391,7 @@ jobs:
           api_url="${PUBLIC_API_URL%/}"
 
           homepage="$(curl --fail --silent --show-error "$frontend_url/")"
-          if ! grep -q '<title>MangaRecon</title>' <<< "$homepage"; then
+          if ! grep -q '<title>MangaRecon - Discover Manga</title>' <<< "$homepage"; then
             echo "Production homepage title is incorrect." >&2
             exit 1
           fi
