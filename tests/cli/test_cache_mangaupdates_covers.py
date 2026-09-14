@@ -132,6 +132,7 @@ def test_run_cover_cache_processes_independent_items_and_reports_progress(
         _candidate(1, "10"),
         _candidate(2, "20"),
         _candidate(3, "30"),
+        _candidate(4, "40"),
     )
 
     async def database_provider():
@@ -150,6 +151,13 @@ def test_run_cover_cache_processes_independent_items_and_reports_progress(
                 external_id="20",
                 stored_url="https://stored/20",
                 database_updated=False,
+            ),
+            CoverCacheResult(
+                manga_id=3,
+                external_id="30",
+                stored_url=None,
+                database_updated=True,
+                source_missing=True,
             ),
             RuntimeError("bad image"),
         ]
@@ -185,18 +193,22 @@ def test_run_cover_cache_processes_independent_items_and_reports_progress(
     report = asyncio.run(
         cli.run_cover_cache(
             min_request_interval_seconds=0.5,
-            progress_interval=2,
+            progress_interval=3,
         )
     )
 
-    assert report.selected == 3
+    assert report.selected == 4
     assert report.attempts == (
         cli.CoverCacheAttempt(candidates[0], cached=True),
         cli.CoverCacheAttempt(
             candidates[1],
             skipped_changed=True,
         ),
-        cli.CoverCacheAttempt(candidates[2], error="bad image"),
+        cli.CoverCacheAttempt(
+            candidates[2],
+            source_missing=True,
+        ),
+        cli.CoverCacheAttempt(candidates[3], error="bad image"),
     )
     assert cache.await_args_list == [
         call(
@@ -217,12 +229,19 @@ def test_run_cover_cache_processes_independent_items_and_reports_progress(
             client=client,
             cover_store=store,
         ),
+        call(
+            manga_db,
+            candidate=candidates[3],
+            client=client,
+            cover_store=store,
+        ),
     ]
     captured = capsys.readouterr()
-    assert "processed=2/3; cached=1; skipped_changed=1" in (
-        captured.out
-    )
-    assert "manga_id=3; series_id=30; error=bad image" in (
+    assert (
+        "processed=3/4; cached=1; source_missing=1; "
+        "skipped_changed=1"
+    ) in captured.out
+    assert "manga_id=4; series_id=40; error=bad image" in (
         captured.err
     )
     dispose.assert_awaited_once_with()
@@ -330,7 +349,11 @@ def test_main_prints_failure_summary(
 ) -> None:
     attempts = (
         cli.CoverCacheAttempt(_candidate(1, "10"), cached=True),
-        cli.CoverCacheAttempt(_candidate(2, "20"), error="bad image"),
+        cli.CoverCacheAttempt(
+            _candidate(2, "20"),
+            source_missing=True,
+        ),
+        cli.CoverCacheAttempt(_candidate(3, "30"), error="bad image"),
     )
     monkeypatch.setattr(
         cli,
@@ -342,7 +365,7 @@ def test_main_prints_failure_summary(
         "run_cover_cache",
         AsyncMock(
             return_value=cli.CoverCacheReport(
-                selected=2,
+                selected=3,
                 attempts=attempts,
             )
         ),
@@ -350,8 +373,40 @@ def test_main_prints_failure_summary(
 
     assert cli.main([]) == 1
     assert capsys.readouterr().out == (
-        "Cover-cache summary: selected=2; cached=1; "
-        "skipped_changed=0; failed=1.\n"
+        "Cover-cache summary: selected=3; cached=1; "
+        "source_missing=1; skipped_changed=0; failed=1.\n"
+    )
+
+
+def test_main_treats_missing_sources_as_success(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "validate_database_config",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_cover_cache",
+        AsyncMock(
+            return_value=cli.CoverCacheReport(
+                selected=1,
+                attempts=(
+                    cli.CoverCacheAttempt(
+                        _candidate(1, "10"),
+                        source_missing=True,
+                    ),
+                ),
+            )
+        ),
+    )
+
+    assert cli.main([]) == 0
+    assert capsys.readouterr().out == (
+        "Cover-cache summary: selected=1; cached=0; "
+        "source_missing=1; skipped_changed=0; failed=0.\n"
     )
 
 

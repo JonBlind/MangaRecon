@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.clients.mangaupdates_client import MangaUpdatesHTTPError
 from backend.ingestion.images import DownloadedCoverImage
 from backend.repositories.ingestion_repo import CatalogCoverCandidate
 from backend.services import cover_service
@@ -127,6 +128,160 @@ async def test_cache_catalog_cover_rolls_back_database_failure(
     monkeypatch.setattr(
         cover_service,
         "replace_catalog_cover_url",
+        AsyncMock(side_effect=RuntimeError("database failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="database failed"):
+        await cover_service.cache_catalog_cover(
+            database,
+            candidate=_candidate(),
+            client=client,
+            cover_store=store,
+        )
+
+    database.commit.assert_not_awaited()
+    database.rollback.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_cache_catalog_cover_clears_confirmed_missing_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = MagicMock()
+    database.commit = AsyncMock()
+    database.rollback = AsyncMock()
+    client = MagicMock()
+    client.get_cover_image = AsyncMock(
+        side_effect=MangaUpdatesHTTPError(
+            "cover missing",
+            status_code=404,
+        )
+    )
+    store = MagicMock()
+    store.store_cover = AsyncMock()
+    clear_url = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        cover_service,
+        "clear_catalog_cover_url",
+        clear_url,
+    )
+
+    result = await cover_service.cache_catalog_cover(
+        database,
+        candidate=_candidate(),
+        client=client,
+        cover_store=store,
+    )
+
+    assert result == cover_service.CoverCacheResult(
+        manga_id=7,
+        external_id="42",
+        stored_url=None,
+        database_updated=True,
+        source_missing=True,
+    )
+    clear_url.assert_awaited_once_with(
+        database,
+        manga_id=7,
+        expected_source_url=_candidate().source_url,
+    )
+    store.store_cover.assert_not_awaited()
+    database.commit.assert_awaited_once_with()
+    database.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cache_catalog_cover_preserves_concurrently_changed_missing_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = MagicMock()
+    database.commit = AsyncMock()
+    database.rollback = AsyncMock()
+    client = MagicMock()
+    client.get_cover_image = AsyncMock(
+        side_effect=MangaUpdatesHTTPError(
+            "cover missing",
+            status_code=404,
+        )
+    )
+    store = MagicMock()
+    store.store_cover = AsyncMock()
+    monkeypatch.setattr(
+        cover_service,
+        "clear_catalog_cover_url",
+        AsyncMock(return_value=False),
+    )
+
+    result = await cover_service.cache_catalog_cover(
+        database,
+        candidate=_candidate(),
+        client=client,
+        cover_store=store,
+    )
+
+    assert result.database_updated is False
+    assert result.source_missing is True
+    store.store_cover.assert_not_awaited()
+    database.commit.assert_not_awaited()
+    database.rollback.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_cache_catalog_cover_preserves_non_missing_http_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = MagicMock()
+    database.commit = AsyncMock()
+    database.rollback = AsyncMock()
+    failure = MangaUpdatesHTTPError(
+        "cover forbidden",
+        status_code=403,
+    )
+    client = MagicMock()
+    client.get_cover_image = AsyncMock(side_effect=failure)
+    store = MagicMock()
+    store.store_cover = AsyncMock()
+    clear_url = AsyncMock()
+    monkeypatch.setattr(
+        cover_service,
+        "clear_catalog_cover_url",
+        clear_url,
+    )
+
+    with pytest.raises(MangaUpdatesHTTPError) as exc_info:
+        await cover_service.cache_catalog_cover(
+            database,
+            candidate=_candidate(),
+            client=client,
+            cover_store=store,
+        )
+
+    assert exc_info.value is failure
+    clear_url.assert_not_awaited()
+    store.store_cover.assert_not_awaited()
+    database.commit.assert_not_awaited()
+    database.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cache_catalog_cover_rolls_back_missing_source_database_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = MagicMock()
+    database.commit = AsyncMock()
+    database.rollback = AsyncMock()
+    client = MagicMock()
+    client.get_cover_image = AsyncMock(
+        side_effect=MangaUpdatesHTTPError(
+            "cover missing",
+            status_code=404,
+        )
+    )
+    store = MagicMock()
+    store.store_cover = AsyncMock()
+    monkeypatch.setattr(
+        cover_service,
+        "clear_catalog_cover_url",
         AsyncMock(side_effect=RuntimeError("database failed")),
     )
 

@@ -220,6 +220,25 @@ async def replace_catalog_cover_url(
     return await user_db.scalar_one_or_none(stmt) is not None
 
 
+async def clear_catalog_cover_url(
+    user_db: ClientWriteDatabase,
+    *,
+    manga_id: int,
+    expected_source_url: str,
+) -> bool:
+    """Clear a broken cover only if its source URL is unchanged."""
+    stmt = (
+        update(Manga)
+        .where(
+            Manga.manga_id == manga_id,
+            Manga.cover_image_url == expected_source_url,
+        )
+        .values(cover_image_url=None)
+        .returning(Manga.manga_id)
+    )
+    return await user_db.scalar_one_or_none(stmt) is not None
+
+
 async def upsert_catalog_manga(
     user_db: ClientWriteDatabase,
     *,

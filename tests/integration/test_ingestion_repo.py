@@ -588,6 +588,27 @@ async def test_uncached_cover_selection_and_guarded_replacement(
     assert stored is not None
     assert stored.cover_image_url == stored_url
 
+    assert await repository.clear_catalog_cover_url(
+        ingestion_db,
+        manga_id=external_manga_id,
+        expected_source_url="https://example.com/cover.jpg",
+    ) is False
+    await ingestion_db.rollback()
+
+    assert await repository.clear_catalog_cover_url(
+        ingestion_db,
+        manga_id=external_manga_id,
+        expected_source_url=stored_url,
+    ) is True
+    await ingestion_db.commit()
+
+    cleared = await ingestion_db.get(
+        Manga,
+        external_manga_id,
+    )
+    assert cleared is not None
+    assert cleared.cover_image_url is None
+
 
 @pytest.mark.asyncio
 async def test_ingestion_classifies_restricted_genres_but_not_mature(

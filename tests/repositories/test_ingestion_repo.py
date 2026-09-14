@@ -133,6 +133,38 @@ async def test_replace_catalog_cover_url_is_concurrency_guarded(
     assert 7 in compiled.params.values()
 
 
+@pytest.mark.parametrize(
+    ("updated_id", "expected"),
+    [(7, True), (None, False)],
+)
+@pytest.mark.asyncio
+async def test_clear_catalog_cover_url_is_concurrency_guarded(
+    updated_id: int | None,
+    expected: bool,
+) -> None:
+    db = MagicMock()
+    db.scalar_one_or_none = AsyncMock(return_value=updated_id)
+
+    result = await ingestion_repo.clear_catalog_cover_url(
+        db,
+        manga_id=7,
+        expected_source_url=(
+            "https://cdn.mangaupdates.com/image/i42.png"
+        ),
+    )
+
+    assert result is expected
+    statement = db.scalar_one_or_none.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "UPDATE manga SET cover_image_url=" in sql
+    assert "manga.manga_id =" in sql
+    assert "manga.cover_image_url =" in sql
+    assert "RETURNING manga.manga_id" in sql
+    assert 7 in compiled.params.values()
+    assert None in compiled.params.values()
+
+
 @pytest.mark.asyncio
 async def test_find_existing_catalog_external_ids_deduplicates_and_chunks(
     monkeypatch: pytest.MonkeyPatch,

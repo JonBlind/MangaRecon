@@ -41,6 +41,7 @@ _DEFAULT_PROGRESS_INTERVAL = 25
 class CoverCacheAttempt:
     candidate: CatalogCoverCandidate
     cached: bool = False
+    source_missing: bool = False
     skipped_changed: bool = False
     error: str | None = None
 
@@ -216,7 +217,14 @@ async def run_cover_cache(
                         attempts.append(
                             CoverCacheAttempt(
                                 candidate=candidate,
-                                cached=result.database_updated,
+                                cached=(
+                                    result.database_updated
+                                    and not result.source_missing
+                                ),
+                                source_missing=(
+                                    result.database_updated
+                                    and result.source_missing
+                                ),
                                 skipped_changed=(
                                     not result.database_updated
                                 ),
@@ -240,13 +248,16 @@ async def run_cover_cache(
 
 def _attempt_counts(
     attempts: Sequence[CoverCacheAttempt],
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     cached = sum(attempt.cached for attempt in attempts)
+    source_missing = sum(
+        attempt.source_missing for attempt in attempts
+    )
     skipped_changed = sum(
         attempt.skipped_changed for attempt in attempts
     )
     failed = sum(attempt.error is not None for attempt in attempts)
-    return cached, skipped_changed, failed
+    return cached, source_missing, skipped_changed, failed
 
 
 def _print_progress(
@@ -254,11 +265,14 @@ def _print_progress(
     selected: int,
     attempts: Sequence[CoverCacheAttempt],
 ) -> None:
-    cached, skipped_changed, failed = _attempt_counts(attempts)
+    cached, source_missing, skipped_changed, failed = (
+        _attempt_counts(attempts)
+    )
     print(
         (
             f"Cover-cache progress: processed={processed}/{selected}; "
-            f"cached={cached}; skipped_changed={skipped_changed}; "
+            f"cached={cached}; source_missing={source_missing}; "
+            f"skipped_changed={skipped_changed}; "
             f"failed={failed}."
         ),
         flush=True,
@@ -283,13 +297,14 @@ def _print_report(
         )
         return 0
 
-    cached, skipped_changed, failed = _attempt_counts(
-        report.attempts
+    cached, source_missing, skipped_changed, failed = (
+        _attempt_counts(report.attempts)
     )
     print(
         (
             f"Cover-cache summary: selected={report.selected}; "
-            f"cached={cached}; skipped_changed={skipped_changed}; "
+            f"cached={cached}; source_missing={source_missing}; "
+            f"skipped_changed={skipped_changed}; "
             f"failed={failed}."
         )
     )
