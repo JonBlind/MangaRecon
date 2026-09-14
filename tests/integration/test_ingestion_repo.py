@@ -463,6 +463,133 @@ async def test_same_payload_hash_backfills_missing_canonical_cover(
 
 
 @pytest.mark.asyncio
+async def test_same_payload_hash_repoints_cover_to_owned_storage(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    record = make_record()
+    initial = await upsert_and_commit(ingestion_db, record)
+    stored_url = (
+        "https://mangarecon.com/covers/mangaupdates/100/hash.jpg"
+    )
+
+    repeated = await repository.upsert_catalog_manga(
+        ingestion_db,
+        record=make_record(cover_image_url=stored_url),
+        provider_display_name="MangaUpdates",
+        provider_attribution_url=(
+            "https://www.mangaupdates.com/"
+        ),
+    )
+    await ingestion_db.commit()
+
+    assert repeated.manga.manga_id == initial.manga.manga_id
+    assert repeated.created is False
+    assert repeated.changed is True
+    assert repeated.manga.cover_image_url == stored_url
+
+
+@pytest.mark.asyncio
+async def test_changed_payload_does_not_erase_existing_cover(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    initial = await upsert_and_commit(
+        ingestion_db,
+        make_record(),
+    )
+
+    refreshed = await repository.upsert_catalog_manga(
+        ingestion_db,
+        record=make_record(
+            payload_hash="b" * 64,
+            title="Updated Manga",
+            cover_image_url=None,
+        ),
+        provider_display_name="MangaUpdates",
+        provider_attribution_url=(
+            "https://www.mangaupdates.com/"
+        ),
+    )
+    await ingestion_db.commit()
+
+    assert refreshed.manga.manga_id == initial.manga.manga_id
+    assert refreshed.manga.title == "Updated Manga"
+    assert refreshed.manga.cover_image_url == (
+        "https://example.com/cover.jpg"
+    )
+
+
+@pytest.mark.asyncio
+async def test_uncached_cover_selection_and_guarded_replacement(
+    ingestion_db: ClientWriteDatabase,
+) -> None:
+    external = await upsert_and_commit(
+        ingestion_db,
+        make_record(external_id="cover-external"),
+    )
+    external_manga_id = external.manga.manga_id
+    assert external_manga_id is not None
+
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="cover-stored",
+            cover_image_url=(
+                "https://mangarecon.com/covers/"
+                "mangaupdates/cover-stored/hash.png"
+            ),
+        ),
+    )
+    await upsert_and_commit(
+        ingestion_db,
+        make_record(
+            external_id="cover-missing",
+            cover_image_url=None,
+        ),
+    )
+
+    candidates = await repository.find_uncached_catalog_covers(
+        ingestion_db,
+        provider_key="mangaupdates",
+        public_base_url="https://mangarecon.com",
+    )
+
+    assert candidates == (
+        repository.CatalogCoverCandidate(
+            manga_id=external_manga_id,
+            external_id="cover-external",
+            source_url="https://example.com/cover.jpg",
+        ),
+    )
+
+    stored_url = (
+        "https://mangarecon.com/covers/"
+        "mangaupdates/cover-external/hash.png"
+    )
+    assert await repository.replace_catalog_cover_url(
+        ingestion_db,
+        manga_id=external_manga_id,
+        expected_source_url="https://example.com/cover.jpg",
+        stored_url=stored_url,
+    ) is True
+    await ingestion_db.commit()
+
+    assert await repository.replace_catalog_cover_url(
+        ingestion_db,
+        manga_id=external_manga_id,
+        expected_source_url="https://example.com/cover.jpg",
+        stored_url="https://mangarecon.com/covers/stale.png",
+    ) is False
+    await ingestion_db.rollback()
+
+    stored = await ingestion_db.get(
+        Manga,
+        external_manga_id,
+    )
+    assert stored is not None
+    assert stored.cover_image_url == stored_url
+
+
+@pytest.mark.asyncio
 async def test_ingestion_classifies_restricted_genres_but_not_mature(
     ingestion_db: ClientWriteDatabase,
 ) -> None:

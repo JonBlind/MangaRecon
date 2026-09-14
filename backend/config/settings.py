@@ -52,8 +52,15 @@ class Settings(BaseSettings):
 
     mangaupdates_base_url: str = ("https://api.mangaupdates.com/v1")
     mangaupdates_timeout_seconds: float = Field(default=10.0, gt=0)
-    mangaupdates_min_request_interval_seconds: float = Field(default=1.0, ge=0)
+    mangaupdates_min_request_interval_seconds: float = Field(
+        default=1.0,
+        ge=0,
+    )
     mangaupdates_user_agent: str = "MangaRecon/0.1"
+
+    # Durable cover storage used by controlled ingestion jobs.
+    cover_storage_bucket: str | None = None
+    cover_public_base_url: str | None = None
 
 settings = Settings()
 

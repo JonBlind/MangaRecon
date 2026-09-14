@@ -11,6 +11,7 @@ import backend.clients.mangaupdates_client as client_module
 from backend.clients.mangaupdates_client import (
     MangaUpdatesClient,
     MangaUpdatesHTTPError,
+    MangaUpdatesInvalidCoverError,
     MangaUpdatesInvalidResponseError,
     MangaUpdatesRateLimitError,
     MangaUpdatesTransportError,
@@ -61,6 +62,10 @@ def make_json_transport(
         (
             {"user_agent": "   "},
             "user_agent cannot be blank",
+        ),
+        (
+            {"max_cover_bytes": 0},
+            "max_cover_bytes must be greater than zero",
         ),
     ],
 )
@@ -286,6 +291,189 @@ async def test_request_arguments_are_validated_before_io(
             )
 
     assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_get_cover_image_validates_and_returns_detected_format(
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handler(
+        request: httpx2.Request,
+    ) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage-data",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        user_agent="MangaRecon-Test/1.0",
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        result = await client.get_cover_image(
+            " https://cdn.mangaupdates.com/image/i42.png "
+        )
+
+    assert result.content == b"\x89PNG\r\n\x1a\nimage-data"
+    assert result.content_type == "image/png"
+    assert result.extension == "png"
+    assert len(requests) == 1
+    assert requests[0].url.host == "cdn.mangaupdates.com"
+    assert requests[0].url.path == "/image/i42.png"
+    assert requests[0].headers["Accept"].startswith("image/webp")
+    assert requests[0].headers["User-Agent"] == (
+        "MangaRecon-Test/1.0"
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type", "extension"),
+    [
+        (b"\xff\xd8\xffjpeg", "image/jpeg", "jpg"),
+        (b"GIF87a-data", "image/gif", "gif"),
+        (b"GIF89a-data", "image/gif", "gif"),
+        (b"RIFF\x04\x00\x00\x00WEBPdata", "image/webp", "webp"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_get_cover_image_supports_expected_image_formats(
+    content: bytes,
+    content_type: str,
+    extension: str,
+) -> None:
+    async def handler(
+        request: httpx2.Request,
+    ) -> httpx2.Response:
+        return httpx2.Response(200, content=content)
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        result = await client.get_cover_image(
+            "https://cdn.mangaupdates.com/image/cover"
+        )
+
+    assert result.content_type == content_type
+    assert result.extension == extension
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        "http://cdn.mangaupdates.com/image/i42.png",
+        "https://example.com/image/i42.png",
+        "https://user@cdn.mangaupdates.com/image/i42.png",
+        "https://cdn.mangaupdates.com/not-image/i42.png",
+        "https://cdn.mangaupdates.com:invalid/image/i42.png",
+        "   ",
+    ],
+)
+@pytest.mark.asyncio
+async def test_get_cover_image_rejects_unapproved_urls_before_io(
+    source_url: str,
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=make_json_transport(
+            {},
+            requests=requests,
+        ),
+    ) as client:
+        with pytest.raises(MangaUpdatesInvalidCoverError):
+            await client.get_cover_image(source_url)
+
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (b"", "empty cover image"),
+        (b"not-an-image", "not a supported image"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_get_cover_image_rejects_invalid_content(
+    content: bytes,
+    message: str,
+) -> None:
+    async def handler(
+        request: httpx2.Request,
+    ) -> httpx2.Response:
+        return httpx2.Response(200, content=content)
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        with pytest.raises(
+            MangaUpdatesInvalidCoverError,
+            match=message,
+        ):
+            await client.get_cover_image(
+                "https://cdn.mangaupdates.com/image/i42.png"
+            )
+
+
+@pytest.mark.asyncio
+async def test_get_cover_image_enforces_size_limit() -> None:
+    async def handler(
+        request: httpx2.Request,
+    ) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n",
+        )
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        max_cover_bytes=7,
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        with pytest.raises(
+            MangaUpdatesInvalidCoverError,
+            match="size limit",
+        ):
+            await client.get_cover_image(
+                "https://cdn.mangaupdates.com/image/i42.png"
+            )
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_exception"),
+    [
+        (404, MangaUpdatesHTTPError),
+        (429, MangaUpdatesRateLimitError),
+        (503, MangaUpdatesUnavailableError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_get_cover_image_classifies_http_failures(
+    status_code: int,
+    expected_exception: type[Exception],
+) -> None:
+    async def handler(
+        request: httpx2.Request,
+    ) -> httpx2.Response:
+        return httpx2.Response(
+            status_code,
+            headers={"Retry-After": "30"},
+        )
+
+    async with MangaUpdatesClient(
+        min_request_interval_seconds=0,
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        with pytest.raises(expected_exception):
+            await client.get_cover_image(
+                "https://cdn.mangaupdates.com/image/i42.png"
+            )
 
 
 @pytest.mark.asyncio

@@ -33,11 +33,13 @@ def _result(
     *,
     created: bool = False,
     changed: bool = False,
+    cover_status: str = "not_configured",
 ) -> MangaIngestionResult:
     return MangaIngestionResult(
         manga_id=manga_id,
         created=created,
         changed=changed,
+        cover_status=cover_status,  # type: ignore[arg-type]
     )
 
 
@@ -105,6 +107,7 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
 ) -> None:
     manga_db = object()
     client = object()
+    cover_store = object()
 
     async def database_provider():
         yield manga_db
@@ -132,6 +135,11 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
         cli,
         "create_mangaupdates_client",
         client_factory,
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_cover_store_from_settings",
+        Mock(return_value=cover_store),
     )
     monkeypatch.setattr(
         cli,
@@ -175,6 +183,10 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
     assert report.attempts[1].error == "bad payload"
     assert report.attempts[2].result == _result(13)
     assert ingest.await_count == 3
+    assert all(
+        awaited_call.kwargs["cover_store"] is cover_store
+        for awaited_call in ingest.await_args_list
+    )
     find_existing.assert_awaited_once_with(
         manga_db,
         provider_key="mangaupdates",
@@ -388,6 +400,56 @@ def test_run_batch_ingestion_stops_after_rate_limit(
     dispose.assert_awaited_once_with()
 
 
+def test_run_batch_ingestion_stops_after_cover_storage_failure(
+    monkeypatch,
+) -> None:
+    manga_db = object()
+    client = object()
+
+    async def database_provider():
+        yield manga_db
+
+    ingest = AsyncMock(
+        side_effect=[
+            _result(10, created=True, changed=True),
+            cli.CoverStorageError("storage unavailable"),
+            _result(12),
+        ]
+    )
+    dispose = AsyncMock()
+    monkeypatch.setattr(
+        cli,
+        "get_manga_write_db",
+        database_provider,
+    )
+    monkeypatch.setattr(
+        cli,
+        "find_existing_catalog_external_ids",
+        AsyncMock(return_value=set()),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_mangaupdates_client",
+        Mock(return_value=_ClientContext(client)),
+    )
+    monkeypatch.setattr(
+        cli,
+        "ingest_mangaupdates_series",
+        ingest,
+    )
+    monkeypatch.setattr(
+        cli,
+        "dispose_database_engines",
+        dispose,
+    )
+
+    with pytest.raises(cli.CoverStorageError):
+        asyncio.run(cli.run_batch_ingestion([10, 11, 12]))
+
+    assert ingest.await_count == 2
+    dispose.assert_awaited_once_with()
+
+
 def test_main_preserves_single_series_output(
     monkeypatch,
     capsys,
@@ -435,6 +497,51 @@ def test_main_preserves_single_series_output(
         refresh_existing=False,
         progress_callback=None,
     )
+
+
+def test_print_batch_results_reports_cover_outcomes(
+    capsys,
+) -> None:
+    report = cli.MangaBatchIngestionReport(
+        input_series_ids=(10, 20, 30),
+        skipped_existing_series_ids=(),
+        attempts=(
+            cli.MangaIngestionAttempt(
+                series_id=10,
+                result=_result(
+                    1,
+                    created=True,
+                    changed=True,
+                    cover_status="stored",
+                ),
+            ),
+            cli.MangaIngestionAttempt(
+                series_id=20,
+                result=_result(
+                    2,
+                    created=True,
+                    changed=True,
+                    cover_status="source_missing",
+                ),
+            ),
+            cli.MangaIngestionAttempt(
+                series_id=30,
+                result=_result(
+                    3,
+                    created=True,
+                    changed=True,
+                    cover_status="failed",
+                ),
+            ),
+        ),
+    )
+
+    assert cli._print_batch_results(report) == 0
+    output = capsys.readouterr().out
+    assert "manga_id=1; cover=stored" in output
+    assert "covers_stored=1" in output
+    assert "cover_failures=1" in output
+    assert "covers_without_source=1" in output
 
 
 def test_main_reports_single_existing_series_as_skipped(

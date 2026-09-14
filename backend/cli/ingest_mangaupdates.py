@@ -28,6 +28,10 @@ from backend.services.ingestion_service import (
     MangaIngestionResult,
     ingest_mangaupdates_series,
 )
+from backend.storage.cover_store import (
+    CoverStorageError,
+    create_cover_store_from_settings,
+)
 
 
 _DEFAULT_PROGRESS_INTERVAL = 100
@@ -247,6 +251,7 @@ async def run_series_ingestion(
             get_manga_write_db()
         ) as database_provider:
             manga_db = await anext(database_provider)
+            cover_store = create_cover_store_from_settings()
 
             async with create_mangaupdates_client(
                 **_client_options(
@@ -257,6 +262,7 @@ async def run_series_ingestion(
                     manga_db,
                     client=client,
                     series_id=series_id,
+                    cover_store=cover_store,
                 )
     finally:
         await dispose_database_engines()
@@ -347,6 +353,8 @@ async def run_batch_ingestion(
                 )
 
             if pending_series_ids:
+                cover_store = create_cover_store_from_settings()
+
                 async with create_mangaupdates_client(
                     **_client_options(
                         min_request_interval_seconds
@@ -359,11 +367,17 @@ async def run_batch_ingestion(
                                     manga_db,
                                     client=client,
                                     series_id=series_id,
+                                    cover_store=cover_store,
                                 )
                             )
                         except MangaUpdatesRateLimitError:
                             # A rate limit applies to the job, not one title.
                             # Stop instead of sending the remaining requests.
+                            raise
+                        except CoverStorageError:
+                            # Storage failures are normally job-wide. Stop
+                            # instead of downloading covers that cannot be
+                            # persisted.
                             raise
                         except Exception as exc:
                             error = str(exc).strip()
@@ -449,11 +463,16 @@ def _print_success(
     series_id: int,
     result: MangaIngestionResult,
 ) -> None:
+    cover_summary = (
+        ""
+        if result.cover_status == "not_configured"
+        else f"; cover={result.cover_status}"
+    )
     print(
         (
             f"MangaUpdates series {series_id} "
             f"{_result_status(result)}; "
-            f"manga_id={result.manga_id}."
+            f"manga_id={result.manga_id}{cover_summary}."
         )
     )
 
@@ -495,6 +514,12 @@ def _print_batch_results(
         "unchanged": 0,
         "failed": 0,
     }
+    cover_counts = {
+        "stored": 0,
+        "source_missing": 0,
+        "failed": 0,
+        "not_configured": 0,
+    }
 
     for attempt in report.attempts:
         if attempt.result is None:
@@ -511,9 +536,22 @@ def _print_batch_results(
 
         status = _result_status(attempt.result)
         counts[status] += 1
+        cover_counts[attempt.result.cover_status] += 1
         _print_success(
             attempt.series_id,
             attempt.result,
+        )
+
+    cover_summary = ""
+
+    cover_attempt_count = sum(cover_counts.values())
+
+    if cover_counts["not_configured"] != cover_attempt_count:
+        cover_summary = (
+            f"; covers_stored={cover_counts['stored']}; "
+            f"cover_failures={cover_counts['failed']}; "
+            "covers_without_source="
+            f"{cover_counts['source_missing']}"
         )
 
     print(
@@ -525,7 +563,7 @@ def _print_batch_results(
             f"created={counts['created']}; "
             f"updated={counts['updated']}; "
             f"unchanged={counts['unchanged']}; "
-            f"failed={counts['failed']}."
+            f"failed={counts['failed']}{cover_summary}."
         )
     )
 
