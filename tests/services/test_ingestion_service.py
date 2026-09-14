@@ -1,14 +1,57 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import backend.services.ingestion_service as service
+from backend.clients.mangaupdates_client import (
+    MangaUpdatesRateLimitError,
+    MangaUpdatesTransportError,
+)
 from backend.db.models.manga import Manga
+from backend.ingestion.images import DownloadedCoverImage
+from backend.ingestion.records import MangaIngestionRecord
 from backend.repositories.ingestion_repo import (
     CatalogUpsertOutcome,
 )
+from backend.storage.cover_store import CoverStorageError
+
+
+def _record(
+    *,
+    cover_image_url: str | None = (
+        "https://cdn.mangaupdates.com/image/i42.png"
+    ),
+) -> MangaIngestionRecord:
+    return MangaIngestionRecord(
+        provider_key="mangaupdates",
+        external_id="42",
+        source_url="https://www.mangaupdates.com/series/42",
+        source_updated_at=datetime.now(timezone.utc),
+        payload_hash="a" * 64,
+        title="Berserk",
+        alternate_titles=(),
+        description=None,
+        publication_year=1989,
+        media_type="Manga",
+        external_average_rating=None,
+        external_rating_votes=None,
+        cover_image_url=cover_image_url,
+        genres=(),
+        tags=(),
+        demographics=(),
+        creator_credits=(),
+    )
+
+
+def _image() -> DownloadedCoverImage:
+    return DownloadedCoverImage(
+        content=b"\x89PNG\r\n\x1a\ncover",
+        content_type="image/png",
+        extension="png",
+    )
 
 
 @pytest.mark.asyncio
@@ -216,3 +259,220 @@ async def test_series_fetch_failure_skips_persistence(
         )
 
     ingest_payload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_series_ingestion_stores_cover_before_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_db = MagicMock()
+    payload = {"series_id": 42}
+    record = _record()
+    client = MagicMock()
+    client.get_series = AsyncMock(return_value=payload)
+    client.get_cover_image = AsyncMock(return_value=_image())
+    cover_store = MagicMock()
+    cover_store.store_cover = AsyncMock(
+        return_value=(
+            "https://mangarecon.com/covers/mangaupdates/42/hash.png"
+        )
+    )
+    expected = service.MangaIngestionResult(
+        manga_id=17,
+        created=True,
+        changed=True,
+        cover_status="stored",
+    )
+    persist = AsyncMock(return_value=expected)
+
+    monkeypatch.setattr(
+        service,
+        "parse_mangaupdates_series",
+        lambda value: record,
+    )
+    monkeypatch.setattr(
+        service,
+        "_ingest_mangaupdates_record",
+        persist,
+    )
+
+    result = await service.ingest_mangaupdates_series(
+        user_db,
+        client=client,
+        series_id=42,
+        cover_store=cover_store,
+    )
+
+    assert result == expected
+    client.get_series.assert_awaited_once_with(42)
+    client.get_cover_image.assert_awaited_once_with(
+        record.cover_image_url
+    )
+    cover_store.store_cover.assert_awaited_once_with(
+        provider_key="mangaupdates",
+        external_id="42",
+        image=_image(),
+    )
+    stored_record = persist.await_args.kwargs["record"]
+    assert stored_record.cover_image_url == (
+        "https://mangarecon.com/covers/mangaupdates/42/hash.png"
+    )
+    assert persist.await_args.kwargs["cover_status"] == "stored"
+
+
+@pytest.mark.asyncio
+async def test_cover_transport_failure_preserves_existing_cover(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = _record()
+    client = MagicMock()
+    client.get_series = AsyncMock(return_value={"series_id": 42})
+    client.get_cover_image = AsyncMock(
+        side_effect=MangaUpdatesTransportError("CDN unavailable")
+    )
+    cover_store = MagicMock()
+    cover_store.store_cover = AsyncMock()
+    expected = service.MangaIngestionResult(
+        manga_id=17,
+        created=False,
+        changed=False,
+        cover_status="failed",
+    )
+    persist = AsyncMock(return_value=expected)
+
+    monkeypatch.setattr(
+        service,
+        "parse_mangaupdates_series",
+        lambda value: record,
+    )
+    monkeypatch.setattr(
+        service,
+        "_ingest_mangaupdates_record",
+        persist,
+    )
+
+    result = await service.ingest_mangaupdates_series(
+        MagicMock(),
+        client=client,
+        series_id=42,
+        cover_store=cover_store,
+    )
+
+    assert result == expected
+    assert persist.await_args.kwargs["record"].cover_image_url is None
+    assert persist.await_args.kwargs["cover_status"] == "failed"
+    cover_store.store_cover.assert_not_awaited()
+    assert "existing stored cover will be preserved" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_missing_source_cover_skips_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record(cover_image_url=None)
+    client = MagicMock()
+    client.get_series = AsyncMock(return_value={"series_id": 42})
+    client.get_cover_image = AsyncMock()
+    cover_store = MagicMock()
+    cover_store.store_cover = AsyncMock()
+    persist = AsyncMock(
+        return_value=service.MangaIngestionResult(
+            manga_id=17,
+            created=True,
+            changed=True,
+            cover_status="source_missing",
+        )
+    )
+
+    monkeypatch.setattr(
+        service,
+        "parse_mangaupdates_series",
+        lambda value: record,
+    )
+    monkeypatch.setattr(
+        service,
+        "_ingest_mangaupdates_record",
+        persist,
+    )
+
+    await service.ingest_mangaupdates_series(
+        MagicMock(),
+        client=client,
+        series_id=42,
+        cover_store=cover_store,
+    )
+
+    client.get_cover_image.assert_not_awaited()
+    cover_store.store_cover.assert_not_awaited()
+    assert persist.await_args.kwargs["cover_status"] == (
+        "source_missing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cover_rate_limit_stops_before_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    client.get_series = AsyncMock(return_value={"series_id": 42})
+    client.get_cover_image = AsyncMock(
+        side_effect=MangaUpdatesRateLimitError(retry_after="30")
+    )
+    persist = AsyncMock()
+
+    monkeypatch.setattr(
+        service,
+        "parse_mangaupdates_series",
+        lambda value: _record(),
+    )
+    monkeypatch.setattr(
+        service,
+        "_ingest_mangaupdates_record",
+        persist,
+    )
+
+    with pytest.raises(MangaUpdatesRateLimitError):
+        await service.ingest_mangaupdates_series(
+            MagicMock(),
+            client=client,
+            series_id=42,
+            cover_store=MagicMock(),
+        )
+
+    persist.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cover_storage_failure_stops_before_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    client.get_series = AsyncMock(return_value={"series_id": 42})
+    client.get_cover_image = AsyncMock(return_value=_image())
+    cover_store = MagicMock()
+    cover_store.store_cover = AsyncMock(
+        side_effect=CoverStorageError("S3 unavailable")
+    )
+    persist = AsyncMock()
+
+    monkeypatch.setattr(
+        service,
+        "parse_mangaupdates_series",
+        lambda value: _record(),
+    )
+    monkeypatch.setattr(
+        service,
+        "_ingest_mangaupdates_record",
+        persist,
+    )
+
+    with pytest.raises(CoverStorageError, match="S3 unavailable"):
+        await service.ingest_mangaupdates_series(
+            MagicMock(),
+            client=client,
+            series_id=42,
+            cover_store=cover_store,
+        )
+
+    persist.assert_not_awaited()

@@ -38,6 +38,11 @@ output "frontend_cloudfront_distribution_id" {
   value       = aws_cloudfront_distribution.frontend.id
 }
 
+output "cover_bucket_name" {
+  description = "Private S3 bucket containing durable manga cover images."
+  value       = aws_s3_bucket.covers.id
+}
+
 output "frontend_url" {
   description = "Canonical HTTPS URL for the MangaRecon frontend."
   value       = local.frontend_url

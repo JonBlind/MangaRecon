@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,6 +22,115 @@ async def test_find_existing_catalog_external_ids_returns_empty_without_query(
 
     assert result == set()
     db.scalars_all.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_uncached_catalog_covers_builds_bounded_query(
+) -> None:
+    query_result = MagicMock()
+    query_result.all.return_value = [
+        SimpleNamespace(
+            manga_id=7,
+            external_id="42",
+            source_url=(
+                "https://cdn.mangaupdates.com/image/i42.png"
+            ),
+        )
+    ]
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=query_result)
+
+    result = await ingestion_repo.find_uncached_catalog_covers(
+        db,
+        provider_key="mangaupdates",
+        public_base_url="https://mangarecon.com/",
+        limit=25,
+    )
+
+    assert result == (
+        ingestion_repo.CatalogCoverCandidate(
+            manga_id=7,
+            external_id="42",
+            source_url=(
+                "https://cdn.mangaupdates.com/image/i42.png"
+            ),
+        ),
+    )
+    statement = db.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "JOIN manga_external_source" in sql
+    assert "JOIN data_provider" in sql
+    assert "manga.cover_image_url IS NOT NULL" in sql
+    assert "btrim(manga.cover_image_url)" in sql
+    assert "manga.cover_image_url NOT LIKE" in sql
+    assert "ORDER BY manga.manga_id" in sql
+    assert "mangaupdates" in compiled.params.values()
+    assert "https://mangarecon.com/covers/%" in (
+        compiled.params.values()
+    )
+    assert 25 in compiled.params.values()
+
+
+@pytest.mark.parametrize(
+    ("limit", "public_base_url", "message"),
+    [
+        (0, "https://mangarecon.com", "limit"),
+        (None, "   ", "public_base_url"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_find_uncached_catalog_covers_rejects_invalid_input(
+    limit: int | None,
+    public_base_url: str,
+    message: str,
+) -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+
+    with pytest.raises(ValueError, match=message):
+        await ingestion_repo.find_uncached_catalog_covers(
+            db,
+            provider_key="mangaupdates",
+            public_base_url=public_base_url,
+            limit=limit,
+        )
+
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("updated_id", "expected"),
+    [(7, True), (None, False)],
+)
+@pytest.mark.asyncio
+async def test_replace_catalog_cover_url_is_concurrency_guarded(
+    updated_id: int | None,
+    expected: bool,
+) -> None:
+    db = MagicMock()
+    db.scalar_one_or_none = AsyncMock(return_value=updated_id)
+
+    result = await ingestion_repo.replace_catalog_cover_url(
+        db,
+        manga_id=7,
+        expected_source_url=(
+            "https://cdn.mangaupdates.com/image/i42.png"
+        ),
+        stored_url=(
+            "https://mangarecon.com/covers/mangaupdates/42/hash.png"
+        ),
+    )
+
+    assert result is expected
+    statement = db.scalar_one_or_none.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "UPDATE manga SET cover_image_url=" in sql
+    assert "manga.manga_id =" in sql
+    assert "manga.cover_image_url =" in sql
+    assert "RETURNING manga.manga_id" in sql
+    assert 7 in compiled.params.values()
 
 
 @pytest.mark.asyncio

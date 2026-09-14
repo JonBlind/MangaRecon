@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from backend.db.client_db import (
@@ -45,6 +45,15 @@ class CatalogUpsertOutcome:
     manga: Manga
     created: bool
     changed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogCoverCandidate:
+    """Existing provider cover that has not moved to owned storage."""
+
+    manga_id: int
+    external_id: str
+    source_url: str
 
 
 async def find_existing_catalog_external_ids(
@@ -135,6 +144,82 @@ async def find_missing_cover_external_ids(
     return tuple(await user_db.scalars_all(stmt))
 
 
+async def find_uncached_catalog_covers(
+    user_db: ClientReadDatabase,
+    *,
+    provider_key: str,
+    public_base_url: str,
+    limit: int | None = None,
+) -> tuple[CatalogCoverCandidate, ...]:
+    """Return externally hosted covers that still need durable caching."""
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be greater than zero.")
+
+    normalized_base_url = public_base_url.strip().rstrip("/")
+
+    if not normalized_base_url:
+        raise ValueError("public_base_url cannot be blank.")
+
+    stmt = (
+        select(
+            Manga.manga_id.label("manga_id"),
+            MangaExternalSource.external_id.label("external_id"),
+            Manga.cover_image_url.label("source_url"),
+        )
+        .join(
+            MangaExternalSource,
+            MangaExternalSource.manga_id == Manga.manga_id,
+        )
+        .join(
+            DataProvider,
+            DataProvider.provider_id
+            == MangaExternalSource.provider_id,
+        )
+        .where(
+            DataProvider.provider_key == provider_key,
+            Manga.cover_image_url.is_not(None),
+            func.btrim(Manga.cover_image_url) != "",
+            Manga.cover_image_url.not_like(
+                f"{normalized_base_url}/covers/%"
+            ),
+        )
+        .order_by(Manga.manga_id)
+    )
+
+    if limit is not None:
+        stmt = stmt.limit(limit)
+
+    result = await user_db.execute(stmt)
+    return tuple(
+        CatalogCoverCandidate(
+            manga_id=row.manga_id,
+            external_id=row.external_id,
+            source_url=row.source_url,
+        )
+        for row in result.all()
+    )
+
+
+async def replace_catalog_cover_url(
+    user_db: ClientWriteDatabase,
+    *,
+    manga_id: int,
+    expected_source_url: str,
+    stored_url: str,
+) -> bool:
+    """Replace a cover only if its source URL has not changed concurrently."""
+    stmt = (
+        update(Manga)
+        .where(
+            Manga.manga_id == manga_id,
+            Manga.cover_image_url == expected_source_url,
+        )
+        .values(cover_image_url=stored_url)
+        .returning(Manga.manga_id)
+    )
+    return await user_db.scalar_one_or_none(stmt) is not None
+
+
 async def upsert_catalog_manga(
     user_db: ClientWriteDatabase,
     *,
@@ -186,13 +271,9 @@ async def upsert_catalog_manga(
             != expected_adult_classification
         )
 
-        stored_cover_missing = (
-            manga.cover_image_url is None
-            or not manga.cover_image_url.strip()
-        )
-        cover_backfilled = (
-            stored_cover_missing
-            and record.cover_image_url is not None
+        cover_changed = (
+            record.cover_image_url is not None
+            and manga.cover_image_url != record.cover_image_url
         )
 
         if classification_changed:
@@ -200,14 +281,14 @@ async def upsert_catalog_manga(
                 expected_adult_classification
             )
 
-        if cover_backfilled:
+        if cover_changed:
             manga.cover_image_url = record.cover_image_url
 
         return CatalogUpsertOutcome(
             manga=manga,
             created=False,
             changed=(
-                classification_changed or cover_backfilled
+                classification_changed or cover_changed
             ),
         )
 
@@ -349,7 +430,8 @@ async def _replace_canonical_metadata(
     manga.external_rating_votes = (
         record.external_rating_votes
     )
-    manga.cover_image_url = record.cover_image_url
+    if record.cover_image_url is not None:
+        manga.cover_image_url = record.cover_image_url
     manga.is_adult_content = genres_are_adult_content(
         record.genres
     )

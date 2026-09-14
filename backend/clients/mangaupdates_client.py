@@ -4,10 +4,12 @@ from asyncio import Lock, sleep
 from collections.abc import Sequence
 from time import monotonic
 from typing import Any, Self
+from urllib.parse import urlsplit
 
 import httpx2
 
 from backend.config.settings import settings
+from backend.ingestion.images import DownloadedCoverImage
 
 
 MANGAUPDATES_SERIES_TYPES = (
@@ -56,6 +58,9 @@ MANGAUPDATES_SERIES_ORDER_FIELDS = (
     "list_complete",
     "list_unfinished",
 )
+
+_MANGAUPDATES_COVER_HOST = "cdn.mangaupdates.com"
+_DEFAULT_MAX_COVER_BYTES = 5 * 1024 * 1024
 
 
 class MangaUpdatesClientError(RuntimeError):
@@ -116,6 +121,12 @@ class MangaUpdatesInvalidResponseError(
     """
 
 
+class MangaUpdatesInvalidCoverError(
+    MangaUpdatesClientError
+):
+    """Raised when a MangaUpdates cover is unsafe or not an image."""
+
+
 class MangaUpdatesClient:
     """
     Asynchronous client for public MangaUpdates series endpoints.
@@ -133,6 +144,7 @@ class MangaUpdatesClient:
         timeout_seconds: float = 10.0,
         min_request_interval_seconds: float = 1.0,
         user_agent: str = "MangaRecon/0.1",
+        max_cover_bytes: int = _DEFAULT_MAX_COVER_BYTES,
         transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         normalized_base_url = base_url.strip()
@@ -154,9 +166,15 @@ class MangaUpdatesClient:
         if not normalized_user_agent:
             raise ValueError("user_agent cannot be blank.")
 
+        if max_cover_bytes < 1:
+            raise ValueError(
+                "max_cover_bytes must be greater than zero."
+            )
+
         self._min_request_interval_seconds = (
             min_request_interval_seconds
         )
+        self._max_cover_bytes = max_cover_bytes
         self._request_lock = Lock()
         self._last_request_started_at: float | None = None
 
@@ -362,6 +380,106 @@ class MangaUpdatesClient:
             params=params,
         )
 
+    async def get_cover_image(
+        self,
+        source_url: str,
+    ) -> DownloadedCoverImage:
+        """Download and validate one MangaUpdates-hosted cover image."""
+        normalized_url = self._validated_cover_url(source_url)
+        await self._wait_for_request_slot()
+
+        try:
+            async with self._http_client.stream(
+                "GET",
+                normalized_url,
+                headers={
+                    "Accept": "image/webp,image/png,image/jpeg,image/gif",
+                },
+            ) as response:
+                self._validate_cover_response_status(response)
+                content = await self._read_cover_content(response)
+        except httpx2.RequestError as exc:
+            raise MangaUpdatesTransportError(
+                "Could not reach MangaUpdates for a cover image."
+            ) from exc
+
+        content_type, extension = self._detect_cover_format(content)
+
+        return DownloadedCoverImage(
+            content=content,
+            content_type=content_type,
+            extension=extension,
+        )
+
+    @staticmethod
+    def _validate_cover_response_status(
+        response: httpx2.Response,
+    ) -> None:
+        if response.status_code == 429:
+            raise MangaUpdatesRateLimitError(
+                retry_after=response.headers.get("Retry-After"),
+            )
+
+        if response.status_code >= 500:
+            raise MangaUpdatesUnavailableError(
+                (
+                    "MangaUpdates returned server error "
+                    f"{response.status_code} for a cover image."
+                ),
+                status_code=response.status_code,
+            )
+
+        if not 200 <= response.status_code < 300:
+            raise MangaUpdatesHTTPError(
+                (
+                    "MangaUpdates returned HTTP "
+                    f"{response.status_code} for a cover image."
+                ),
+                status_code=response.status_code,
+            )
+
+    async def _read_cover_content(
+        self,
+        response: httpx2.Response,
+    ) -> bytes:
+        declared_length = response.headers.get("Content-Length")
+
+        if declared_length is not None:
+            try:
+                parsed_length = int(declared_length)
+            except ValueError:
+                parsed_length = None
+
+            if (
+                parsed_length is not None
+                and parsed_length > self._max_cover_bytes
+            ):
+                raise MangaUpdatesInvalidCoverError(
+                    "MangaUpdates cover image exceeds the configured size limit."
+                )
+
+        chunks: list[bytes] = []
+        content_length = 0
+
+        async for chunk in response.aiter_bytes():
+            content_length += len(chunk)
+
+            if content_length > self._max_cover_bytes:
+                raise MangaUpdatesInvalidCoverError(
+                    "MangaUpdates cover image exceeds the configured size limit."
+                )
+
+            chunks.append(chunk)
+
+        content = b"".join(chunks)
+
+        if not content:
+            raise MangaUpdatesInvalidCoverError(
+                "MangaUpdates returned an empty cover image."
+            )
+
+        return content
+
     async def _request(
         self,
         method: str,
@@ -425,6 +543,59 @@ class MangaUpdatesClient:
             )
 
         return payload
+
+    @staticmethod
+    def _validated_cover_url(value: str) -> str:
+        if not isinstance(value, str):
+            raise MangaUpdatesInvalidCoverError(
+                "MangaUpdates cover URL must be a string."
+            )
+
+        normalized = value.strip()
+
+        try:
+            parsed = urlsplit(normalized)
+            port = parsed.port
+        except ValueError as exc:
+            raise MangaUpdatesInvalidCoverError(
+                "MangaUpdates cover URL is invalid."
+            ) from exc
+
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != _MANGAUPDATES_COVER_HOST
+            or port not in (None, 443)
+            or parsed.username is not None
+            or parsed.password is not None
+            or not parsed.path.startswith("/image/")
+        ):
+            raise MangaUpdatesInvalidCoverError(
+                "MangaUpdates cover URL is not an approved CDN URL."
+            )
+
+        return normalized
+
+    @staticmethod
+    def _detect_cover_format(content: bytes) -> tuple[str, str]:
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png", "png"
+
+        if content.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg", "jpg"
+
+        if content.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif", "gif"
+
+        if (
+            len(content) >= 12
+            and content.startswith(b"RIFF")
+            and content[8:12] == b"WEBP"
+        ):
+            return "image/webp", "webp"
+
+        raise MangaUpdatesInvalidCoverError(
+            "MangaUpdates cover response is not a supported image."
+        )
 
     @staticmethod
     def _optional_text(

@@ -61,10 +61,27 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_id                = local.frontend_origin_id
   }
 
+  origin {
+    domain_name              = aws_s3_bucket.covers.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.covers.id
+    origin_id                = local.cover_origin_id
+  }
+
   default_cache_behavior {
     allowed_methods            = ["GET", "HEAD", "OPTIONS"]
     cached_methods             = ["GET", "HEAD", "OPTIONS"]
     target_origin_id           = local.frontend_origin_id
+    viewer_protocol_policy     = "redirect-to-https"
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
+  }
+
+  ordered_cache_behavior {
+    path_pattern               = "/covers/*"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id           = local.cover_origin_id
     viewer_protocol_policy     = "redirect-to-https"
     compress                   = true
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id

@@ -14,4 +14,9 @@ locals {
     "${local.name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"
   )
   frontend_origin_id = "${local.name_prefix}-frontend-s3"
+
+  cover_bucket_name = (
+    "${local.name_prefix}-covers-${data.aws_caller_identity.current.account_id}"
+  )
+  cover_origin_id = "${local.name_prefix}-covers-s3"
 }
