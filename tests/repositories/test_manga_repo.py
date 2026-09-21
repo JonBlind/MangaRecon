@@ -42,6 +42,34 @@ class FakeMappingRow:
 
 
 @pytest.mark.asyncio
+async def test_catalog_max_id_uses_primary_key_high_water() -> None:
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=FakeResult(scalar_value=42))
+
+    assert await manga_repo.get_catalog_max_id(db) == 42
+    sql = str(db.execute.await_args.args[0])
+    assert "max(manga.manga_id)" in sql
+
+
+def test_catalog_cutoff_excludes_later_ids_before_pagination() -> None:
+    stmt = manga_repo.build_filter_stmt(
+        genre_ids=None,
+        exclude_genres=None,
+        tag_ids=None,
+        exclude_tags=None,
+        demo_ids=None,
+        exclude_demos=None,
+        title=None,
+        catalog_max_id=42,
+    )
+    sql = str(stmt.compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={"literal_binds": True},
+    ))
+    assert "manga.manga_id <= 42" in sql
+
+
+@pytest.mark.asyncio
 async def test_fetch_manga_core_by_id_returns_row():
     db = MagicMock()
     row = SimpleNamespace(

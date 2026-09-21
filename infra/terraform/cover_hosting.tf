@@ -49,7 +49,7 @@ data "aws_iam_policy_document" "cover_bucket" {
     }
 
     actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.covers.arn}/*"]
+    resources = ["${aws_s3_bucket.covers.arn}/covers/*"]
 
     condition {
       test     = "StringEquals"

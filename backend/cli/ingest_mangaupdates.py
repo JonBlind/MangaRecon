@@ -13,6 +13,7 @@ from backend.clients.mangaupdates_client import (
     MangaUpdatesRateLimitError,
     create_mangaupdates_client,
 )
+from backend.content_safety.policy import CatalogContentExcluded
 from backend.dependencies import (
     dispose_database_engines,
     get_manga_write_db,
@@ -46,11 +47,15 @@ class MangaIngestionAttempt:
     series_id: int
     result: MangaIngestionResult | None = None
     error: str | None = None
+    excluded_reason: str | None = None
 
     def __post_init__(self) -> None:
-        if (self.result is None) == (self.error is None):
+        if sum(
+            value is not None
+            for value in (self.result, self.error, self.excluded_reason)
+        ) != 1:
             raise ValueError(
-                "Exactly one of result or error must be set."
+                "Exactly one of result, error, or excluded_reason must be set."
             )
 
 
@@ -79,6 +84,7 @@ class MangaBatchIngestionProgress:
     updated: int
     unchanged: int
     failed: int
+    excluded: int = 0
 
 
 MangaBatchProgressCallback = Callable[
@@ -303,6 +309,7 @@ async def run_batch_ingestion(
         "updated": 0,
         "unchanged": 0,
         "failed": 0,
+        "excluded": 0,
     }
 
     try:
@@ -379,6 +386,14 @@ async def run_batch_ingestion(
                             # instead of downloading covers that cannot be
                             # persisted.
                             raise
+                        except CatalogContentExcluded as exc:
+                            attempts.append(
+                                MangaIngestionAttempt(
+                                    series_id=series_id,
+                                    excluded_reason=str(exc),
+                                )
+                            )
+                            progress_counts["excluded"] += 1
                         except Exception as exc:
                             error = str(exc).strip()
 
@@ -432,6 +447,9 @@ async def run_batch_ingestion(
                                     ],
                                     failed=progress_counts[
                                         "failed"
+                                    ],
+                                    excluded=progress_counts[
+                                        "excluded"
                                     ],
                                 )
                             )
@@ -499,7 +517,7 @@ def _print_batch_progress(
             f"created={progress.created}; "
             f"updated={progress.updated}; "
             f"unchanged={progress.unchanged}; "
-            f"failed={progress.failed}."
+            f"excluded={progress.excluded}; failed={progress.failed}."
         ),
         flush=True,
     )
@@ -513,6 +531,7 @@ def _print_batch_results(
         "updated": 0,
         "unchanged": 0,
         "failed": 0,
+        "excluded": 0,
     }
     cover_counts = {
         "stored": 0,
@@ -522,6 +541,14 @@ def _print_batch_results(
     }
 
     for attempt in report.attempts:
+        if attempt.excluded_reason is not None:
+            counts["excluded"] += 1
+            print(
+                f"MangaUpdates series {attempt.series_id} excluded: "
+                f"{attempt.excluded_reason}"
+            )
+            continue
+
         if attempt.result is None:
             counts["failed"] += 1
             print(
@@ -563,6 +590,7 @@ def _print_batch_results(
             f"created={counts['created']}; "
             f"updated={counts['updated']}; "
             f"unchanged={counts['unchanged']}; "
+            f"excluded={counts['excluded']}; "
             f"failed={counts['failed']}{cover_summary}."
         )
     )
@@ -589,6 +617,13 @@ def _print_single_result(
         return 0
 
     attempt = report.attempts[0]
+
+    if attempt.excluded_reason is not None:
+        print(
+            f"MangaUpdates series {series_id} excluded: "
+            f"{attempt.excluded_reason}"
+        )
+        return 0
 
     if attempt.result is None:
         print(

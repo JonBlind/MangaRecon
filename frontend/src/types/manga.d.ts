@@ -14,6 +14,7 @@ export type MangaSearchResponse = {
   total_results: number;
   page: number;
   size: number;
+  catalog_max_id?: number;
   items: MangaListItem[];
 };
 
@@ -23,6 +24,7 @@ export type MangaSearchParams = {
   title?: string;
   page?: number;
   size?: number;
+  catalog_max_id?: number;
 
   genre_ids?: number[];
   exclude_genres?: number[];

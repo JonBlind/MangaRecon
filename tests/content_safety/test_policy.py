@@ -1,8 +1,14 @@
 from types import SimpleNamespace
 
+import pytest
+
 from sqlalchemy import select
 
-from backend.content_safety.policy import genres_are_adult_content
+from backend.content_safety.policy import (
+    CatalogContentExcluded,
+    check_catalog_ingestion_genres,
+    genres_are_adult_content,
+)
 from backend.content_safety.visibility import (
     restrict_manga_visibility,
     viewer_allows_adult_content,
@@ -25,6 +31,16 @@ def test_mature_and_identity_genres_are_not_blanket_restricted() -> None:
     assert genres_are_adult_content(
         ["Mature", "Yaoi", "Yuri", "Seinen"]
     ) is False
+
+
+@pytest.mark.parametrize("name", [" HENTAI ", "smut", "Lolicon", "SHOTACON"])
+def test_explicit_genres_are_excluded_from_ingestion(name: str) -> None:
+    with pytest.raises(CatalogContentExcluded):
+        check_catalog_ingestion_genres(("Action", name))
+
+def test_adult_only_and_mature_titles_are_allowed() -> None:
+    check_catalog_ingestion_genres(("Adult", "Adventure"))
+    check_catalog_ingestion_genres(("Mature", "Seinen", "Action"))
 
 
 def test_viewer_must_be_authenticated_and_explicitly_opted_in() -> None:

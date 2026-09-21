@@ -7,6 +7,8 @@ from backend.content_safety.policy import NORMALIZED_ADULT_GENRE_NAMES
 from backend.content_safety.visibility import viewer_allows_adult_content
 from backend.db.models.genre import Genre
 from backend.db.models.tag import Tag
+from backend.db.models.manga import Manga
+from backend.db.models.join_tables import manga_tag
 from backend.db.models.demographics import Demographic
 from backend.db.models.user import User
 from backend.db.client_db import ClientReadDatabase
@@ -73,7 +75,8 @@ async def get_all_genres(
 @limiter.shared_limit("50000/day",  scope=S_META_DAY)
 async def get_all_tags(
     request: Request,
-    db: ClientReadDatabase = Depends(get_public_read_db)
+    db: ClientReadDatabase = Depends(get_public_read_db),
+    user: User | None = Depends(optional_current_user),
 ):
     '''
     Return all available tags.
@@ -88,6 +91,16 @@ async def get_all_tags(
     try:
         logger.info("Retrieving all tags (no pagination)")
         stmt = select(Tag).order_by(Tag.tag_id.asc())
+
+        if not viewer_allows_adult_content(user):
+            stmt = stmt.where(
+                Tag.tag_id.in_(
+                    select(manga_tag.c.tag_id)
+                    .join(Manga, manga_tag.c.manga_id == Manga.manga_id)
+                    .where(Manga.is_adult_content.is_(False))
+                )
+            )
+
         result = await db.execute(stmt)
         tags = result.scalars().all()
         items = [TagRead.model_validate(t) for t in tags]

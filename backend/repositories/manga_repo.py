@@ -110,11 +110,15 @@ def build_filter_stmt(
     title: Optional[str],
     match_mode: MetadataMatchMode = "and",
     include_adult: bool = False,
+    catalog_max_id: int | None = None,
 ):
     stmt = restrict_manga_visibility(
         select(Manga.manga_id).distinct(),
         include_adult=include_adult,
     )
+
+    if catalog_max_id is not None:
+        stmt = stmt.where(Manga.manga_id <= catalog_max_id)
 
     normalized_title = title.strip() if title else ""
     if normalized_title:
@@ -222,6 +226,14 @@ async def count_filtered_manga(db: ClientReadDatabase, *, stmt):
     filtered_ids = stmt.order_by(None).subquery("filtered_manga_ids")
     count_stmt = select(func.count()).select_from(filtered_ids)
     return (await db.execute(count_stmt)).scalar_one()
+
+
+async def get_catalog_max_id(db: ClientReadDatabase) -> int:
+    """Return a high-water mark for a stable sequence of catalog pages."""
+    result = await db.execute(
+        select(func.coalesce(func.max(Manga.manga_id), 0))
+    )
+    return int(result.scalar_one())
 
 
 async def fetch_filtered_manga_page_with_total(
