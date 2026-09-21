@@ -50,6 +50,7 @@ def test_checkpoint_round_trips_and_deduplicates_pending_ids() -> None:
         split_by_type=True,
         series_type_index=2,
         pending_series_ids=(5, 5, 7),
+        pending_recent_series_ids=(8, 8, 9),
         excluded_recent_series_ids=(11, 11, 12),
     )
 
@@ -60,6 +61,7 @@ def test_checkpoint_round_trips_and_deduplicates_pending_ids() -> None:
     assert restored == replace(
         checkpoint,
         pending_series_ids=(5, 7),
+        pending_recent_series_ids=(8, 9),
         excluded_recent_series_ids=(11, 12),
     )
     assert restored.series_type == MANGAUPDATES_SERIES_TYPES[2]
@@ -68,9 +70,11 @@ def test_checkpoint_round_trips_and_deduplicates_pending_ids() -> None:
 def test_old_checkpoint_loads_without_exclusion_field() -> None:
     payload = MangaUpdatesBackfillCheckpoint.initial(start_year=2026).to_dict()
     del payload["excluded_recent_series_ids"]
+    del payload["pending_recent_series_ids"]
 
     checkpoint = MangaUpdatesBackfillCheckpoint.from_dict(payload)
     assert checkpoint.excluded_recent_series_ids == ()
+    assert checkpoint.pending_recent_series_ids == ()
 
 
 def test_legacy_review_ids_return_to_pending_queue() -> None:
@@ -164,11 +168,17 @@ def test_capped_year_and_type_partition_fails_instead_of_skipping(
         )
 
 
-def test_checkpoint_rejects_invalid_pending_ids() -> None:
+@pytest.mark.parametrize(
+    "field_name",
+    ["pending_series_ids", "pending_recent_series_ids"],
+)
+def test_checkpoint_rejects_invalid_pending_ids(
+    field_name: str,
+) -> None:
     payload = MangaUpdatesBackfillCheckpoint.initial(
         start_year=2026,
     ).to_dict()
-    payload["pending_series_ids"] = [0]
+    payload[field_name] = [0]
 
     with pytest.raises(
         MangaUpdatesBackfillError,

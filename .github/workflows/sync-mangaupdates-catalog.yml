@@ -19,9 +19,14 @@ on:
         default: "500"
         type: string
       max_new:
-        description: Maximum new series to ingest across both tracks
+        description: Maximum candidate attempts across both tracks
         required: true
         default: "400"
+        type: string
+      max_recent:
+        description: Maximum recent attempts before reserving history
+        required: true
+        default: "300"
         type: string
 
 permissions:
@@ -111,18 +116,22 @@ jobs:
           MANUAL_MODE: ${{ inputs.mode }}
           MANUAL_RECENT_LIMIT: ${{ inputs.recent_discovery_limit }}
           MANUAL_MAX_NEW: ${{ inputs.max_new }}
+          MANUAL_MAX_RECENT: ${{ inputs.max_recent }}
         run: |
           recent_discovery_limit="500"
           max_new="400"
+          max_recent="300"
 
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             recent_discovery_limit="$MANUAL_RECENT_LIMIT"
             max_new="$MANUAL_MAX_NEW"
+            max_recent="$MANUAL_MAX_RECENT"
           fi
 
           arguments=(
             --recent-discovery-limit "$recent_discovery_limit"
             --max-new "$max_new"
+            --max-recent "$max_recent"
             --historical-pages 5
             --per-page 100
             --minimum-year 1900

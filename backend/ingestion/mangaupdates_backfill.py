@@ -58,7 +58,7 @@ def _positive_series_ids(
 
 @dataclass(frozen=True, slots=True)
 class MangaUpdatesBackfillCheckpoint:
-    """Persistent cursor and deferred IDs for historical discovery."""
+    """Persistent cursor and separate deferred discovery queues."""
 
     start_year: int
     current_year: int
@@ -67,6 +67,7 @@ class MangaUpdatesBackfillCheckpoint:
     split_by_type: bool = False
     series_type_index: int = 0
     pending_series_ids: tuple[int, ...] = ()
+    pending_recent_series_ids: tuple[int, ...] = ()
     excluded_recent_series_ids: tuple[int, ...] = ()
     complete: bool = False
 
@@ -119,6 +120,7 @@ class MangaUpdatesBackfillCheckpoint:
 
         for field_name in (
             "pending_series_ids",
+            "pending_recent_series_ids",
             "excluded_recent_series_ids",
         ):
             values = tuple(dict.fromkeys(getattr(self, field_name)))
@@ -174,6 +176,17 @@ class MangaUpdatesBackfillCheckpoint:
             pending_series_ids=tuple(dict.fromkeys(series_ids)),
         )
 
+    def with_pending_recent_series_ids(
+        self,
+        series_ids: tuple[int, ...],
+    ) -> MangaUpdatesBackfillCheckpoint:
+        return replace(
+            self,
+            pending_recent_series_ids=tuple(
+                dict.fromkeys(series_ids)
+            ),
+        )
+
     def with_excluded_recent_series_ids(
         self,
         series_ids: tuple[int, ...],
@@ -192,6 +205,9 @@ class MangaUpdatesBackfillCheckpoint:
             "split_by_type": self.split_by_type,
             "series_type_index": self.series_type_index,
             "pending_series_ids": list(self.pending_series_ids),
+            "pending_recent_series_ids": list(
+                self.pending_recent_series_ids
+            ),
             "excluded_recent_series_ids": list(self.excluded_recent_series_ids),
             "complete": self.complete,
         }
@@ -250,6 +266,10 @@ class MangaUpdatesBackfillCheckpoint:
                 *pending_series_ids,
                 *legacy_review_series_ids,
             ))),
+            pending_recent_series_ids=_positive_series_ids(
+                payload.get("pending_recent_series_ids", []),
+                field_name="pending_recent_series_ids",
+            ),
             excluded_recent_series_ids=_positive_series_ids(
                 payload.get("excluded_recent_series_ids", []),
                 field_name="excluded_recent_series_ids",

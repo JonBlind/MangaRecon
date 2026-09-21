@@ -26,9 +26,11 @@ def test_load_returns_none_before_first_checkpoint() -> None:
 
 
 def test_save_and_load_checkpoint_json() -> None:
-    checkpoint = MangaUpdatesBackfillCheckpoint.initial(
-        start_year=2026,
-    ).with_pending_series_ids((10, 20))
+    checkpoint = (
+        MangaUpdatesBackfillCheckpoint.initial(start_year=2026)
+        .with_pending_recent_series_ids((10, 20))
+        .with_pending_series_ids((30, 40))
+    )
     s3_client = MagicMock()
     s3_client.list_objects_v2.return_value = {
         "Contents": [

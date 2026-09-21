@@ -128,6 +128,7 @@ def _page_payload(
         (cli._recent_discovery_limit, "0"),
         (cli._recent_discovery_limit, "10001"),
         (cli._max_new, "401"),
+        (cli._max_recent, "401"),
         (cli._historical_pages, "21"),
         (cli._per_page, "101"),
         (cli._minimum_year, "invalid"),
@@ -152,8 +153,77 @@ def test_request_interval_rejects_invalid_values(
         cli._request_interval(value)
 
 
+def test_default_daily_allocation_is_300_recent_100_historical(
+) -> None:
+    arguments = cli.build_parser().parse_args([])
+
+    assert arguments.max_new == 400
+    assert arguments.max_recent == 300
+
+
+@pytest.mark.parametrize(
+    ("recent_count", "expected_recent", "expected_historical"),
+    [
+        (350, 300, 100),
+        (200, 200, 200),
+        (50, 50, 350),
+        (0, 0, 400),
+    ],
+)
+def test_candidate_allocation_reserves_history_and_spills_capacity(
+    recent_count: int,
+    expected_recent: int,
+    expected_historical: int,
+) -> None:
+    recent_ids = tuple(range(1, recent_count + 1))
+    historical_ids = tuple(range(10_001, 10_501))
+
+    selected_recent, selected_historical = (
+        cli._select_candidate_ids(
+            recent_ids=recent_ids,
+            historical_ids=historical_ids,
+            max_new=400,
+            max_recent=300,
+        )
+    )
+
+    assert len(selected_recent) == expected_recent
+    assert len(selected_historical) == expected_historical
+    assert len(selected_recent) + len(selected_historical) == 400
+
+
 @pytest.mark.asyncio
-async def test_catalog_sync_prioritizes_recent_and_persists_deferred(
+async def test_catalog_sync_rejects_recent_limit_above_total() -> None:
+    with pytest.raises(
+        ValueError,
+        match="max_recent must be between 1 and max_new",
+    ):
+        await cli.run_catalog_sync(
+            checkpoint_store=Mock(),
+            max_new=200,
+            max_recent=300,
+        )
+
+
+def test_candidate_queues_prioritize_deferred_recent_ids() -> None:
+    queues = cli._candidate_queues(
+        recent_ids=(3, 4),
+        pending_recent_ids=(1, 2),
+        pending_historical_ids=(2, 5),
+        historical_ids=(5, 6),
+        existing_ids={"3"},
+        excluded_recent_ids={2},
+    )
+
+    assert queues.considered_series_ids == (1, 2, 3, 4, 5, 6)
+    assert queues.recent_series_ids == (1, 4)
+    assert queues.historical_series_ids == (5, 6)
+    assert queues.existing == 1
+    assert queues.excluded_known == 1
+
+
+@pytest.mark.asyncio
+async def test_catalog_sync_reserves_history_and_persists_both_queues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = object()
@@ -170,13 +240,13 @@ async def test_catalog_sync_prioritizes_recent_and_persists_deferred(
         current_year=2025,
     )
     discover_recent = AsyncMock(
-        return_value=_recent_state(1, 2, 3)
+        return_value=_recent_state(1, 2, 3, 6)
     )
     discover_historical = AsyncMock(
-        return_value=(advanced_checkpoint, (4, 5), 2)
+        return_value=(advanced_checkpoint, (4, 5, 7), 2)
     )
     load_existing = AsyncMock(return_value={"2", "4"})
-    ingestion_report = _success_report(1, 3)
+    ingestion_report = _success_report(1, 3, 5)
     ingest = AsyncMock(return_value=ingestion_report)
     monkeypatch.setattr(
         cli,
@@ -202,22 +272,28 @@ async def test_catalog_sync_prioritizes_recent_and_persists_deferred(
 
     report = await cli.run_catalog_sync(
         checkpoint_store=checkpoint_store,
-        max_new=2,
+        max_new=3,
+        max_recent=2,
         exclude_genres=("Hentai",),
         min_request_interval_seconds=0.5,
         initial_year=2026,
     )
 
-    assert report.recent_discovered == 3
+    assert report.recent_discovered == 4
     assert report.recent_pages == 5
     assert report.recent_malformed == 1
     assert report.historical_pages == 2
-    assert report.considered == 5
+    assert report.considered == 7
     assert report.existing == 2
-    assert report.new == 3
-    assert report.selected_series_ids == (1, 3)
-    assert report.deferred == 1
-    assert report.checkpoint.pending_series_ids == (5,)
+    assert report.new == 5
+    assert report.recent_candidates == 3
+    assert report.historical_candidates == 2
+    assert report.selected_recent_series_ids == (1, 3)
+    assert report.selected_historical_series_ids == (5,)
+    assert report.selected_series_ids == (1, 3, 5)
+    assert report.deferred == 2
+    assert report.checkpoint.pending_recent_series_ids == (6,)
+    assert report.checkpoint.pending_series_ids == (7,)
     assert report.ingestion is ingestion_report
     client_factory.assert_called_once_with(
         min_request_interval_seconds=0.5
@@ -229,9 +305,9 @@ async def test_catalog_sync_prioritizes_recent_and_persists_deferred(
         exclude_genres=("Hentai", "Lolicon", "Shotacon", "Smut"),
     )
     discover_historical.assert_awaited_once()
-    load_existing.assert_awaited_once_with((1, 2, 3, 4, 5))
+    load_existing.assert_awaited_once_with((1, 2, 3, 6, 4, 5, 7))
     ingest.assert_awaited_once_with(
-        (1, 3),
+        (1, 3, 5),
         min_request_interval_seconds=0.5,
         progress_callback=cli.ingestion_cli._print_batch_progress,
         progress_interval=25,
@@ -239,8 +315,10 @@ async def test_catalog_sync_prioritizes_recent_and_persists_deferred(
     assert checkpoint_store.save.await_count == 2
     first_saved = checkpoint_store.save.await_args_list[0].args[0]
     final_saved = checkpoint_store.save.await_args_list[1].args[0]
-    assert first_saved.pending_series_ids == (1, 3, 5)
-    assert final_saved.pending_series_ids == (5,)
+    assert first_saved.pending_recent_series_ids == (1, 3, 6)
+    assert first_saved.pending_series_ids == (5, 7)
+    assert final_saved.pending_recent_series_ids == (6,)
+    assert final_saved.pending_series_ids == (7,)
 
 
 @pytest.mark.asyncio
@@ -284,12 +362,14 @@ async def test_preview_advances_only_in_memory(
         checkpoint_store=checkpoint_store,
         preview=True,
         max_new=1,
+        max_recent=1,
         initial_year=2026,
     )
 
     assert report.selected_series_ids == (10,)
     assert report.deferred == 1
-    assert report.checkpoint.pending_series_ids == (10, 20)
+    assert report.checkpoint.pending_recent_series_ids == (10,)
+    assert report.checkpoint.pending_series_ids == (20,)
     assert report.ingestion is None
     checkpoint_store.save.assert_not_awaited()
     ingest.assert_not_awaited()
@@ -399,9 +479,11 @@ async def test_load_existing_series_ids_uses_one_database_session(
 def test_print_preview_reports_both_discovery_tracks(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    checkpoint = MangaUpdatesBackfillCheckpoint.initial(
-        start_year=2026,
-    ).with_pending_series_ids((10, 20))
+    checkpoint = (
+        MangaUpdatesBackfillCheckpoint.initial(start_year=2026)
+        .with_pending_recent_series_ids((10,))
+        .with_pending_series_ids((20,))
+    )
     report = cli.MangaCatalogSyncReport(
         recent_discovered=500,
         recent_pages=5,
@@ -414,15 +496,21 @@ def test_print_preview_reports_both_discovery_tracks(
         deferred=1,
         checkpoint=checkpoint,
         ingestion=None,
+        recent_candidates=1,
+        historical_candidates=2,
+        selected_recent_series_ids=(10,),
+        selected_historical_series_ids=(20,),
     )
 
     assert cli._print_report(report, preview=True) == 0
     assert capsys.readouterr().out == (
         "Catalog preview: recent_discovered=500; recent_pages=5; "
         "recent_malformed=1; historical_pages=2; considered=502; "
-        "existing=499; excluded_known=0; new=3; selected=2; deferred=1; "
+        "existing=499; excluded_known=0; new=3; recent_new=1; "
+        "historical_new=2; recent_selected=1; "
+        "historical_selected=1; selected=2; deferred=1; "
         "checkpoint=year=2026,type=all-types,page=1; "
-        "checkpoint_pending=2.\n"
+        "checkpoint_recent_pending=1; checkpoint_historical_pending=1.\n"
         "No checkpoint, series details, covers, or records were changed.\n"
     )
 
@@ -476,6 +564,7 @@ async def test_restricted_recent_series_is_skipped_on_later_runs(
     first = await cli.run_catalog_sync(
         checkpoint_store=checkpoint_store,
         max_new=2,
+        max_recent=2,
         initial_year=2026,
     )
 
@@ -487,6 +576,7 @@ async def test_restricted_recent_series_is_skipped_on_later_runs(
     second = await cli.run_catalog_sync(
         checkpoint_store=checkpoint_store,
         max_new=2,
+        max_recent=2,
         initial_year=2026,
     )
 

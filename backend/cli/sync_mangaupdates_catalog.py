@@ -48,6 +48,7 @@ from backend.storage.catalog_checkpoint_store import (
 
 _DEFAULT_RECENT_DISCOVERY_LIMIT = 500
 _DEFAULT_MAX_NEW = 400
+_DEFAULT_MAX_RECENT = 300
 _DEFAULT_HISTORICAL_PAGES = 5
 _DEFAULT_PER_PAGE = 100
 _DEFAULT_PROGRESS_INTERVAL = 25
@@ -71,6 +72,19 @@ class MangaCatalogSyncReport:
     checkpoint: MangaUpdatesBackfillCheckpoint
     ingestion: ingestion_cli.MangaBatchIngestionReport | None
     excluded_known: int = 0
+    recent_candidates: int = 0
+    historical_candidates: int = 0
+    selected_recent_series_ids: tuple[int, ...] = ()
+    selected_historical_series_ids: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _CatalogCandidateQueues:
+    considered_series_ids: tuple[int, ...]
+    recent_series_ids: tuple[int, ...]
+    historical_series_ids: tuple[int, ...]
+    existing: int
+    excluded_known: int
 
 
 def _bounded_integer(
@@ -106,6 +120,14 @@ def _max_new(value: str) -> int:
     return _bounded_integer(
         value,
         field_name="max new",
+        maximum=_MAX_DAILY_INGESTION,
+    )
+
+
+def _max_recent(value: str) -> int:
+    return _bounded_integer(
+        value,
+        field_name="max recent",
         maximum=_MAX_DAILY_INGESTION,
     )
 
@@ -193,8 +215,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=_max_new,
         default=_DEFAULT_MAX_NEW,
         help=(
-            "Maximum new series ingested across recent and historical "
+            "Maximum candidate attempts across recent and historical "
             f"candidates (default {_DEFAULT_MAX_NEW})."
+        ),
+    )
+    parser.add_argument(
+        "--max-recent",
+        type=_max_recent,
+        default=_DEFAULT_MAX_RECENT,
+        help=(
+            "Maximum recent candidate attempts; unused capacity flows "
+            "to historical backfill "
+            f"(default {_DEFAULT_MAX_RECENT})."
         ),
     )
     parser.add_argument(
@@ -351,24 +383,55 @@ async def _discover_historical(
     return checkpoint, tuple(discovered_ids), pages
 
 
-def _candidate_ids(
+def _candidate_queues(
     *,
     recent_ids: Sequence[int],
-    pending_ids: Sequence[int],
+    pending_recent_ids: Sequence[int],
+    pending_historical_ids: Sequence[int],
     historical_ids: Sequence[int],
     existing_ids: set[str],
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    considered = tuple(
-        dict.fromkeys(
-            (*recent_ids, *pending_ids, *historical_ids)
-        )
+    excluded_recent_ids: set[int],
+) -> _CatalogCandidateQueues:
+    recent_considered = tuple(
+        dict.fromkeys((*pending_recent_ids, *recent_ids))
     )
-    candidates = tuple(
+    recent_considered_set = set(recent_considered)
+    historical_considered = tuple(
         series_id
+        for series_id in dict.fromkeys(
+            (*pending_historical_ids, *historical_ids)
+        )
+        if series_id not in recent_considered_set
+    )
+    considered = (*recent_considered, *historical_considered)
+    existing = sum(
+        str(series_id) in existing_ids
         for series_id in considered
+    )
+    excluded_known = sum(
+        str(series_id) not in existing_ids
+        and series_id in excluded_recent_ids
+        for series_id in recent_considered
+    )
+    recent_candidates = tuple(
+        series_id
+        for series_id in recent_considered
+        if str(series_id) not in existing_ids
+        and series_id not in excluded_recent_ids
+    )
+    historical_candidates = tuple(
+        series_id
+        for series_id in historical_considered
         if str(series_id) not in existing_ids
     )
-    return considered, candidates
+
+    return _CatalogCandidateQueues(
+        considered_series_ids=considered,
+        recent_series_ids=recent_candidates,
+        historical_series_ids=historical_candidates,
+        existing=existing,
+        excluded_known=excluded_known,
+    )
 
 
 def _completed_ingestion_ids(
@@ -383,12 +446,28 @@ def _completed_ingestion_ids(
     return completed
 
 
+def _select_candidate_ids(
+    *,
+    recent_ids: Sequence[int],
+    historical_ids: Sequence[int],
+    max_new: int,
+    max_recent: int,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    selected_recent = tuple(recent_ids[:max_recent])
+    historical_capacity = max_new - len(selected_recent)
+    selected_historical = tuple(
+        historical_ids[:historical_capacity]
+    )
+    return selected_recent, selected_historical
+
+
 async def run_catalog_sync(
     *,
     checkpoint_store: CatalogCheckpointStore,
     preview: bool = False,
     recent_discovery_limit: int = _DEFAULT_RECENT_DISCOVERY_LIMIT,
     max_new: int = _DEFAULT_MAX_NEW,
+    max_recent: int = _DEFAULT_MAX_RECENT,
     historical_pages: int = _DEFAULT_HISTORICAL_PAGES,
     per_page: int = _DEFAULT_PER_PAGE,
     minimum_year: int = DEFAULT_MINIMUM_PUBLICATION_YEAR,
@@ -405,6 +484,11 @@ async def run_catalog_sync(
     if not 1 <= max_new <= _MAX_DAILY_INGESTION:
         raise ValueError(
             f"max_new must be between 1 and {_MAX_DAILY_INGESTION}."
+        )
+
+    if not 1 <= max_recent <= max_new:
+        raise ValueError(
+            "max_recent must be between 1 and max_new."
         )
 
     if not 1 <= historical_pages <= _MAX_HISTORICAL_PAGES:
@@ -479,6 +563,7 @@ async def run_catalog_sync(
     considered_ids = tuple(
         dict.fromkeys(
             (
+                *checkpoint.pending_recent_series_ids,
                 *recent_ids,
                 *checkpoint.pending_series_ids,
                 *historical_ids,
@@ -488,21 +573,34 @@ async def run_catalog_sync(
     existing_ids = await _load_existing_series_ids(
         considered_ids
     )
-    considered_ids, candidates = _candidate_ids(
+    queues = _candidate_queues(
         recent_ids=recent_ids,
-        pending_ids=checkpoint.pending_series_ids,
+        pending_recent_ids=(
+            checkpoint.pending_recent_series_ids
+        ),
+        pending_historical_ids=checkpoint.pending_series_ids,
         historical_ids=historical_ids,
         existing_ids=existing_ids,
+        excluded_recent_ids=set(
+            checkpoint.excluded_recent_series_ids
+        ),
     )
-    excluded_ids = set(checkpoint.excluded_recent_series_ids)
-    excluded_known = sum(series_id in excluded_ids for series_id in candidates)
-    candidates = tuple(
-        series_id for series_id in candidates
-        if series_id not in excluded_ids
+    selected_recent_ids, selected_historical_ids = (
+        _select_candidate_ids(
+            recent_ids=queues.recent_series_ids,
+            historical_ids=queues.historical_series_ids,
+            max_new=max_new,
+            max_recent=max_recent,
+        )
     )
-    selected_ids = candidates[:max_new]
+    selected_ids = (
+        *selected_recent_ids,
+        *selected_historical_ids,
+    )
     ingestion = None
-    checkpoint = checkpoint.with_pending_series_ids(candidates)
+    checkpoint = checkpoint.with_pending_recent_series_ids(
+        queues.recent_series_ids
+    ).with_pending_series_ids(queues.historical_series_ids)
 
     if not preview:
         await checkpoint_store.save(checkpoint)
@@ -530,9 +628,18 @@ async def run_catalog_sync(
                     if series_id not in completed_ids
                 )
             )
+            checkpoint = checkpoint.with_pending_recent_series_ids(
+                tuple(
+                    series_id
+                    for series_id in (
+                        checkpoint.pending_recent_series_ids
+                    )
+                    if series_id not in completed_ids
+                )
+            )
             new_recent_exclusions = (
-                series_id for series_id in selected_ids
-                if series_id in excluded_in_batch and series_id in recent_id_set
+                series_id for series_id in selected_recent_ids
+                if series_id in excluded_in_batch
             )
             checkpoint = checkpoint.with_excluded_recent_series_ids(
                 tuple(dict.fromkeys((
@@ -547,14 +654,25 @@ async def run_catalog_sync(
         recent_pages=recent_state.pages_completed,
         recent_malformed=len(recent_state.issues),
         historical_pages=historical_page_count,
-        considered=len(considered_ids),
-        existing=len(considered_ids) - len(candidates) - excluded_known,
-        new=len(candidates),
+        considered=len(queues.considered_series_ids),
+        existing=queues.existing,
+        new=(
+            len(queues.recent_series_ids)
+            + len(queues.historical_series_ids)
+        ),
         selected_series_ids=selected_ids,
-        deferred=len(candidates) - len(selected_ids),
+        deferred=(
+            len(queues.recent_series_ids)
+            + len(queues.historical_series_ids)
+            - len(selected_ids)
+        ),
         checkpoint=checkpoint,
         ingestion=ingestion,
-        excluded_known=excluded_known,
+        excluded_known=queues.excluded_known,
+        recent_candidates=len(queues.recent_series_ids),
+        historical_candidates=len(queues.historical_series_ids),
+        selected_recent_series_ids=selected_recent_ids,
+        selected_historical_series_ids=selected_historical_ids,
     )
 
 
@@ -573,10 +691,18 @@ def _print_discovery_summary(
             f"considered={report.considered}; "
             f"existing={report.existing}; "
             f"excluded_known={report.excluded_known}; new={report.new}; "
+            f"recent_new={report.recent_candidates}; "
+            f"historical_new={report.historical_candidates}; "
+            "recent_selected="
+            f"{len(report.selected_recent_series_ids)}; "
+            "historical_selected="
+            f"{len(report.selected_historical_series_ids)}; "
             f"selected={len(report.selected_series_ids)}; "
             f"deferred={report.deferred}; "
             f"checkpoint={report.checkpoint.partition_label}; "
-            "checkpoint_pending="
+            "checkpoint_recent_pending="
+            f"{len(report.checkpoint.pending_recent_series_ids)}; "
+            "checkpoint_historical_pending="
             f"{len(report.checkpoint.pending_series_ids)}."
         )
     )
@@ -627,6 +753,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     arguments.recent_discovery_limit
                 ),
                 max_new=arguments.max_new,
+                max_recent=arguments.max_recent,
                 historical_pages=arguments.historical_pages,
                 per_page=arguments.per_page,
                 minimum_year=arguments.minimum_year,
