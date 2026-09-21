@@ -777,6 +777,7 @@ describe("Search Page", () => {
       total_results: 60,
       page: 1,
       size: 25,
+      catalog_max_id: 42,
       items: mangaResults.items,
     });
 
@@ -790,6 +791,7 @@ describe("Search Page", () => {
       expect(mocks.searchMangas).toHaveBeenCalledWith(
         expect.objectContaining({
           page: 2,
+          catalog_max_id: 42,
         }),
         expect.anything(),
       );
@@ -803,6 +805,51 @@ describe("Search Page", () => {
 
     // Page 1 remains fresh in the cache, so going back does not refetch it.
     expect(mocks.searchMangas).toHaveBeenCalledTimes(2);
+  });
+
+  test("starts a new catalog snapshot after changing filters", async () => {
+    mocks.searchMangas.mockImplementation((params) =>
+      Promise.resolve({
+        total_results: 60,
+        page: params.page,
+        size: 25,
+        catalog_max_id: params.title === "Monster" ? 60 : 42,
+        items: mangaResults.items,
+      }),
+    );
+
+    renderWithProviders(<Search />);
+    await screen.findByText(/60 results/i);
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, catalog_max_id: 42 }),
+        expect.anything(),
+      );
+    });
+
+    const input = screen.getByPlaceholderText(/e\.g\. naruto/i);
+    fireEvent.change(input, { target: { value: "Monster" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          title: "Monster",
+          page: 1,
+          catalog_max_id: undefined,
+        }),
+        expect.anything(),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    await waitFor(() => {
+      expect(mocks.searchMangas).toHaveBeenLastCalledWith(
+        expect.objectContaining({ title: "Monster", page: 2, catalog_max_id: 60 }),
+        expect.anything(),
+      );
+    });
   });
 
   test("disables pagination while results are loading", () => {

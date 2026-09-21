@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, call
 import pytest
 
 from backend.cli import ingest_mangaupdates as cli
+from backend.content_safety.policy import CatalogContentExcluded
 from backend.services.ingestion_service import (
     MangaIngestionResult,
 )
@@ -175,6 +176,8 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
         12,
         13,
     ]
+
+
     assert report.attempts[0].result == _result(
         10,
         created=True,
@@ -222,6 +225,34 @@ def test_run_batch_ingestion_skips_existing_before_fetching_and_reuses_resources
         ),
     ]
     dispose.assert_awaited_once_with()
+
+
+def test_excluded_series_is_reported_without_failing_batch(monkeypatch) -> None:
+    async def database_provider():
+        yield object()
+
+    monkeypatch.setattr(cli, "get_manga_write_db", database_provider)
+    monkeypatch.setattr(
+        cli, "create_mangaupdates_client",
+        lambda **kwargs: _ClientContext(object()),
+    )
+    monkeypatch.setattr(cli, "create_cover_store_from_settings", lambda: object())
+    monkeypatch.setattr(
+        cli, "find_existing_catalog_external_ids",
+        AsyncMock(return_value=set()),
+    )
+    monkeypatch.setattr(
+        cli, "ingest_mangaupdates_series",
+        AsyncMock(side_effect=CatalogContentExcluded()),
+    )
+    monkeypatch.setattr(cli, "dispose_database_engines", AsyncMock())
+
+    report = asyncio.run(cli.run_batch_ingestion((10,)))
+
+    assert report.attempts[0].excluded_reason == (
+        "Explicit genre is excluded from the catalog."
+    )
+    assert cli._print_batch_results(report) == 0
 
 
 def test_run_batch_ingestion_rejects_invalid_progress_interval(
@@ -617,7 +648,7 @@ def test_main_reports_batch_summary_and_failure_exit_code(
         "MangaUpdates series 1 created; manga_id=8.\n"
         "Summary: input=3; skipped_existing=1; fetched=2; "
         "created=1; updated=0; "
-        "unchanged=0; failed=1.\n"
+        "unchanged=0; excluded=0; failed=1.\n"
     )
     assert captured.err == (
         "MangaUpdates series 3 failed: not found\n"
@@ -745,7 +776,7 @@ def test_print_batch_progress_flushes_compact_updates(
         ),
         call(
             "Progress: processed=100/9900; created=98; "
-            "updated=0; unchanged=1; failed=1.",
+            "updated=0; unchanged=1; excluded=0; failed=1.",
             flush=True,
         ),
     ]

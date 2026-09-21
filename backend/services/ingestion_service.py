@@ -8,8 +8,10 @@ from typing import Any, Literal
 from backend.clients.mangaupdates_client import (
     MangaUpdatesClient,
     MangaUpdatesClientError,
+    MangaUpdatesHTTPError,
     MangaUpdatesRateLimitError,
 )
+from backend.content_safety.policy import check_catalog_ingestion_genres
 from backend.db.client_db import ClientWriteDatabase
 from backend.ingestion.mangaupdates_parser import (
     parse_mangaupdates_series,
@@ -51,6 +53,7 @@ async def _ingest_mangaupdates_record(
     cover_status: CoverIngestionStatus,
 ) -> MangaIngestionResult:
     """Atomically persist one already-normalized MangaUpdates record."""
+    check_catalog_ingestion_genres(record.genres)
     try:
         outcome = await upsert_catalog_manga(
             user_db,
@@ -123,6 +126,22 @@ async def _store_record_cover(
         )
     except MangaUpdatesRateLimitError:
         raise
+    except MangaUpdatesHTTPError as exc:
+        if exc.status_code == 404:
+            return (
+                replace(record, cover_image_url=None),
+                "source_missing",
+            )
+
+        logger.warning(
+            (
+                "Cover caching failed for MangaUpdates series %s; "
+                "existing stored cover will be preserved: %s"
+            ),
+            record.external_id,
+            exc,
+        )
+        return replace(record, cover_image_url=None), "failed"
     except MangaUpdatesClientError as exc:
         logger.warning(
             (
@@ -135,6 +154,7 @@ async def _store_record_cover(
         return replace(record, cover_image_url=None), "failed"
 
     return replace(record, cover_image_url=stored_url), "stored"
+
 
 async def ingest_mangaupdates_series(
     user_db: ClientWriteDatabase,
@@ -155,6 +175,7 @@ async def ingest_mangaupdates_series(
         )
 
     record = parse_mangaupdates_series(payload)
+    check_catalog_ingestion_genres(record.genres)
     record, cover_status = await _store_record_cover(
         record,
         client=client,

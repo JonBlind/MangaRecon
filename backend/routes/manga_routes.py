@@ -73,6 +73,7 @@ async def filter_manga(
     size: int = Query(50, ge=1, le=100),
     order_by: MangaOrderField = Query("title"),
     order_dir: OrderDirection = Query("asc"),
+    catalog_max_id: int | None = Query(default=None, ge=0),
     db: ClientReadDatabase = Depends(get_public_read_db),
     user: User | None = Depends(optional_current_user),
 ):
@@ -114,6 +115,7 @@ async def filter_manga(
             size=size,
             order_by=order_by,
             order_dir=order_dir,
+            catalog_max_id=catalog_max_id,
             db=db,
             include_adult=viewer_allows_adult_content(user),
         )

@@ -77,6 +77,19 @@ export default function Search() {
   );
   const matchMode: MetadataMatchMode = searchParams.get("match") === "or" ? "or" : "and";
   const page = Number(searchParams.get("page") ?? "1");
+  const filtersKey = useMemo(() => {
+    const filters = new URLSearchParams(searchParams);
+    filters.delete("page");
+    return filters.toString();
+  }, [searchParams]);
+  const [catalogSnapshot, setCatalogSnapshot] = useState<{
+    filtersKey: string;
+    maxId: number;
+  } | null>(null);
+  const catalogMaxId =
+    page > 1 && catalogSnapshot?.filtersKey === filtersKey
+      ? catalogSnapshot.maxId
+      : undefined;
   const [tagFilterActivated, setTagFilterActivated] = useState(
     tagSelection.includedIds.length + tagSelection.excludedIds.length > 0,
   );
@@ -120,8 +133,9 @@ export default function Search() {
       match_mode: matchMode,
       order_by: "title" as const,
       order_dir: "asc" as const,
+      catalog_max_id: catalogMaxId,
     }),
-    [title, page, genreSelection, tagSelection, demoSelection, matchMode],
+    [title, page, genreSelection, tagSelection, demoSelection, matchMode, catalogMaxId],
   );
 
   const mangaQ = useQuery<MangaSearchResponse>({
@@ -131,6 +145,17 @@ export default function Search() {
     staleTime: 60_000,
     enabled: primaryRequestReleased,
   });
+
+  useEffect(() => {
+    const maxId = mangaQ.data?.catalog_max_id;
+    if (mangaQ.isPlaceholderData || maxId === undefined) return;
+
+    setCatalogSnapshot((previous) =>
+      previous?.filtersKey === filtersKey && previous.maxId === maxId
+        ? previous
+        : { filtersKey, maxId },
+    );
+  }, [filtersKey, mangaQ.data, mangaQ.isPlaceholderData]);
 
   const [secondaryRequestsReleased, setSecondaryRequestsReleased] = useState(false);
 

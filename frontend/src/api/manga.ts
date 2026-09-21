@@ -16,6 +16,9 @@ export async function searchMangas(
   if (params.title?.trim()) sp.set("title", params.title.trim());
   sp.set("page", String(params.page ?? 1));
   sp.set("size", String(params.size ?? 50));
+  if (params.catalog_max_id !== undefined) {
+    sp.set("catalog_max_id", String(params.catalog_max_id));
+  }
 
   if (params.order_by) sp.set("order_by", params.order_by);
   if (params.order_dir) sp.set("order_dir", params.order_dir);

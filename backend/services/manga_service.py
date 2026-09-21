@@ -11,6 +11,7 @@ from backend.repositories.manga_repo import (
     fetch_manga_demographics,
     build_filter_stmt,
     count_filtered_manga,
+    get_catalog_max_id,
     fetch_filtered_manga_page_with_total,
     fetch_genres_for_manga_ids,
 )
@@ -76,8 +77,12 @@ async def filter_manga_page(
     db: ClientReadDatabase,
     match_mode: MetadataMatchMode = "and",
     include_adult: bool = False,
+    catalog_max_id: int | None = None,
 ) -> dict:
     offset = (page - 1) * size
+
+    if catalog_max_id is None:
+        catalog_max_id = await get_catalog_max_id(db)
 
     stmt = build_filter_stmt(
         genre_ids=genre_ids,
@@ -89,6 +94,7 @@ async def filter_manga_page(
         match_mode=match_mode,
         title=title,
         include_adult=include_adult,
+        catalog_max_id=catalog_max_id,
     )
 
     rows, total = await fetch_filtered_manga_page_with_total(
@@ -132,4 +138,10 @@ async def filter_manga_page(
         for it in items:
             it.genres = genre_map.get(it.manga_id, [])
 
-    return {"total_results": total, "page": page, "size": size, "items": items}
+    return {
+        "total_results": total,
+        "page": page,
+        "size": size,
+        "catalog_max_id": catalog_max_id,
+        "items": items,
+    }

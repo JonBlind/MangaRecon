@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
@@ -117,6 +119,54 @@ def test_manga_search_filters_orders_and_paginates_real_rows(
 def test_manga_search_rejects_invalid_pagination(client: TestClient) -> None:
     response = client.get("/mangas/", params={"page": 0, "size": 101})
     assert_error(response, status_code=422)
+
+
+def test_catalog_snapshot_keeps_page_boundary_when_a_title_arrives(
+    client: TestClient,
+    manga_write_engine: Engine,
+) -> None:
+    marker = f"Snapshot {uuid4().hex[:12]}"
+
+    with manga_write_engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO manga (title) VALUES (:title)"),
+            {"title": f"{marker} A"},
+        )
+        final_id = connection.execute(
+            text("INSERT INTO manga (title) VALUES (:title) RETURNING manga_id"),
+            {"title": f"{marker} C"},
+        ).scalar_one()
+
+    first = assert_success(client.get(
+        "/mangas/", params={"title": marker, "page": 1, "size": 1}
+    ))["data"]
+    assert first["total_results"] == 2
+    assert first["items"][0]["title"] == f"{marker} A"
+
+    with manga_write_engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO manga (title) VALUES (:title)"),
+            {"title": f"{marker} B"},
+        )
+
+    stable = assert_success(client.get(
+        "/mangas/",
+        params={
+            "title": marker,
+            "page": 2,
+            "size": 1,
+            "catalog_max_id": first["catalog_max_id"],
+        },
+    ))["data"]
+    live = assert_success(client.get(
+        "/mangas/", params={"title": marker, "page": 2, "size": 1}
+    ))["data"]
+
+    assert stable["total_results"] == 2
+    assert stable["catalog_max_id"] == first["catalog_max_id"]
+    assert stable["items"][0]["manga_id"] == final_id
+    assert live["total_results"] == 3
+    assert live["items"][0]["title"] == f"{marker} B"
 
 
 def test_manga_search_supports_global_and_or_metadata_matching(

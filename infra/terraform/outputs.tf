@@ -43,6 +43,11 @@ output "cover_bucket_name" {
   value       = aws_s3_bucket.covers.id
 }
 
+output "catalog_sync_role_arn" {
+  description = "IAM role assumed by the scheduled catalog sync workflow."
+  value       = aws_iam_role.github_actions_catalog_sync.arn
+}
+
 output "frontend_url" {
   description = "Canonical HTTPS URL for the MangaRecon frontend."
   value       = local.frontend_url

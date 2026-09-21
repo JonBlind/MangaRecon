@@ -88,6 +88,7 @@ async def test_filter_manga_forwards_all_filters(
         size=10,
         order_by="external_average_rating",
         order_dir="desc",
+        catalog_max_id=1234,
         db=db,
     )
 
@@ -104,6 +105,7 @@ async def test_filter_manga_forwards_all_filters(
         size=10,
         order_by="external_average_rating",
         order_dir="desc",
+        catalog_max_id=1234,
         db=db,
         include_adult=False,
     )

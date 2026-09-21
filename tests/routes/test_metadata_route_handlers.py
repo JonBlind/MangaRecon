@@ -117,6 +117,23 @@ async def test_metadata_routes_return_validated_items(
     if route_name == "get_all_genres":
         assert "NOT IN" in sql
 
+    if route_name == "get_all_tags":
+        assert "manga.is_adult_content IS false" in sql
+
+
+@pytest.mark.asyncio
+async def test_opted_in_user_can_still_find_adult_only_tags() -> None:
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=FakeResult([]))
+
+    await handler(metadata_routes.get_all_tags)(
+        request=MagicMock(),
+        db=db,
+        user=SimpleNamespace(show_adult_content=True),
+    )
+
+    assert "is_adult_content" not in str(db.execute.await_args.args[0])
+
 
 @pytest.mark.parametrize(
     (

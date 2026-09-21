@@ -291,6 +291,10 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
     fetch_genres = AsyncMock()
 
     monkeypatch.setattr(
+        manga_service, "get_catalog_max_id", AsyncMock(return_value=42)
+    )
+
+    monkeypatch.setattr(
         manga_service,
         "build_filter_stmt",
         build_filter,
@@ -332,6 +336,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         "total_results": 0,
         "page": 1,
         "size": 20,
+        "catalog_max_id": 42,
         "items": [],
     }
 
@@ -345,6 +350,7 @@ async def test_filter_manga_page_returns_empty_page_without_genre_query(
         match_mode="and",
         title=None,
         include_adult=False,
+        catalog_max_id=42,
     )
 
     count_filtered.assert_awaited_once_with(
@@ -449,12 +455,14 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         size=5,
         order_by="external_average_rating",
         order_dir="desc",
+        catalog_max_id=42,
         db=db,
     )
 
     assert result["total_results"] == 12
     assert result["page"] == 2
     assert result["size"] == 5
+    assert result["catalog_max_id"] == 42
     assert len(result["items"]) == 2
 
     first = result["items"][0]
@@ -507,6 +515,7 @@ async def test_filter_manga_page_passes_all_filters_and_pagination(
         match_mode="or",
         title="manga",
         include_adult=False,
+        catalog_max_id=42,
     )
 
     count_filtered.assert_not_awaited()
@@ -540,6 +549,10 @@ async def test_filter_manga_page_leaves_genres_empty_when_no_matches(
             average_rating=6.0,
         )
     ]
+
+    monkeypatch.setattr(
+        manga_service, "get_catalog_max_id", AsyncMock(return_value=42)
+    )
 
     monkeypatch.setattr(
         manga_service,
@@ -617,6 +630,10 @@ async def test_filter_manga_page_groups_duplicate_genre_rows_by_manga(
             genre_name="Mystery",
         ),
     ]
+
+    monkeypatch.setattr(
+        manga_service, "get_catalog_max_id", AsyncMock(return_value=42)
+    )
 
     monkeypatch.setattr(
         manga_service,
